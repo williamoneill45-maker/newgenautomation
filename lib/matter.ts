@@ -42,8 +42,6 @@ export type Party = {
   mobilePhone: string;
   emailAddress: string;
   homeAddress: string;
-  postCode: string;
-  workAddress: string;
   ethnicity: Ethnicity;
   relationshipToApplicant?: string;
   isAddressConfidential?: boolean;
@@ -53,9 +51,13 @@ export type Child = {
   id: string;
   matterId: string;
   fullName: string;
+  age: string;
   dateOfBirth: string;
-  relationshipToApplicant: string;
-  currentCareArrangement: string;
+  gender: "" | "F" | "M";
+  livingWithAndRelationship: string;
+  applicantRelationshipToChild: string;
+  respondentRelationshipToChild: string;
+  ethnicity: Ethnicity;
 };
 
 export type RelationshipDetails = {
@@ -74,7 +76,6 @@ export type ExistingProceedings = {
 export type DomesticViolenceNotes = {
   history: string;
   recentEvents: string;
-  safetyConcerns: string;
 };
 
 export type IntakeData = {
@@ -161,8 +162,6 @@ export function createEmptyParty(role: PartyRole, matterId: string): Party {
     mobilePhone: "",
     emailAddress: "",
     homeAddress: "",
-    postCode: "",
-    workAddress: "",
     ethnicity: "",
     relationshipToApplicant: role === "respondent" ? "" : undefined,
     isAddressConfidential: role === "applicant" ? false : undefined,
@@ -174,9 +173,13 @@ export function createEmptyChild(matterId: string, index: number): Child {
     id: `child-${Date.now()}-${index}`,
     matterId,
     fullName: "",
+    age: "",
     dateOfBirth: "",
-    relationshipToApplicant: "",
-    currentCareArrangement: "",
+    gender: "",
+    livingWithAndRelationship: "",
+    applicantRelationshipToChild: "",
+    respondentRelationshipToChild: "",
+    ethnicity: "",
   };
 }
 
@@ -212,7 +215,6 @@ export function createEmptyMatter(): MatterFile {
       domesticViolenceNotes: {
         history: "",
         recentEvents: "",
-        safetyConcerns: "",
       },
     },
   };
