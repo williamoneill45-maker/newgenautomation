@@ -1,4 +1,5 @@
 import Link from "next/link";
+import DocumentDownloadPanel from "../../components/DocumentDownloadPanel";
 import IntakeForm from "../../components/IntakeForm";
 
 export default function NewClientPage() {
@@ -13,6 +14,7 @@ export default function NewClientPage() {
             Back to dashboard
           </Link>
         </div>
+        <DocumentDownloadPanel />
         <IntakeForm />
       </div>
     </main>
