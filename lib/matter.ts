@@ -139,6 +139,7 @@ export type GeneratedDocument = {
 
 export const placeholderKeys = [
   "APPLICANT_NAME",
+  "APPLICANT_FIRST_NAME",
   "RESPONDENT_NAME",
   "APPLICANT_ADDRESS",
   "RESPONDENT_ADDRESS",
@@ -149,6 +150,22 @@ export const placeholderKeys = [
   "APPLICATION_TYPE_1",
   "APPLICATION_TYPE_2",
   "APPLICATION_TYPE_3",
+  "applicant_dob",
+  "applicant_home_address",
+  "applicant_occupation",
+  "applicant_phone_number",
+  "child_1_dob",
+  "child_1_name",
+  "date_today",
+  "date_today ",
+  "Date_today",
+  "todays_date",
+  "respondent_age",
+  "respondent_dob",
+  "respondent_home_address",
+  "respondent_occupation",
+  "respondent_work_address",
+  "respondents_relationship_to_children",
 ] as const;
 
 export type PlaceholderKey = (typeof placeholderKeys)[number];
