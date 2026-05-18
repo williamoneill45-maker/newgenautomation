@@ -37,7 +37,7 @@ function paragraphXml(text: string, bold = false): string {
   return `<w:p>${runs.join('<w:r><w:br/></w:r>')}</w:p>`;
 }
 
-async function createDocx(document: DemoDocument): Promise<Buffer> {
+async function createDocx(document: DemoDocument): Promise<ArrayBuffer> {
   const zip = new JSZip();
   const body = [
     paragraphXml(document.title, true),
@@ -68,11 +68,14 @@ async function createDocx(document: DemoDocument): Promise<Buffer> {
 </w:document>`,
   );
 
-  return zip.generateAsync({ type: "nodebuffer" });
+  return zip.generateAsync({ type: "arraybuffer" });
 }
 
 function buildDocuments(matter: MatterFile, affidavitDraft: string): DemoDocument[] {
-  const fields = buildMatterMergeFields(matter) as Record<string, string | undefined>;
+  const fields = buildMatterMergeFields(matter) as unknown as Record<
+    string,
+    string | undefined
+  >;
   const applicant = value(fields, "APPLICANT_NAME");
   const respondent = value(fields, "RESPONDENT_NAME");
   const court = value(fields, "COURT_LOCATION");
@@ -172,7 +175,7 @@ export async function POST(request: Request) {
     bundle.file(document.fileName, await createDocx(document));
   }
 
-  const output = await bundle.generateAsync({ type: "nodebuffer" });
+  const output = await bundle.generateAsync({ type: "arraybuffer" });
 
   return new NextResponse(output, {
     headers: {
