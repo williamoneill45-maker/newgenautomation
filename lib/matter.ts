@@ -99,6 +99,19 @@ export type MatterFile = {
   intake: IntakeData;
 };
 
+export const documentTypes = [
+  "information_sheet",
+  "confidential_address_application",
+  "parenting_order_application",
+  "protection_order_application",
+  "domestic_violence_affidavit",
+  "legal_aid_application",
+  "family_court_lawyer_certificate",
+  "msd_police_information_request",
+] as const;
+
+export type DocumentType = (typeof documentTypes)[number];
+
 export type UploadedTemplate = {
   id: string;
   matterId?: string;
@@ -120,10 +133,6 @@ export type GeneratedDocument = {
   pdfStoragePath?: string;
   generatedAt?: string;
 };
-
-export const documentTypes = ["information_sheet"] as const;
-
-export type DocumentType = (typeof documentTypes)[number];
 
 export const placeholderKeys = [
   "APPLICANT_NAME",
