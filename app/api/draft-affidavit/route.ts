@@ -43,16 +43,22 @@ function extractOutputText(data: OpenAIResponse): string {
     .trim();
 }
 
+function buildFallbackDraft({
+  applicantName,
+  respondentName,
+  historyNotes,
+  recentEventsNotes,
+}: Required<DraftAffidavitRequest>): string {
+  return [
+    `I am ${applicantName}. This affidavit concerns my relationship with ${respondentName}.`,
+    historyNotes ? `History of domestic violence\n\n${historyNotes}` : "",
+    recentEventsNotes ? `Recent events\n\n${recentEventsNotes}` : "",
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+}
+
 export async function POST(request: Request) {
-  const apiKey = process.env.OPENAI_API_KEY;
-
-  if (!apiKey) {
-    return NextResponse.json(
-      { error: "OPENAI_API_KEY is not configured." },
-      { status: 500 },
-    );
-  }
-
   const body = (await request.json()) as DraftAffidavitRequest;
   const applicantName = cleanText(body.applicantName) || "the applicant";
   const respondentName = cleanText(body.respondentName) || "the respondent";
@@ -63,51 +69,64 @@ export async function POST(request: Request) {
     return NextResponse.json({ draft: "" });
   }
 
-  const response = await fetch("https://api.openai.com/v1/responses", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model: process.env.OPENAI_MODEL ?? "gpt-5-mini",
-      input: [
-        {
-          role: "system",
-          content:
-            "You draft neutral New Zealand Family Court affidavit wording for a lawyer. Use only the supplied notes. Do not invent facts, dates, injuries, allegations, legal conclusions, or safety concerns. Keep the draft factual, chronological, and suitable for later lawyer review.",
-        },
-        {
-          role: "user",
-          content: [
-            `Applicant: ${applicantName}`,
-            `Respondent: ${respondentName}`,
-            "",
-            "Draft only these two affidavit sections:",
-            "1. History of domestic violence",
-            "2. Recent events",
-            "",
-            "Use first person where appropriate. If a detail is unclear, preserve the lawyer's wording instead of guessing. Do not add a safety concerns section.",
-            "",
-            "History notes:",
-            historyNotes || "[No history notes supplied]",
-            "",
-            "Recent events notes:",
-            recentEventsNotes || "[No recent events notes supplied]",
-          ].join("\n"),
-        },
-      ],
-    }),
+  const fallbackDraft = buildFallbackDraft({
+    applicantName,
+    respondentName,
+    historyNotes,
+    recentEventsNotes,
   });
+  const apiKey = process.env.OPENAI_API_KEY;
 
-  if (!response.ok) {
-    const detail = await response.text();
-    return NextResponse.json(
-      { error: "Affidavit drafting failed.", detail },
-      { status: 502 },
-    );
+  if (!apiKey) {
+    return NextResponse.json({ draft: fallbackDraft, source: "fallback" });
   }
 
-  const data = (await response.json()) as OpenAIResponse;
-  return NextResponse.json({ draft: extractOutputText(data) });
+  try {
+    const response = await fetch("https://api.openai.com/v1/responses", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: process.env.OPENAI_MODEL ?? "gpt-5-mini",
+        input: [
+          {
+            role: "system",
+            content:
+              "You draft neutral New Zealand Family Court affidavit wording for a lawyer. Use only the supplied notes. Do not invent facts, dates, injuries, allegations, legal conclusions, or safety concerns. Keep the draft factual, chronological, and suitable for later lawyer review.",
+          },
+          {
+            role: "user",
+            content: [
+              `Applicant: ${applicantName}`,
+              `Respondent: ${respondentName}`,
+              "",
+              "Draft only these two affidavit sections:",
+              "1. History of domestic violence",
+              "2. Recent events",
+              "",
+              "Use first person where appropriate. If a detail is unclear, preserve the lawyer's wording instead of guessing. Do not add a safety concerns section.",
+              "",
+              "History notes:",
+              historyNotes || "[No history notes supplied]",
+              "",
+              "Recent events notes:",
+              recentEventsNotes || "[No recent events notes supplied]",
+            ].join("\n"),
+          },
+        ],
+      }),
+    });
+
+    if (!response.ok) {
+      return NextResponse.json({ draft: fallbackDraft, source: "fallback" });
+    }
+
+    const data = (await response.json()) as OpenAIResponse;
+    const draft = extractOutputText(data);
+    return NextResponse.json({ draft: draft || fallbackDraft, source: draft ? "openai" : "fallback" });
+  } catch {
+    return NextResponse.json({ draft: fallbackDraft, source: "fallback" });
+  }
 }
