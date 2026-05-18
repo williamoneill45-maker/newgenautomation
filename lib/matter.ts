@@ -55,7 +55,8 @@ export type Child = {
   age: string;
   dateOfBirth: string;
   gender: "" | "F" | "M";
-  livingWithAndRelationship: string;
+  livingWithName: string;
+  livingWithRelationshipToChild: string;
   applicantRelationshipToChild: string;
   respondentRelationshipToChild: string;
   ethnicity: Ethnicity;
@@ -93,7 +94,7 @@ export type IntakeData = {
 
 export type MatterFile = {
   id: string;
-  matterNumber: string;
+  legalAidNumber: string;
   clientName: string;
   status: MatterStatus;
   createdAt: string;
@@ -178,7 +179,8 @@ export function createEmptyChild(matterId: string, index: number): Child {
     age: "",
     dateOfBirth: "",
     gender: "",
-    livingWithAndRelationship: "",
+    livingWithName: "",
+    livingWithRelationshipToChild: "",
     applicantRelationshipToChild: "",
     respondentRelationshipToChild: "",
     ethnicity: "",
@@ -191,7 +193,7 @@ export function createEmptyMatter(): MatterFile {
 
   return {
     id: matterId,
-    matterNumber: "",
+    legalAidNumber: "",
     clientName: "",
     status: "draft",
     createdAt: now,
