@@ -42,6 +42,7 @@ export type Party = {
   mobilePhone: string;
   emailAddress: string;
   homeAddress: string;
+  workAddress: string;
   ethnicity: Ethnicity;
   relationshipToApplicant?: string;
   isAddressConfidential?: boolean;
@@ -162,6 +163,7 @@ export function createEmptyParty(role: PartyRole, matterId: string): Party {
     mobilePhone: "",
     emailAddress: "",
     homeAddress: "",
+    workAddress: "",
     ethnicity: "",
     relationshipToApplicant: role === "respondent" ? "" : undefined,
     isAddressConfidential: role === "applicant" ? false : undefined,
