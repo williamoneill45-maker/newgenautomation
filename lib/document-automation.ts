@@ -69,7 +69,11 @@ export const informationSheetPlaceholders: TemplatePlaceholder[] = [
   },
 ];
 
+export type MergeFieldValue = string | number | boolean | null | undefined;
+
 export type MergeFields = Partial<Record<PlaceholderKey, string>>;
+
+export type RawMergeFields = Partial<Record<PlaceholderKey, MergeFieldValue>>;
 
 export type DocumentGenerationInput = {
   matterId: string;
@@ -77,6 +81,20 @@ export type DocumentGenerationInput = {
   template: UploadedTemplate | null;
   mergeFields: MergeFields;
 };
+
+export function toSafeMergeValue(value: MergeFieldValue): string {
+  if (value === null || value === undefined) {
+    return "";
+  }
+
+  return String(value);
+}
+
+export function normalizeMergeFields(fields: RawMergeFields): MergeFields {
+  return Object.fromEntries(
+    Object.entries(fields).map(([key, value]) => [key, toSafeMergeValue(value)]),
+  ) as MergeFields;
+}
 
 export function calculateAge(dateOfBirth: string, asAt = new Date()): string {
   if (!dateOfBirth) {
@@ -106,7 +124,7 @@ export function buildInformationSheetMergeFields(matter: MatterFile): MergeField
   const { intake } = matter;
   const firstChild = intake.children[0];
 
-  return {
+  return normalizeMergeFields({
     APPLICANT_NAME: intake.applicant.fullName,
     RESPONDENT_NAME: intake.respondent.fullName,
     APPLICANT_ADDRESS: intake.applicant.isAddressConfidential
@@ -114,13 +132,13 @@ export function buildInformationSheetMergeFields(matter: MatterFile): MergeField
       : intake.applicant.homeAddress,
     RESPONDENT_ADDRESS: intake.respondent.homeAddress,
     COURT_LOCATION: intake.courtLocation,
-    CHILD_1_NAME: firstChild?.fullName ?? "",
-    CHILD_1_DOB: firstChild?.dateOfBirth ?? "",
+    CHILD_1_NAME: firstChild?.fullName,
+    CHILD_1_DOB: firstChild?.dateOfBirth,
     CHILD_1_AGE: calculateAge(firstChild?.dateOfBirth ?? ""),
-    APPLICATION_TYPE_1: intake.selectedApplications[0] ?? "",
-    APPLICATION_TYPE_2: intake.selectedApplications[1] ?? "",
-    APPLICATION_TYPE_3: intake.selectedApplications[2] ?? "",
-  };
+    APPLICATION_TYPE_1: intake.selectedApplications[0],
+    APPLICATION_TYPE_2: intake.selectedApplications[1],
+    APPLICATION_TYPE_3: intake.selectedApplications[2],
+  });
 }
 
 export function buildDocumentGenerationInput(
@@ -137,7 +155,7 @@ export function buildDocumentGenerationInput(
     matterId: matter.id,
     documentType,
     template,
-    mergeFields,
+    mergeFields: normalizeMergeFields(mergeFields),
   };
 }
 
