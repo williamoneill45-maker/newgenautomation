@@ -43,16 +43,40 @@ function extractOutputText(data: OpenAIResponse): string {
     .trim();
 }
 
+function splitNotes(notes: string): string[] {
+  return notes
+    .split(/\n+/)
+    .map((note) => note.trim())
+    .filter(Boolean);
+}
+
+function buildNumberedSection(title: string, notes: string, startNumber: number): string {
+  const paragraphs = splitNotes(notes);
+
+  if (paragraphs.length === 0) {
+    return "";
+  }
+
+  return [
+    title,
+    "",
+    ...paragraphs.flatMap((paragraph, index) => [
+      String(startNumber + index),
+      paragraph,
+      "",
+    ]),
+  ]
+    .join("\n")
+    .trim();
+}
+
 function buildFallbackDraft({
-  applicantName,
-  respondentName,
   historyNotes,
   recentEventsNotes,
 }: Required<DraftAffidavitRequest>): string {
   return [
-    `I am ${applicantName}. This affidavit concerns my relationship with ${respondentName}.`,
-    historyNotes ? `History of domestic violence\n\n${historyNotes}` : "",
-    recentEventsNotes ? `Recent events\n\n${recentEventsNotes}` : "",
+    buildNumberedSection("History of Family Violence", historyNotes, 4),
+    buildNumberedSection("Recent Events", recentEventsNotes, 26),
   ]
     .filter(Boolean)
     .join("\n\n");
@@ -93,8 +117,14 @@ export async function POST(request: Request) {
         input: [
           {
             role: "system",
-            content:
-              "You draft neutral New Zealand Family Court affidavit wording for a lawyer. Use only the supplied notes. Do not invent facts, dates, injuries, allegations, legal conclusions, or safety concerns. Keep the draft factual, chronological, and suitable for later lawyer review.",
+            content: [
+              "You draft New Zealand Family Court affidavit wording for a lawyer.",
+              "Use only the supplied notes. Do not invent facts, dates, injuries, witnesses, exhibits, allegations, legal conclusions, or safety concerns.",
+              "Draft in the applicant's first person voice, using formal affidavit style.",
+              "Refer to the other party as 'the Respondent' after the first mention unless the notes clearly require otherwise.",
+              "Keep wording factual, chronological, specific, and suitable for lawyer review.",
+              "Do not include advice, commentary, summaries, caveats, or markdown formatting.",
+            ].join(" "),
           },
           {
             role: "user",
@@ -102,11 +132,17 @@ export async function POST(request: Request) {
               `Applicant: ${applicantName}`,
               `Respondent: ${respondentName}`,
               "",
-              "Draft only these two affidavit sections:",
-              "1. History of domestic violence",
-              "2. Recent events",
+              "Draft exactly two sections with these headings:",
+              "History of Family Violence",
+              "Recent Events",
               "",
-              "Use first person where appropriate. If a detail is unclear, preserve the lawyer's wording instead of guessing. Do not add a safety concerns section.",
+              "Formatting requirements:",
+              "- Number each affidavit paragraph on its own line before the paragraph text.",
+              "- Start History of Family Violence at paragraph 4.",
+              "- Start Recent Events at paragraph 26 unless the history section needs more paragraphs; if so, continue numbering sequentially.",
+              "- Split different incidents into separate numbered paragraphs.",
+              "- Preserve dates, places, quotes, names, and exhibit references only where they are supplied in the notes.",
+              "- Do not add a safety concerns section.",
               "",
               "History notes:",
               historyNotes || "[No history notes supplied]",
