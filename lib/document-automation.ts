@@ -120,25 +120,62 @@ export function calculateAge(dateOfBirth: string, asAt = new Date()): string {
   return age >= 0 ? String(age) : "";
 }
 
-export function buildInformationSheetMergeFields(matter: MatterFile): MergeFields {
+export function formatDateForForms(date = new Date()): string {
+  return new Intl.DateTimeFormat("en-NZ", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  }).format(date);
+}
+
+function getFirstName(fullName: string): string {
+  return fullName.trim().split(/\s+/)[0] ?? "";
+}
+
+export function buildMatterMergeFields(matter: MatterFile): MergeFields {
   const { intake } = matter;
   const firstChild = intake.children[0];
+  const today = formatDateForForms();
+  const applicantAddress = intake.applicant.isAddressConfidential
+    ? "Confidential"
+    : intake.applicant.homeAddress;
+  const childAge = firstChild?.age || calculateAge(firstChild?.dateOfBirth ?? "");
 
   return normalizeMergeFields({
     APPLICANT_NAME: intake.applicant.fullName,
+    APPLICANT_FIRST_NAME: getFirstName(intake.applicant.fullName),
     RESPONDENT_NAME: intake.respondent.fullName,
-    APPLICANT_ADDRESS: intake.applicant.isAddressConfidential
-      ? "Confidential"
-      : intake.applicant.homeAddress,
+    APPLICANT_ADDRESS: applicantAddress,
     RESPONDENT_ADDRESS: intake.respondent.homeAddress,
     COURT_LOCATION: intake.courtLocation,
     CHILD_1_NAME: firstChild?.fullName,
     CHILD_1_DOB: firstChild?.dateOfBirth,
-    CHILD_1_AGE: calculateAge(firstChild?.dateOfBirth ?? ""),
+    CHILD_1_AGE: childAge,
     APPLICATION_TYPE_1: intake.selectedApplications[0],
     APPLICATION_TYPE_2: intake.selectedApplications[1],
     APPLICATION_TYPE_3: intake.selectedApplications[2],
+    applicant_dob: intake.applicant.dateOfBirth,
+    applicant_home_address: applicantAddress,
+    applicant_occupation: intake.applicant.occupation,
+    applicant_phone_number: intake.applicant.mobilePhone,
+    child_1_dob: firstChild?.dateOfBirth,
+    child_1_name: firstChild?.fullName,
+    date_today: today,
+    "date_today ": today,
+    Date_today: today,
+    todays_date: today,
+    respondent_age: calculateAge(intake.respondent.dateOfBirth),
+    respondent_dob: intake.respondent.dateOfBirth,
+    respondent_home_address: intake.respondent.homeAddress,
+    respondent_occupation: intake.respondent.occupation,
+    respondent_work_address: intake.respondent.workAddress,
+    respondents_relationship_to_children:
+      firstChild?.respondentRelationshipToChild ?? "",
   });
+}
+
+export function buildInformationSheetMergeFields(matter: MatterFile): MergeFields {
+  return buildMatterMergeFields(matter);
 }
 
 export function buildDocumentGenerationInput(
@@ -146,16 +183,11 @@ export function buildDocumentGenerationInput(
   documentType: DocumentType,
   template: UploadedTemplate | null = null,
 ): DocumentGenerationInput {
-  const mergeFields =
-    documentType === "information_sheet"
-      ? buildInformationSheetMergeFields(matter)
-      : {};
-
   return {
     matterId: matter.id,
     documentType,
     template,
-    mergeFields: normalizeMergeFields(mergeFields),
+    mergeFields: buildMatterMergeFields(matter),
   };
 }
 
