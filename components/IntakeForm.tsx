@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import {
   applicationTypes,
   courts,
@@ -140,28 +140,11 @@ function SelectField({
   );
 }
 
-function generateDomesticViolenceDraft(matter: MatterFile): string {
-  const applicant = matter.intake.applicant.fullName || "the applicant";
-  const respondent = matter.intake.respondent.fullName || "the respondent";
-  const history = matter.intake.domesticViolenceNotes.history.trim();
-  const recentEvents = matter.intake.domesticViolenceNotes.recentEvents.trim();
-
-  if (!history && !recentEvents) {
-    return "";
-  }
-
-  return [
-    `I am ${applicant}. This affidavit concerns my relationship with ${respondent}.`,
-    history ? `History of domestic violence:\n${history}` : "",
-    recentEvents ? `Recent events leading to this application:\n${recentEvents}` : "",
-  ]
-    .filter(Boolean)
-    .join("\n\n");
-}
-
 export default function IntakeForm() {
   const [matter, setMatter] = useState<MatterFile>(() => createEmptyMatter());
-  const draft = useMemo(() => generateDomesticViolenceDraft(matter), [matter]);
+  const [affidavitDraft, setAffidavitDraft] = useState("");
+  const [isDraftingAffidavit, setIsDraftingAffidavit] = useState(false);
+  const [affidavitDraftError, setAffidavitDraftError] = useState("");
 
   const setMatterValue = (field: "legalAidNumber" | "clientName", value: string) => {
     setMatter((current) => ({ ...current, [field]: value, updatedAt: new Date().toISOString() }));
@@ -192,6 +175,63 @@ export default function IntakeForm() {
       },
     }));
   };
+
+  useEffect(() => {
+    const historyNotes = matter.intake.domesticViolenceNotes.history.trim();
+    const recentEventsNotes = matter.intake.domesticViolenceNotes.recentEvents.trim();
+
+    if (!historyNotes && !recentEventsNotes) {
+      setAffidavitDraft("");
+      setAffidavitDraftError("");
+      setIsDraftingAffidavit(false);
+      return;
+    }
+
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(async () => {
+      setIsDraftingAffidavit(true);
+      setAffidavitDraftError("");
+
+      try {
+        const response = await fetch("/api/draft-affidavit", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            applicantName: matter.intake.applicant.fullName,
+            respondentName: matter.intake.respondent.fullName,
+            historyNotes,
+            recentEventsNotes,
+          }),
+          signal: controller.signal,
+        });
+
+        if (!response.ok) {
+          throw new Error("Drafting request failed");
+        }
+
+        const data = (await response.json()) as { draft?: string };
+        setAffidavitDraft(data.draft ?? "");
+      } catch (error) {
+        if (!controller.signal.aborted) {
+          setAffidavitDraftError("Draft could not be updated.");
+        }
+      } finally {
+        if (!controller.signal.aborted) {
+          setIsDraftingAffidavit(false);
+        }
+      }
+    }, 1000);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+      controller.abort();
+    };
+  }, [
+    matter.intake.applicant.fullName,
+    matter.intake.respondent.fullName,
+    matter.intake.domesticViolenceNotes.history,
+    matter.intake.domesticViolenceNotes.recentEvents,
+  ]);
 
   const toggleApplication = (application: ApplicationType) => {
     const selected = matter.intake.selectedApplications.includes(application)
@@ -404,8 +444,12 @@ export default function IntakeForm() {
             <TextArea label="Recent Events Notes" value={matter.intake.domesticViolenceNotes.recentEvents} onChange={(value) => setIntakeValue("domesticViolenceNotes", { ...matter.intake.domesticViolenceNotes, recentEvents: value })} rows={10} placeholder="Type the events leading to this application." />
           </div>
           <label className="block">
-            <span className="mb-1.5 block text-sm font-medium text-slate-950">Affidavit Draft</span>
-            <textarea value={draft} readOnly rows={22} className="w-full resize-y rounded-md border border-slate-300 bg-slate-50 px-3 py-2 text-sm leading-6 text-slate-950 shadow-sm outline-none" />
+            <span className="mb-1.5 flex items-center justify-between gap-3 text-sm font-medium text-slate-950">
+              <span>Affidavit Draft</span>
+              {isDraftingAffidavit ? <span className="text-xs font-medium text-sky-700">Drafting...</span> : null}
+            </span>
+            <textarea value={affidavitDraft} readOnly rows={22} className="w-full resize-y rounded-md border border-slate-300 bg-slate-50 px-3 py-2 text-sm leading-6 text-slate-950 shadow-sm outline-none" />
+            {affidavitDraftError ? <span className="mt-2 block text-xs text-red-600">{affidavitDraftError}</span> : null}
           </label>
         </div>
       </Card>
