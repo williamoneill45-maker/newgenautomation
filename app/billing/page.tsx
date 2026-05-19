@@ -10,7 +10,7 @@ import {
 } from "../../lib/billing-automation";
 
 const examplePrompt =
-  "I attended a pre hearing conference today at Waitakere Court for Phillip Jones from 12pm-1pm, parking was $12.50, office disbursements of $15, use form 32b.";
+  "Pre-hearing conference from 11:00am-11:30am at Waitakere Court, use form 33a.";
 
 const emptyMatter = {
   matterId: "matter-demo-phillip-jones",

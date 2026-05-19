@@ -227,6 +227,13 @@ function createBillingId(prefix: string): string {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
+function createInvoiceNumber(): string {
+  const now = new Date();
+  const datePart = now.toISOString().slice(0, 10).replace(/-/g, "");
+  const timePart = now.toISOString().slice(11, 19).replace(/:/g, "");
+  return `INV-${datePart}-${timePart}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
+}
+
 function inferCategory(prompt: string): BillingCategory {
   const text = prompt.toLowerCase();
 
@@ -417,7 +424,7 @@ export function createBillingDraft(input: BillingDraftInput): BillingDraft {
     matterId: matter.matterId?.trim() || createBillingId("matter"),
     clientName: extractClient(prompt, matter.clientName),
     legalAidNumber: matter.legalAidNumber?.trim() ?? "",
-    invoiceNumber: matter.invoiceNumber?.trim() ?? "",
+    invoiceNumber: matter.invoiceNumber?.trim() || createInvoiceNumber(),
     matterDetails: matter.matterDetails?.trim() ?? "",
     proceedingType: inferProceedingType(prompt, matter.proceedingType),
     formType,

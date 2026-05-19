@@ -2,6 +2,7 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 
 import { NextResponse } from "next/server";
+import JSZip from "jszip";
 
 import {
   billingTemplateDefinitions,
@@ -25,6 +26,25 @@ async function readBillingTemplate(sourcePath: string): Promise<ArrayBuffer> {
   ) as ArrayBuffer;
 }
 
+async function validateBillingTemplatePackage(template: ArrayBuffer, sourcePath: string): Promise<string | null> {
+  const bytes = new Uint8Array(template);
+  const startsWithZipHeader =
+    bytes[0] === 0x50 &&
+    bytes[1] === 0x4b &&
+    (bytes[2] === 0x03 || bytes[2] === 0x05 || bytes[2] === 0x07);
+
+  if (!startsWithZipHeader) {
+    return `${sourcePath} is not a modern OpenXML .dotx package. Re-save the form in Word using the Word Template (.dotx) format, then upload it again.`;
+  }
+
+  const zip = await JSZip.loadAsync(template);
+  if (!zip.file("word/document.xml")) {
+    return `${sourcePath} is missing word/document.xml, so it cannot be populated as a Word form template.`;
+  }
+
+  return null;
+}
+
 export async function POST(request: Request) {
   try {
     const body = (await request.json()) as {
@@ -45,6 +65,11 @@ export async function POST(request: Request) {
 
     const templateDefinition = billingTemplateDefinitions[body.record.formType];
     const sourceTemplate = await readBillingTemplate(templateDefinition.sourcePath);
+    const templateError = await validateBillingTemplatePackage(sourceTemplate, templateDefinition.sourcePath);
+    if (templateError) {
+      return NextResponse.json({ error: templateError }, { status: 422 });
+    }
+
     const fields = buildBillingMergeFields(body.record);
     const { buffer, report } = await mergeDocxTemplate(sourceTemplate, fields, {
       outputType: "document",
