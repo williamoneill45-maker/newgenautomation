@@ -114,7 +114,7 @@ export type BillingRecordRow = {
 };
 
 export const billingTemplatePaths: Record<BillingFormType, string> = {
-  "32B": "templates/billing/Form32B.dotx",
+  "32B": "templates/Form 32B - Master Template.docx",
   "33A": "templates/Form 33a . Final Template . 1.docx",
 };
 
@@ -266,10 +266,10 @@ function inferCategory(prompt: string): BillingCategory {
   if (text.includes("pre hearing matters") || text.includes("pre-hearing matters")) {
     return "pre_hearing_matters";
   }
-  if (text.includes("judicial conference")) return "judicial_conference";
   if (text.includes("pre hearing conference") || text.includes("pre-hearing conference")) {
-    return "judicial_conference";
+    return "pre_hearing_conference";
   }
+  if (text.includes("judicial conference")) return "judicial_conference";
   if (text.includes("formal proof")) return "formal_proof";
   if (text.includes("instructing agent") || text.includes("agent appears") || text.includes("agent appearance")) {
     return "instructing_agent";
@@ -282,10 +282,14 @@ function inferCategory(prompt: string): BillingCategory {
   if (text.includes("directions conference") || text.includes("direction conference")) {
     return "directions_conference";
   }
-  if (text.includes("settlement conference")) return "settlement_conference";
-  if (text.includes("lawyer for child") || text.includes("lfc")) return "lawyer_for_child_report";
+  if (text.includes("settlement conference") || text.includes("round table meeting") || text.includes("roundtable meeting")) {
+    return "settlement_conference";
+  }
+  if (text.includes("lawyer for child") || text.includes("lfc") || /\bs\s*13[23]\s+report\b/.test(text)) return "lawyer_for_child_report";
   if (text.includes("defended hearing") || text.includes("short cause fixture")) return "defended_hearing";
-  if (text.includes("consent memorandum") || text.includes("consent memo")) return "consent_memorandum";
+  if (text.includes("consent memorandum") || text.includes("consent memo") || text.includes("memorandum of consent") || /\bmoc\b/.test(text)) {
+    return "consent_memorandum";
+  }
   if (text.includes("judge") && text.includes("direction")) return "complying_judges_directions";
 
   return "general_billing_entry";

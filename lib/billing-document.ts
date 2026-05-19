@@ -4,6 +4,7 @@ import {
   type BillingFormType,
   type BillingRecord,
 } from "./billing-automation";
+import { form32BFeeRules } from "./form32b-rules";
 import { form33AFeeRules } from "./form33a-rules";
 
 export const approvedBillingPlaceholderKeys = [
@@ -126,6 +127,46 @@ export const approvedBillingPlaceholderKeys = [
   "DH_AGENT_TOTAL",
   "AF_D_H",
   "DPO",
+  "PHM",
+  "AF_PHM",
+  "IA_QTY",
+  "IA_TOTAL",
+  "FPH_P_QTY",
+  "FPH_P_UNIT",
+  "FPH_P_TOTAL",
+  "FPH_H_QTY",
+  "FPH_H_UNIT",
+  "FPH_H_TOTAL",
+  "SC_P_QTY",
+  "SC_P_UNIT",
+  "SC_P_TOTAL",
+  "SC_H_QTY",
+  "SC_H_UNIT",
+  "SC_H_TOTAL",
+  "MOC_QTY",
+  "MOC_UNIT",
+  "MOC_TOTAL",
+  "SR_QTY",
+  "SR_UNIT",
+  "SR_TOTAL",
+  "DF_P_QTY",
+  "DF_P_UNIT",
+  "DF_P_TOTAL",
+  "DF_H_QTY",
+  "DF_H_UNIT",
+  "DF_H_TOTAL",
+  "DC_P_QTY",
+  "DC_P_UNIT",
+  "DC_P_TOTAL",
+  "DC_H_QTY",
+  "DC_H_UNIT",
+  "DC_H_TOTAL",
+  "PHC_P_QTY",
+  "PHC_P_UNIT",
+  "PHC_P_TOTAL",
+  "PHC_H_QTY",
+  "PHC_H_UNIT",
+  "PHC_H_TOTAL",
   "mileage",
   "travel time",
   "travel_time",
@@ -322,6 +363,121 @@ function calculateForm33AAmounts(record: BillingRecord) {
   };
 }
 
+function calculateForm32BAmounts(record: BillingRecord) {
+  const draft = record.draft;
+  const sourcePrompt = draft.sourcePrompt.toLowerCase();
+  const fixedFees = form32BFeeRules.fixedFees;
+  const halfHourUnits = calculateHalfHourUnits(draft.attendanceHours);
+  const isPreHearingMatters = draft.category === "pre_hearing_matters";
+  const isComplyingJudgesDirections = draft.category === "complying_judges_directions";
+  const isAgent = draft.category === "instructing_agent";
+  const isFormalProof = draft.category === "formal_proof";
+  const isSettlementConference = draft.category === "settlement_conference";
+  const isMemorandumOfConsent = draft.category === "consent_memorandum";
+  const isReport = draft.category === "lawyer_for_child_report";
+  const isAdditionalFactors = draft.category === "additional_factors";
+  const isDefendedHearing = draft.category === "defended_hearing";
+  const isDirectionsConference = draft.category === "directions_conference";
+  const isPreHearingConference = draft.category === "pre_hearing_conference";
+  const preHearingMatters = isPreHearingMatters ? fixedFees.preHearingMatters : 0;
+  const complyingJudgesDirections = isComplyingJudgesDirections
+    ? fixedFees.complyingJudgesDirections
+    : 0;
+  const instructingAgent = isAgent ? fixedFees.instructingAgent : 0;
+  const formalProofPreparation = isFormalProof ? fixedFees.formalProofPreparation : 0;
+  const formalProofHearingUnits = isFormalProof ? halfHourUnits : 0;
+  const formalProofHearingTotal = formalProofHearingUnits * fixedFees.formalProofHearingPerHalfHour;
+  const settlementConferencePreparation = isSettlementConference
+    ? fixedFees.settlementConferencePreparation
+    : 0;
+  const settlementConferenceHearingUnits = isSettlementConference ? halfHourUnits : 0;
+  const settlementConferenceHearingTotal =
+    settlementConferenceHearingUnits * fixedFees.settlementConferenceHearingPerHalfHour;
+  const memorandumOfConsent = isMemorandumOfConsent ? fixedFees.memorandumOfConsent : 0;
+  const report = isReport ? fixedFees.report : 0;
+  const additionalFactorsPreHearingMatters = isAdditionalFactors
+    ? fixedFees.additionalFactorsPreHearingMatters
+    : 0;
+  const defendedHearingPreparation = isDefendedHearing ? fixedFees.defendedHearingPreparation : 0;
+  const defendedHearingUnits = isDefendedHearing ? halfHourUnits : 0;
+  const defendedHearingTotal = defendedHearingUnits * fixedFees.defendedHearingPerHalfHour;
+  const directionsConferencePreparation = isDirectionsConference
+    ? fixedFees.directionsConferencePreparation
+    : 0;
+  const directionsConferenceHearingUnits = isDirectionsConference ? halfHourUnits : 0;
+  const directionsConferenceHearingTotal =
+    directionsConferenceHearingUnits * fixedFees.directionsConferenceHearingPerHalfHour;
+  const preHearingConferencePreparation = isPreHearingConference
+    ? fixedFees.preHearingConferencePreparation
+    : 0;
+  const preHearingConferenceHearingUnits = isPreHearingConference ? halfHourUnits : 0;
+  const preHearingConferenceHearingTotal =
+    preHearingConferenceHearingUnits * fixedFees.preHearingConferenceHearingPerHalfHour;
+  const travelTimeAmount = (draft.travel?.travelTimeValue ?? 0) *
+    form32BFeeRules.disbursements.travelTimeHourlyRate;
+  const totalApplication =
+    preHearingMatters +
+    complyingJudgesDirections +
+    instructingAgent +
+    formalProofPreparation +
+    formalProofHearingTotal +
+    settlementConferencePreparation +
+    settlementConferenceHearingTotal +
+    memorandumOfConsent +
+    report +
+    additionalFactorsPreHearingMatters +
+    defendedHearingPreparation +
+    defendedHearingTotal +
+    directionsConferencePreparation +
+    directionsConferenceHearingTotal +
+    preHearingConferencePreparation +
+    preHearingConferenceHearingTotal;
+  const totalFixedFeePlusActivities = 0;
+  const totalDisbursementsExcludingMileage = draft.parking + draft.officeDisbursements + travelTimeAmount;
+  const totalGst =
+    (totalApplication + totalFixedFeePlusActivities + totalDisbursementsExcludingMileage) *
+    form32BFeeRules.gstRate;
+  const totalMileage = (draft.travel?.mileageValue ?? 0) * form32BFeeRules.mileageRatePerKm;
+  const total =
+    totalApplication +
+    totalFixedFeePlusActivities +
+    totalDisbursementsExcludingMileage +
+    totalGst +
+    totalMileage;
+
+  return {
+    sourcePrompt,
+    preHearingMatters,
+    complyingJudgesDirections,
+    instructingAgent,
+    formalProofPreparation,
+    formalProofHearingUnits,
+    formalProofHearingTotal,
+    settlementConferencePreparation,
+    settlementConferenceHearingUnits,
+    settlementConferenceHearingTotal,
+    memorandumOfConsent,
+    report,
+    additionalFactorsPreHearingMatters,
+    defendedHearingPreparation,
+    defendedHearingUnits,
+    defendedHearingTotal,
+    directionsConferencePreparation,
+    directionsConferenceHearingUnits,
+    directionsConferenceHearingTotal,
+    preHearingConferencePreparation,
+    preHearingConferenceHearingUnits,
+    preHearingConferenceHearingTotal,
+    travelTimeAmount,
+    totalApplication,
+    totalFixedFeePlusActivities,
+    totalDisbursementsExcludingMileage,
+    totalGst,
+    totalMileage,
+    total,
+  };
+}
+
 function formatDisplayDate(value: string): string {
   const date = new Date(`${value}T00:00:00`);
   if (Number.isNaN(date.getTime())) return value;
@@ -336,6 +492,7 @@ function formatDisplayDate(value: string): string {
 export function buildBillingMergeFields(record: BillingRecord): MergeFields {
   const draft = record.draft;
   const form33AAmounts = calculateForm33AAmounts(record);
+  const form32BAmounts = calculateForm32BAmounts(record);
   const attendanceTime = draft.startTime && draft.endTime ? `${draft.startTime}-${draft.endTime}` : "";
   const progressResultsWording = buildProgressResultsWording(draft);
   const totalDisbursements = draft.parking + draft.officeDisbursements;
@@ -445,12 +602,76 @@ export function buildBillingMergeFields(record: BillingRecord): MergeFields {
     DH_AGENT_TOTAL: formatMoney(form33AAmounts.defendedHearingAgent),
     AF_D_H: formatMoney(form33AAmounts.defendedHearingAdditionalFactors),
     DPO: formatMoney(form33AAmounts.defendedProtectionOrder),
+    PHM: formatMoney(form32BAmounts.preHearingMatters),
+    AF_PHM: formatMoney(form32BAmounts.additionalFactorsPreHearingMatters),
+    IA_QTY: form32BAmounts.instructingAgent ? "1" : "",
+    IA_TOTAL: formatMoney(form32BAmounts.instructingAgent),
+    FPH_P_QTY: form32BAmounts.formalProofPreparation ? "1" : "",
+    FPH_P_UNIT: form32BAmounts.formalProofPreparation
+      ? formatMoney(form32BFeeRules.fixedFees.formalProofPreparation)
+      : "",
+    FPH_P_TOTAL: formatMoney(form32BAmounts.formalProofPreparation),
+    FPH_H_QTY: formatNumber(form32BAmounts.formalProofHearingUnits),
+    FPH_H_UNIT: form32BAmounts.formalProofHearingUnits
+      ? formatMoney(form32BFeeRules.fixedFees.formalProofHearingPerHalfHour)
+      : "",
+    FPH_H_TOTAL: formatMoney(form32BAmounts.formalProofHearingTotal),
+    SC_P_QTY: form32BAmounts.settlementConferencePreparation ? "1" : "",
+    SC_P_UNIT: form32BAmounts.settlementConferencePreparation
+      ? formatMoney(form32BFeeRules.fixedFees.settlementConferencePreparation)
+      : "",
+    SC_P_TOTAL: formatMoney(form32BAmounts.settlementConferencePreparation),
+    SC_H_QTY: formatNumber(form32BAmounts.settlementConferenceHearingUnits),
+    SC_H_UNIT: form32BAmounts.settlementConferenceHearingUnits
+      ? formatMoney(form32BFeeRules.fixedFees.settlementConferenceHearingPerHalfHour)
+      : "",
+    SC_H_TOTAL: formatMoney(form32BAmounts.settlementConferenceHearingTotal),
+    MOC_QTY: form32BAmounts.memorandumOfConsent ? "1" : "",
+    MOC_UNIT: form32BAmounts.memorandumOfConsent
+      ? formatMoney(form32BFeeRules.fixedFees.memorandumOfConsent)
+      : "",
+    MOC_TOTAL: formatMoney(form32BAmounts.memorandumOfConsent),
+    SR_QTY: form32BAmounts.report ? "1" : "",
+    SR_UNIT: form32BAmounts.report
+      ? formatMoney(form32BFeeRules.fixedFees.report)
+      : "",
+    SR_TOTAL: formatMoney(form32BAmounts.report),
+    DF_P_QTY: form32BAmounts.defendedHearingPreparation ? "1" : "",
+    DF_P_UNIT: form32BAmounts.defendedHearingPreparation
+      ? formatMoney(form32BFeeRules.fixedFees.defendedHearingPreparation)
+      : "",
+    DF_P_TOTAL: formatMoney(form32BAmounts.defendedHearingPreparation),
+    DF_H_QTY: formatNumber(form32BAmounts.defendedHearingUnits),
+    DF_H_UNIT: form32BAmounts.defendedHearingUnits
+      ? formatMoney(form32BFeeRules.fixedFees.defendedHearingPerHalfHour)
+      : "",
+    DF_H_TOTAL: formatMoney(form32BAmounts.defendedHearingTotal),
+    DC_P_QTY: form32BAmounts.directionsConferencePreparation ? "1" : "",
+    DC_P_UNIT: form32BAmounts.directionsConferencePreparation
+      ? formatMoney(form32BFeeRules.fixedFees.directionsConferencePreparation)
+      : "",
+    DC_P_TOTAL: formatMoney(form32BAmounts.directionsConferencePreparation),
+    DC_H_QTY: formatNumber(form32BAmounts.directionsConferenceHearingUnits),
+    DC_H_UNIT: form32BAmounts.directionsConferenceHearingUnits
+      ? formatMoney(form32BFeeRules.fixedFees.directionsConferenceHearingPerHalfHour)
+      : "",
+    DC_H_TOTAL: formatMoney(form32BAmounts.directionsConferenceHearingTotal),
+    PHC_P_QTY: form32BAmounts.preHearingConferencePreparation ? "1" : "",
+    PHC_P_UNIT: form32BAmounts.preHearingConferencePreparation
+      ? formatMoney(form32BFeeRules.fixedFees.preHearingConferencePreparation)
+      : "",
+    PHC_P_TOTAL: formatMoney(form32BAmounts.preHearingConferencePreparation),
+    PHC_H_QTY: formatNumber(form32BAmounts.preHearingConferenceHearingUnits),
+    PHC_H_UNIT: form32BAmounts.preHearingConferenceHearingUnits
+      ? formatMoney(form32BFeeRules.fixedFees.preHearingConferenceHearingPerHalfHour)
+      : "",
+    PHC_H_TOTAL: formatMoney(form32BAmounts.preHearingConferenceHearingTotal),
     mileage: formatNumber(draft.travel?.mileageValue),
     "travel time": formatNumber(draft.travel?.travelTimeValue),
     travel_time: formatNumber(draft.travel?.travelTimeValue),
-    tt_total: formatMoney(form33AAmounts.travelTimeAmount),
-    "x*$1.17": formatMoney(form33AAmounts.totalMileage),
-    "x*$63.00": formatMoney(form33AAmounts.travelTimeAmount),
+    tt_total: formatMoney(record.formType === "32B" ? form32BAmounts.travelTimeAmount : form33AAmounts.travelTimeAmount),
+    "x*$1.17": formatMoney(record.formType === "32B" ? form32BAmounts.totalMileage : form33AAmounts.totalMileage),
+    "x*$63.00": formatMoney(record.formType === "32B" ? form32BAmounts.travelTimeAmount : form33AAmounts.travelTimeAmount),
     "x*$67.00": [
       "",
       formatMoney(form33AAmounts.judicialConferenceHearingTotal),
@@ -464,13 +685,13 @@ export function buildBillingMergeFields(record: BillingRecord): MergeFields {
     "x*$160.00": "",
     "x*$190.00": ["", "", ""],
     "x*$430.00": "",
-    ta: formatMoney(form33AAmounts.totalApplication),
-    tffp: formatMoney(form33AAmounts.totalFixedFeePlusActivities),
-    td: formatMoney(form33AAmounts.totalDisbursementsExcludingMileage),
-    "td-m": formatMoney(form33AAmounts.totalDisbursementsExcludingMileage),
-    tgst: formatMoney(form33AAmounts.totalGst),
-    m_t: formatMoney(form33AAmounts.totalMileage),
-    total: formatMoney(form33AAmounts.total),
+    ta: formatMoney(record.formType === "32B" ? form32BAmounts.totalApplication : form33AAmounts.totalApplication),
+    tffp: formatMoney(record.formType === "32B" ? form32BAmounts.totalFixedFeePlusActivities : form33AAmounts.totalFixedFeePlusActivities),
+    td: formatMoney(record.formType === "32B" ? form32BAmounts.totalDisbursementsExcludingMileage : form33AAmounts.totalDisbursementsExcludingMileage),
+    "td-m": formatMoney(record.formType === "32B" ? form32BAmounts.totalDisbursementsExcludingMileage : form33AAmounts.totalDisbursementsExcludingMileage),
+    tgst: formatMoney(record.formType === "32B" ? form32BAmounts.totalGst : form33AAmounts.totalGst),
+    m_t: formatMoney(record.formType === "32B" ? form32BAmounts.totalMileage : form33AAmounts.totalMileage),
+    total: formatMoney(record.formType === "32B" ? form32BAmounts.total : form33AAmounts.total),
   };
 
   return withSnakeCaseAliases(fields);

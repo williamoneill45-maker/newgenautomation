@@ -10,6 +10,11 @@ import {
   type BillingStatus,
 } from "../../lib/billing-automation";
 import {
+  form32BManagementRules,
+  form32BSettingsStorageKey,
+  type Form32BRuleSettings,
+} from "../../lib/form32b-rules";
+import {
   form33AManagementRules,
   form33ASettingsStorageKey,
   type Form33ARuleSettings,
@@ -39,6 +44,20 @@ const categoryPrimaryRuleMap: Record<string, string> = {
   defended_protection_order: "defended-protection-order",
   instructing_agent: "instructing-agent",
   additional_factors: "additional-factors",
+};
+
+const form32BCategoryPrimaryRuleMap: Record<string, string> = {
+  pre_hearing_matters: "pre-hearing-matters",
+  complying_judges_directions: "complying-judges-directions",
+  instructing_agent: "instructing-agent",
+  formal_proof: "formal-proof",
+  settlement_conference: "settlement-conference",
+  consent_memorandum: "memorandum-of-consent",
+  lawyer_for_child_report: "report",
+  additional_factors: "additional-factors",
+  defended_hearing: "defended-hearing",
+  directions_conference: "directions-conference",
+  pre_hearing_conference: "pre-hearing-conference",
 };
 
 type EditableBillingDraftField =
@@ -94,6 +113,18 @@ export default function BillingPage() {
     }
   }
 
+  function readForm32BSettings(): Form32BRuleSettings | null {
+    const storedSettings = window.localStorage.getItem(form32BSettingsStorageKey);
+    if (!storedSettings) return null;
+
+    try {
+      return JSON.parse(storedSettings) as Form32BRuleSettings;
+    } catch {
+      window.localStorage.removeItem(form32BSettingsStorageKey);
+      return null;
+    }
+  }
+
   function applyDraftTokens(wording: string, draft: BillingDraft): string {
     const attendanceTime = draft.startTime && draft.endTime ? `${draft.startTime}-${draft.endTime}` : "";
 
@@ -104,15 +135,14 @@ export default function BillingPage() {
   }
 
   function applyForm33ASettings(record: BillingRecord): BillingRecord {
-    if (record.formType !== "33A") return record;
-
-    const settings = readForm33ASettings();
-    if (!settings) return record;
-
-    const ruleId = categoryPrimaryRuleMap[record.draft.category];
-    const configuredWording = ruleId ? settings.wordingByRuleId[ruleId] : "";
+    const isForm33A = record.formType === "33A";
+    const settings = isForm33A ? readForm33ASettings() : readForm32BSettings();
+    const rules = isForm33A ? form33AManagementRules : form32BManagementRules;
+    const ruleMap = isForm33A ? categoryPrimaryRuleMap : form32BCategoryPrimaryRuleMap;
+    const ruleId = ruleMap[record.draft.category];
+    const configuredWording = ruleId ? settings?.wordingByRuleId[ruleId] : "";
     const fallbackWording = ruleId
-      ? form33AManagementRules.find((rule) => rule.id === ruleId)?.standardWording
+      ? rules.find((rule) => rule.id === ruleId)?.standardWording
       : "";
     const standardWording = configuredWording || fallbackWording;
 
@@ -259,10 +289,10 @@ export default function BillingPage() {
           </Link>
           <div className="flex items-center gap-3">
             <Link
-              href="/billing-management/form-33a"
+              href="/billing-management/form-32b"
               className="text-sm font-medium text-slate-600 transition hover:text-slate-950"
             >
-              Form33A management
+              Form32B management
             </Link>
             <span className="rounded-md bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-900">
               Forms 32B / 33A generation
