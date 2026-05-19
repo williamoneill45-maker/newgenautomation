@@ -24,6 +24,7 @@ export type BillingMatterInput = {
 
 export type BillingDraftInput = {
   prompt: string;
+  formType?: BillingFormType;
   matter?: BillingMatterInput;
   uploadedEvidence?: string[];
 };
@@ -398,7 +399,7 @@ function applyAttendanceTime(wording: string, attendance: { startTime: string; e
 export function createBillingDraft(input: BillingDraftInput): BillingDraft {
   const prompt = input.prompt.trim();
   const matter = input.matter ?? {};
-  const formType = inferFormType(prompt);
+  const formType = input.formType ?? inferFormType(prompt);
   const category = inferCategory(prompt);
   const court = extractCourt(prompt);
   const unsupportedCourt = extractUnsupportedCourt(prompt);

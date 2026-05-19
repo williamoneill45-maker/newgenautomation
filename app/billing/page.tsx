@@ -5,6 +5,7 @@ import { FormEvent, useEffect, useState } from "react";
 import {
   travelReferences,
   type BillingDraft,
+  type BillingFormType,
   type BillingRecord,
   type BillingStatus,
 } from "../../lib/billing-automation";
@@ -15,7 +16,7 @@ const examplePrompt =
 const emptyMatter = {
   matterId: "matter-demo-phillip-jones",
   clientName: "Phillip Jones",
-  legalAidNumber: "",
+  legalAidNumber: "LA-DEMO-001",
   invoiceNumber: "",
   matterDetails: "COCA parenting proceedings",
   proceedingType: "COCA / parenting",
@@ -29,7 +30,6 @@ type EditableBillingDraftField =
   | "invoiceNumber"
   | "court"
   | "date"
-  | "proceedingType"
   | "startTime"
   | "endTime"
   | "attendanceHours"
@@ -39,7 +39,7 @@ type EditableBillingDraftField =
 
 export default function BillingPage() {
   const [prompt, setPrompt] = useState(examplePrompt);
-  const [matter, setMatter] = useState(emptyMatter);
+  const [formType, setFormType] = useState<BillingFormType>("33A");
   const [selectedRecord, setSelectedRecord] = useState<BillingRecord | null>(null);
   const [records, setRecords] = useState<BillingRecord[]>([]);
   const [error, setError] = useState("");
@@ -74,7 +74,7 @@ export default function BillingPage() {
       const response = await fetch("/api/draft-billing", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt, matter }),
+        body: JSON.stringify({ prompt, formType, matter: emptyMatter }),
       });
 
       const payload = await response.json();
@@ -201,9 +201,7 @@ export default function BillingPage() {
           <p className="text-sm font-semibold uppercase tracking-wide text-sky-700">Legal aid billing</p>
           <h1 className="mt-2 text-3xl font-semibold tracking-normal text-slate-950">Billing Workbench</h1>
           <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-600">
-            Create a structured billing draft from a lawyer note, using controlled wording and stored travel references.
-            Billing records are linked to a matter/client, kept in local history, and shaped for later Supabase persistence.
-            Review or edit the draft, then generate Form 32B or 33A from the exact .dotx template in /templates/billing.
+            Enter the billing note, choose the form, review the extracted billing entry, then generate the Word document.
           </p>
         </header>
 
@@ -221,38 +219,13 @@ export default function BillingPage() {
               onChange={(event) => setPrompt(event.target.value)}
             />
 
-            <div className="mt-6 grid gap-4">
-              <Field
-                label="Matter ID"
-                value={matter.matterId}
-                onChange={(value) => setMatter((current) => ({ ...current, matterId: value }))}
-              />
-              <Field
-                label="Client name"
-                value={matter.clientName}
-                onChange={(value) => setMatter((current) => ({ ...current, clientName: value }))}
-              />
-              <Field
-                label="Legal aid number"
-                value={matter.legalAidNumber}
-                onChange={(value) => setMatter((current) => ({ ...current, legalAidNumber: value }))}
-              />
-              <Field
-                label="Invoice number"
-                value={matter.invoiceNumber}
-                onChange={(value) => setMatter((current) => ({ ...current, invoiceNumber: value }))}
-              />
-              <Field
-                label="Matter details"
-                value={matter.matterDetails}
-                onChange={(value) => setMatter((current) => ({ ...current, matterDetails: value }))}
-              />
-              <Field
-                label="Proceeding type"
-                value={matter.proceedingType}
-                onChange={(value) => setMatter((current) => ({ ...current, proceedingType: value }))}
-              />
-            </div>
+            <fieldset className="mt-6">
+              <legend className="text-sm font-medium text-slate-700">Form</legend>
+              <div className="mt-2 grid grid-cols-2 gap-2">
+                <FormChoice label="32B" selected={formType === "32B"} onSelect={() => setFormType("32B")} />
+                <FormChoice label="33A" selected={formType === "33A"} onSelect={() => setFormType("33A")} />
+              </div>
+            </fieldset>
 
             <button
               type="submit"
@@ -316,6 +289,32 @@ function Field({
   );
 }
 
+function FormChoice({
+  label,
+  selected,
+  onSelect,
+}: {
+  label: BillingFormType;
+  selected: boolean;
+  onSelect: () => void;
+}) {
+  return (
+    <label className={selected
+      ? "flex h-11 cursor-pointer items-center justify-center rounded-md border border-sky-500 bg-sky-50 text-sm font-semibold text-sky-800"
+      : "flex h-11 cursor-pointer items-center justify-center rounded-md border border-slate-300 bg-white text-sm font-semibold text-slate-700 transition hover:bg-slate-50"}
+    >
+      <input
+        type="radio"
+        name="form-type"
+        className="sr-only"
+        checked={selected}
+        onChange={onSelect}
+      />
+      Form {label}
+    </label>
+  );
+}
+
 function EmptyState() {
   return (
     <div className="rounded-lg border border-dashed border-slate-300 bg-white px-5 py-12 text-center shadow-form">
@@ -358,12 +357,9 @@ function DraftPanel({
         </div>
 
         <dl className="mt-5 grid gap-4 sm:grid-cols-2">
-          <Detail label="Matter ID" value={record.matterId} />
-          <Detail label="Billing record" value={record.id} />
           <Detail label="Client" value={draft.clientName || "Not identified"} />
           <Detail label="Legal aid number" value={draft.legalAidNumber || "Not supplied"} />
           <Detail label="Invoice number" value={draft.invoiceNumber || "Not supplied"} />
-          <Detail label="Proceeding" value={draft.proceedingType} />
           <Detail label="Court" value={draft.court || "Not identified"} />
           <Detail label="Date" value={draft.date} />
           <Detail label="Attendance" value={draft.startTime && draft.endTime ? `${draft.startTime}-${draft.endTime} (${draft.attendanceHours}h)` : "Not identified"} />
@@ -398,11 +394,6 @@ function DraftPanel({
             label="Billing date"
             value={draft.date}
             onChange={(value) => onDraftFieldChange(record.id, "date", value)}
-          />
-          <Field
-            label="Proceeding type"
-            value={draft.proceedingType}
-            onChange={(value) => onDraftFieldChange(record.id, "proceedingType", value)}
           />
           <Field
             label="Start time"
@@ -578,7 +569,7 @@ function HistoryPanel({
               <div>
                 <p className="text-sm font-semibold text-slate-950">{record.clientName || "Unknown client"}</p>
                 <p className="mt-1 text-xs text-slate-500">
-                  {record.matterId} | Form {record.formType} | {new Date(record.createdAt).toLocaleString()}
+                  Form {record.formType} | {new Date(record.createdAt).toLocaleString()}
                 </p>
               </div>
               <span className={record.status === "pending_evidence" ? "rounded-md bg-amber-100 px-2 py-1 text-xs font-semibold text-amber-900" : "rounded-md bg-emerald-100 px-2 py-1 text-xs font-semibold text-emerald-900"}>
