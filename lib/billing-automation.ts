@@ -108,7 +108,7 @@ export type BillingRecordRow = {
 
 export const billingTemplatePaths: Record<BillingFormType, string> = {
   "32B": "templates/billing/Form32B.dotx",
-  "33A": "templates/billing/Form33A.dotx",
+  "33A": "templates/billing/Form 33a Test Template.docx",
 };
 
 const CATEGORY_LABELS: Record<BillingCategory, string> = {

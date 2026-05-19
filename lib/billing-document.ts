@@ -68,6 +68,23 @@ export const approvedBillingPlaceholderKeys = [
   "template_path",
   "REVIEW_STATUS",
   "review_status",
+  "DATE_TODAY",
+  "date_today",
+  "CLIENTSURNAME",
+  "insert_wording_here",
+  "jcp",
+  "jca",
+  "1*jcp",
+  "1p/30 m",
+  "1p/30m*jca",
+  "ta",
+  "tffp",
+  "td",
+  "td-m",
+  "tgst",
+  "m",
+  "tm",
+  "total",
 ] as const;
 
 export type ApprovedBillingPlaceholderKey = (typeof approvedBillingPlaceholderKeys)[number];
@@ -93,6 +110,18 @@ export const billingTemplateDefinitions: Record<BillingFormType, BillingTemplate
   },
 };
 
+export const form33AFeeRules = {
+  gstRate: 0.15,
+  mileageRatePerKm: 1.17,
+  judicialConference: {
+    preparationFee: 140,
+    hearingFeePerHalfHour: 67,
+  },
+  fixedFeePlusActivities: {
+    travelTimeHourlyRate: 0,
+  },
+} as const;
+
 function formatMoney(value: number): string {
   return value ? value.toFixed(2) : "";
 }
@@ -112,8 +141,60 @@ function withSnakeCaseAliases(fields: BillingMergeFields): MergeFields {
   ) as MergeFields;
 }
 
+function getClientSurname(clientName: string): string {
+  const parts = clientName.trim().split(/\s+/);
+  return parts.length ? parts[parts.length - 1] : "";
+}
+
+function calculateHalfHourUnits(hours: number): number {
+  if (!Number.isFinite(hours) || hours <= 0) return 0;
+  return Math.max(1, Math.ceil(hours * 2));
+}
+
+function calculateForm33AAmounts(record: BillingRecord) {
+  const draft = record.draft;
+  const isJudicialConference = draft.category === "judicial_conference";
+  const judicialConferencePreparation = isJudicialConference
+    ? form33AFeeRules.judicialConference.preparationFee
+    : 0;
+  const judicialConferenceHearingUnits = isJudicialConference
+    ? calculateHalfHourUnits(draft.attendanceHours)
+    : 0;
+  const judicialConferenceHearingRate = form33AFeeRules.judicialConference.hearingFeePerHalfHour;
+  const judicialConferenceHearingTotal = judicialConferenceHearingUnits * judicialConferenceHearingRate;
+  const totalApplication = judicialConferencePreparation + judicialConferenceHearingTotal;
+  const travelTimeAmount = (draft.travel?.travelTimeValue ?? 0) *
+    form33AFeeRules.fixedFeePlusActivities.travelTimeHourlyRate;
+  const totalFixedFeePlusActivities = travelTimeAmount;
+  const totalDisbursementsExcludingMileage = draft.parking + draft.officeDisbursements;
+  const totalGst =
+    (totalApplication + totalFixedFeePlusActivities + totalDisbursementsExcludingMileage) *
+    form33AFeeRules.gstRate;
+  const totalMileage = (draft.travel?.mileageValue ?? 0) * form33AFeeRules.mileageRatePerKm;
+  const total =
+    totalApplication +
+    totalFixedFeePlusActivities +
+    totalDisbursementsExcludingMileage +
+    totalGst +
+    totalMileage;
+
+  return {
+    judicialConferencePreparation,
+    judicialConferenceHearingRate,
+    judicialConferenceHearingUnits,
+    judicialConferenceHearingTotal,
+    totalApplication,
+    totalFixedFeePlusActivities,
+    totalDisbursementsExcludingMileage,
+    totalGst,
+    totalMileage,
+    total,
+  };
+}
+
 export function buildBillingMergeFields(record: BillingRecord): MergeFields {
   const draft = record.draft;
+  const form33AAmounts = calculateForm33AAmounts(record);
   const attendanceTime = draft.startTime && draft.endTime ? `${draft.startTime}-${draft.endTime}` : "";
   const totalDisbursements = draft.parking + draft.officeDisbursements;
   const evidenceStatus = record.evidence.length
@@ -153,6 +234,22 @@ export function buildBillingMergeFields(record: BillingRecord): MergeFields {
     EVIDENCE_STATUS: evidenceStatus,
     TEMPLATE_PATH: record.templatePath,
     REVIEW_STATUS: record.status === "pending_evidence" ? "Pending evidence" : "Ready to review",
+    DATE_TODAY: draft.date,
+    CLIENTSURNAME: getClientSurname(draft.clientName),
+    insert_wording_here: draft.standardWording,
+    jcp: formatMoney(form33AAmounts.judicialConferencePreparation),
+    jca: formatMoney(form33AAmounts.judicialConferenceHearingRate),
+    "1*jcp": formatMoney(form33AAmounts.judicialConferencePreparation),
+    "1p/30 m": formatNumber(form33AAmounts.judicialConferenceHearingUnits),
+    "1p/30m*jca": formatMoney(form33AAmounts.judicialConferenceHearingTotal),
+    ta: formatMoney(form33AAmounts.totalApplication),
+    tffp: formatMoney(form33AAmounts.totalFixedFeePlusActivities),
+    td: formatMoney(form33AAmounts.totalDisbursementsExcludingMileage),
+    "td-m": formatMoney(form33AAmounts.totalDisbursementsExcludingMileage),
+    tgst: formatMoney(form33AAmounts.totalGst),
+    m: formatMoney(form33AAmounts.totalMileage),
+    tm: formatMoney(form33AAmounts.totalMileage),
+    total: formatMoney(form33AAmounts.total),
   };
 
   return withSnakeCaseAliases(fields);
