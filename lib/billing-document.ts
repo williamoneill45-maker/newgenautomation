@@ -216,6 +216,15 @@ function getClientSurname(clientName: string): string {
   return parts.length ? parts[parts.length - 1] : "";
 }
 
+function buildProgressResultsWording(draft: BillingRecord["draft"]): string {
+  return [
+    draft.standardWording,
+    draft.travel?.progressResultsWording,
+  ]
+    .filter((value): value is string => Boolean(value?.trim()))
+    .join("\n");
+}
+
 function calculateHalfHourUnits(hours: number): number {
   if (!Number.isFinite(hours) || hours <= 0) return 0;
   return Math.max(1, Math.ceil(hours * 2));
@@ -356,6 +365,7 @@ export function buildBillingMergeFields(record: BillingRecord): MergeFields {
   const draft = record.draft;
   const form33AAmounts = calculateForm33AAmounts(record);
   const attendanceTime = draft.startTime && draft.endTime ? `${draft.startTime}-${draft.endTime}` : "";
+  const progressResultsWording = buildProgressResultsWording(draft);
   const totalDisbursements = draft.parking + draft.officeDisbursements;
   const evidenceStatus = record.evidence.length
     ? record.evidence
@@ -390,7 +400,7 @@ export function buildBillingMergeFields(record: BillingRecord): MergeFields {
     PARKING: formatMoney(draft.parking),
     OFFICE_DISBURSEMENTS: formatMoney(draft.officeDisbursements),
     TOTAL_DISBURSEMENTS: formatMoney(totalDisbursements),
-    STANDARD_WORDING: draft.standardWording,
+    STANDARD_WORDING: progressResultsWording,
     EVIDENCE_STATUS: evidenceStatus,
     TEMPLATE_PATH: record.templatePath,
     REVIEW_STATUS: record.status === "pending_evidence" ? "Pending evidence" : "Ready to review",
@@ -398,8 +408,8 @@ export function buildBillingMergeFields(record: BillingRecord): MergeFields {
     "dd,mmm,yyyy": formatDisplayDate(draft.date),
     CLIENTSURNAME: getClientSurname(draft.clientName),
     "CLIENT SUR NAME": getClientSurname(draft.clientName),
-    insert_wording_here: draft.standardWording,
-    Insert_wording_here: draft.standardWording,
+    insert_wording_here: progressResultsWording,
+    Insert_wording_here: progressResultsWording,
     jcp: formatMoney(form33AAmounts.judicialConferencePreparation),
     jca: formatMoney(form33AAmounts.judicialConferenceHearingRate),
     "1*jcp": formatMoney(form33AAmounts.judicialConferencePreparation),
