@@ -277,6 +277,7 @@ export function mergePlaceholdersInXml(xml: string, fields: MergeFields): string
   }
 
   for (const malformedKey of [
+    "IA_UNIT",
     "FPH_P_QTY",
     "FPH_P_UNIT",
     "FPH_P_TOTAL",

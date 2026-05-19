@@ -130,6 +130,7 @@ export const approvedBillingPlaceholderKeys = [
   "PHM",
   "AF_PHM",
   "IA_QTY",
+  "IA_UNIT",
   "IA_TOTAL",
   "FPH_P_QTY",
   "FPH_P_UNIT",
@@ -605,6 +606,9 @@ export function buildBillingMergeFields(record: BillingRecord): MergeFields {
     PHM: formatMoney(form32BAmounts.preHearingMatters),
     AF_PHM: formatMoney(form32BAmounts.additionalFactorsPreHearingMatters),
     IA_QTY: form32BAmounts.instructingAgent ? "1" : "",
+    IA_UNIT: form32BAmounts.instructingAgent
+      ? formatMoney(form32BFeeRules.fixedFees.instructingAgent)
+      : "",
     IA_TOTAL: formatMoney(form32BAmounts.instructingAgent),
     FPH_P_QTY: form32BAmounts.formalProofPreparation ? "1" : "",
     FPH_P_UNIT: form32BAmounts.formalProofPreparation
