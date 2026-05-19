@@ -47,7 +47,7 @@ export default function DocumentDownloadPanel() {
       const url = window.URL.createObjectURL(blob);
       const anchor = document.createElement("a");
       anchor.href = url;
-      anchor.download = "family-court-demo-documents.zip";
+      anchor.download = "family-court-documents.zip";
       document.body.appendChild(anchor);
       anchor.click();
       anchor.remove();
@@ -65,7 +65,9 @@ export default function DocumentDownloadPanel() {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h2 className="text-base font-semibold text-slate-950">Document Bundle</h2>
-          <p className="mt-1 text-sm text-slate-600">Save intake before downloading.</p>
+          <p className="mt-1 text-sm text-slate-600">
+            Save intake before downloading. The bundle includes a template validation report.
+          </p>
         </div>
         <button
           type="button"
