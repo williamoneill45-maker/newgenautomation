@@ -19,7 +19,18 @@ function safeFileName(value: string): string {
 
 async function readBillingTemplate(sourcePath: string): Promise<ArrayBuffer> {
   const templatePath = path.join(process.cwd(), sourcePath);
-  const template = await readFile(templatePath);
+  let template: Buffer;
+
+  try {
+    template = await readFile(templatePath);
+  } catch (error) {
+    if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") {
+      throw new Error(`Missing billing template: ${sourcePath}. Upload the reviewed Word template at this exact path, then redeploy.`);
+    }
+
+    throw error;
+  }
+
   return template.buffer.slice(
     template.byteOffset,
     template.byteOffset + template.byteLength,
@@ -89,6 +100,10 @@ export async function POST(request: Request) {
     });
   } catch (error) {
     console.error("Billing document generation failed", error);
+    if (error instanceof Error && error.message.startsWith("Missing billing template:")) {
+      return NextResponse.json({ error: error.message }, { status: 422 });
+    }
+
     return NextResponse.json(
       { error: "Unable to generate the billing Word document from the .dotx template." },
       { status: 500 },

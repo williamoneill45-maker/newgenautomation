@@ -68,6 +68,8 @@ export type BillingDraft = {
   formType: BillingFormType;
   category: BillingCategory;
   categoryLabel: string;
+  categories: BillingCategory[];
+  categoryLabels: string[];
   court: string;
   date: string;
   startTime: string;
@@ -286,39 +288,49 @@ function createInvoiceNumber(): string {
   return `INV-${datePart}-${timePart}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
 }
 
-function inferCategory(prompt: string): BillingCategory {
+function inferCategories(prompt: string): BillingCategory[] {
   const text = prompt.toLowerCase();
+  const categories: BillingCategory[] = [];
+  const add = (category: BillingCategory) => {
+    if (!categories.includes(category)) categories.push(category);
+  };
 
   if (text.includes("pre hearing matters") || text.includes("pre-hearing matters")) {
-    return "pre_hearing_matters";
+    add("pre_hearing_matters");
   }
   if (text.includes("pre hearing conference") || text.includes("pre-hearing conference")) {
-    return "pre_hearing_conference";
+    add("pre_hearing_conference");
   }
-  if (text.includes("judicial conference")) return "judicial_conference";
-  if (text.includes("formal proof")) return "formal_proof";
+  if (text.includes("judicial conference")) add("judicial_conference");
+  if (text.includes("formal proof")) add("formal_proof");
   if (text.includes("instructing agent") || text.includes("agent appears") || text.includes("agent appearance")) {
-    return "instructing_agent";
+    add("instructing_agent");
   }
-  if (text.includes("defended protection order")) return "defended_protection_order";
-  if (text.includes("additional factors") || text.includes("additional factor")) return "additional_factors";
+  if (text.includes("defended protection order")) add("defended_protection_order");
+  if (text.includes("additional factors") || text.includes("additional factor")) add("additional_factors");
   if (text.includes("interlocutories") || text.includes("interlocutory") || text.includes("document preparation where there is no hearing")) {
-    return "interlocutories";
+    add("interlocutories");
   }
   if (text.includes("directions conference") || text.includes("direction conference")) {
-    return "directions_conference";
+    add("directions_conference");
   }
   if (text.includes("settlement conference") || text.includes("round table meeting") || text.includes("roundtable meeting")) {
-    return "settlement_conference";
+    add("settlement_conference");
   }
-  if (text.includes("lawyer for child") || text.includes("lfc") || /\bs\s*13[23]\s+report\b/.test(text)) return "lawyer_for_child_report";
-  if (text.includes("defended hearing") || text.includes("short cause fixture")) return "defended_hearing";
+  if (text.includes("lawyer for child") || text.includes("lfc") || /\bs\s*13[23]\s+report\b/.test(text)) {
+    add("lawyer_for_child_report");
+  }
+  if (text.includes("defended hearing") || text.includes("short cause fixture")) add("defended_hearing");
   if (text.includes("consent memorandum") || text.includes("consent memo") || text.includes("memorandum of consent") || /\bmoc\b/.test(text)) {
-    return "consent_memorandum";
+    add("consent_memorandum");
   }
-  if (text.includes("judge") && text.includes("direction")) return "complying_judges_directions";
+  if (text.includes("judge") && text.includes("direction")) add("complying_judges_directions");
 
-  return "general_billing_entry";
+  return categories.length ? categories : ["general_billing_entry"];
+}
+
+function inferCategory(prompt: string): BillingCategory {
+  return inferCategories(prompt)[0];
 }
 
 function inferProceedingType(prompt: string, fallback?: string): string {
@@ -423,7 +435,7 @@ function extractDate(prompt: string): string {
 }
 
 function buildEvidenceRequirements(
-  category: BillingCategory,
+  categories: BillingCategory[],
   prompt: string,
   parking: number,
   uploadedEvidence: string[],
@@ -440,15 +452,15 @@ function buildEvidenceRequirements(
 
   if (parking > 0) add("parking", "Parking receipt");
 
-  if (["pre_hearing_conference", "judicial_conference", "directions_conference", "settlement_conference"].includes(category)) {
+  if (categories.some((category) => ["pre_hearing_conference", "judicial_conference", "directions_conference", "settlement_conference"].includes(category))) {
     add("notice", "Notice of fixture or conference notice");
   }
 
-  if (category === "judicial_conference" || category === "directions_conference") {
+  if (categories.includes("judicial_conference") || categories.includes("directions_conference")) {
     add("directions", "Judge's directions");
   }
 
-  if (category === "lawyer_for_child_report" || /report/i.test(prompt)) {
+  if (categories.includes("lawyer_for_child_report") || /report/i.test(prompt)) {
     add("report", "Report relied on for billing");
   }
 
@@ -466,11 +478,19 @@ function applyBillingDate(wording: string, billingDate: string): string {
   return wording.replace("[billing date]", billingDate);
 }
 
+function buildStandardWording(formType: BillingFormType, categories: BillingCategory[], attendance: { startTime: string; endTime: string }, billingDate: string): string {
+  return categories
+    .map((category) => applyBillingDate(applyAttendanceTime(getStandardWording(formType, category), attendance), billingDate))
+    .filter((wording, index, wordings) => wording.trim() && wordings.indexOf(wording) === index)
+    .join("\n\n");
+}
+
 export function createBillingDraft(input: BillingDraftInput): BillingDraft {
   const prompt = input.prompt.trim();
   const matter = input.matter ?? {};
   const formType = input.formType ?? inferFormType(prompt);
-  const category = inferCategory(prompt);
+  const categories = inferCategories(prompt);
+  const category = categories[0];
   const court = extractCourt(prompt);
   const unsupportedCourt = extractUnsupportedCourt(prompt);
   const attendance = extractAttendance(prompt);
@@ -478,7 +498,7 @@ export function createBillingDraft(input: BillingDraftInput): BillingDraft {
   const travel = travelReferences.find((reference) => reference.court === court);
   const parking = moneyFromPrompt(prompt, /parking\s+(?:was|of)?\s*\$?([\d,.]+)/i);
   const officeDisbursements = moneyFromPrompt(prompt, /office\s+disbursements?\s+(?:was|of)?\s*\$?([\d,.]+)/i);
-  const evidenceRequirements = buildEvidenceRequirements(category, prompt, parking, input.uploadedEvidence ?? []);
+  const evidenceRequirements = buildEvidenceRequirements(categories, prompt, parking, input.uploadedEvidence ?? []);
   const warnings: string[] = [];
 
   if (unsupportedCourt) {
@@ -503,6 +523,8 @@ export function createBillingDraft(input: BillingDraftInput): BillingDraft {
     formType,
     category,
     categoryLabel: CATEGORY_LABELS[category],
+    categories,
+    categoryLabels: categories.map((detectedCategory) => CATEGORY_LABELS[detectedCategory]),
     court,
     date: billingDate,
     startTime: attendance.startTime,
@@ -511,7 +533,7 @@ export function createBillingDraft(input: BillingDraftInput): BillingDraft {
     travel,
     parking,
     officeDisbursements,
-    standardWording: applyBillingDate(applyAttendanceTime(getStandardWording(formType, category), attendance), billingDate),
+    standardWording: buildStandardWording(formType, categories, attendance, billingDate),
     evidenceRequirements,
     status,
     templateStatus:

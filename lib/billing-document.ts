@@ -246,15 +246,17 @@ function calculateHalfHourUnits(hours: number): number {
 
 function calculateForm33AAmounts(record: BillingRecord) {
   const draft = record.draft;
-  const isJudicialConference = draft.category === "judicial_conference" || draft.category === "pre_hearing_conference";
-  const isFormalProof = draft.category === "formal_proof";
-  const isInterlocutory = draft.category === "interlocutories";
-  const isPreHearingMatters = draft.category === "pre_hearing_matters";
-  const isJudgeDirections = draft.category === "complying_judges_directions";
-  const isDefendedHearing = draft.category === "defended_hearing";
-  const isDefendedProtectionOrder = draft.category === "defended_protection_order";
-  const isAdditionalFactors = draft.category === "additional_factors";
-  const isAgent = draft.category === "instructing_agent";
+  const categories = draft.categories?.length ? draft.categories : [draft.category];
+  const hasCategory = (category: BillingRecord["draft"]["category"]) => categories.includes(category);
+  const isJudicialConference = hasCategory("judicial_conference") || hasCategory("pre_hearing_conference");
+  const isFormalProof = hasCategory("formal_proof");
+  const isInterlocutory = hasCategory("interlocutories");
+  const isPreHearingMatters = hasCategory("pre_hearing_matters");
+  const isJudgeDirections = hasCategory("complying_judges_directions");
+  const isDefendedHearing = hasCategory("defended_hearing");
+  const isDefendedProtectionOrder = hasCategory("defended_protection_order");
+  const isAdditionalFactors = hasCategory("additional_factors");
+  const isAgent = hasCategory("instructing_agent");
   const sourcePrompt = draft.sourcePrompt?.toLowerCase() ?? "";
   const isFormalProofAgent = isAgent && sourcePrompt.includes("formal proof");
   const isDefendedHearingAgent =
@@ -369,17 +371,19 @@ function calculateForm32BAmounts(record: BillingRecord) {
   const sourcePrompt = draft.sourcePrompt.toLowerCase();
   const fixedFees = form32BFeeRules.fixedFees;
   const halfHourUnits = calculateHalfHourUnits(draft.attendanceHours);
-  const isPreHearingMatters = draft.category === "pre_hearing_matters";
-  const isComplyingJudgesDirections = draft.category === "complying_judges_directions";
-  const isAgent = draft.category === "instructing_agent";
-  const isFormalProof = draft.category === "formal_proof";
-  const isSettlementConference = draft.category === "settlement_conference";
-  const isMemorandumOfConsent = draft.category === "consent_memorandum";
-  const isReport = draft.category === "lawyer_for_child_report";
-  const isAdditionalFactors = draft.category === "additional_factors";
-  const isDefendedHearing = draft.category === "defended_hearing";
-  const isDirectionsConference = draft.category === "directions_conference";
-  const isPreHearingConference = draft.category === "pre_hearing_conference";
+  const categories = draft.categories?.length ? draft.categories : [draft.category];
+  const hasCategory = (category: BillingRecord["draft"]["category"]) => categories.includes(category);
+  const isPreHearingMatters = hasCategory("pre_hearing_matters");
+  const isComplyingJudgesDirections = hasCategory("complying_judges_directions");
+  const isAgent = hasCategory("instructing_agent");
+  const isFormalProof = hasCategory("formal_proof");
+  const isSettlementConference = hasCategory("settlement_conference");
+  const isMemorandumOfConsent = hasCategory("consent_memorandum");
+  const isReport = hasCategory("lawyer_for_child_report");
+  const isAdditionalFactors = hasCategory("additional_factors");
+  const isDefendedHearing = hasCategory("defended_hearing");
+  const isDirectionsConference = hasCategory("directions_conference");
+  const isPreHearingConference = hasCategory("pre_hearing_conference");
   const preHearingMatters = isPreHearingMatters ? fixedFees.preHearingMatters : 0;
   const complyingJudgesDirections = isComplyingJudgesDirections
     ? fixedFees.complyingJudgesDirections

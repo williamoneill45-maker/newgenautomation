@@ -1,9 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useState } from "react";
 import {
   travelReferences,
+  type BillingCategory,
   type BillingDraft,
   type BillingFormType,
   type BillingRecord,
@@ -21,7 +22,7 @@ import {
 } from "../../lib/form33a-rules";
 
 const examplePrompt =
-  "Pre-hearing conference from 11:00am-11:30am at Waitakere Court, use form 33a.";
+  "Pre-hearing conference and memorandum of consent from 11:00am-11:30am at Waitakere Court, parking $12.";
 
 const emptyMatter = {
   matterId: "matter-demo-phillip-jones",
@@ -31,8 +32,6 @@ const emptyMatter = {
   matterDetails: "COCA parenting proceedings",
   proceedingType: "COCA / parenting",
 };
-
-const billingHistoryStorageKey = "newgenautomation.billing.records";
 
 const categoryPrimaryRuleMap: Record<string, string> = {
   judicial_conference: "judicial-conference",
@@ -45,6 +44,28 @@ const categoryPrimaryRuleMap: Record<string, string> = {
   instructing_agent: "instructing-agent",
   additional_factors: "additional-factors",
 };
+
+const categoryLabels: Record<BillingCategory, string> = {
+  pre_hearing_conference: "Pre-hearing conference",
+  judicial_conference: "Judicial conference",
+  formal_proof: "Formal proof",
+  instructing_agent: "Instructing agent",
+  pre_hearing_matters: "Pre-hearing matters",
+  defended_protection_order: "Defended protection order",
+  additional_factors: "Additional factors",
+  interlocutories: "Interlocutories",
+  directions_conference: "Directions conference",
+  settlement_conference: "Settlement conference",
+  lawyer_for_child_report: "Lawyer for Child report",
+  defended_hearing: "Defended hearing",
+  consent_memorandum: "Memorandum of consent",
+  complying_judges_directions: "Complying with Judge's directions",
+  general_billing_entry: "General billing entry",
+};
+
+const reviewableCategories = Object.entries(categoryLabels)
+  .filter(([category]) => category !== "general_billing_entry")
+  .map(([category, label]) => ({ category: category as BillingCategory, label }));
 
 const form32BCategoryPrimaryRuleMap: Record<string, string> = {
   pre_hearing_matters: "pre-hearing-matters",
@@ -77,29 +98,10 @@ export default function BillingPage() {
   const [prompt, setPrompt] = useState(examplePrompt);
   const [formType, setFormType] = useState<BillingFormType>("33A");
   const [selectedRecord, setSelectedRecord] = useState<BillingRecord | null>(null);
-  const [records, setRecords] = useState<BillingRecord[]>([]);
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [generationError, setGenerationError] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
-
-  useEffect(() => {
-    const storedRecords = window.localStorage.getItem(billingHistoryStorageKey);
-    if (!storedRecords) return;
-
-    try {
-      const parsedRecords = JSON.parse(storedRecords) as BillingRecord[];
-      setRecords(parsedRecords);
-      setSelectedRecord(parsedRecords[0] ?? null);
-    } catch {
-      window.localStorage.removeItem(billingHistoryStorageKey);
-    }
-  }, []);
-
-  function saveRecords(nextRecords: BillingRecord[]) {
-    setRecords(nextRecords);
-    window.localStorage.setItem(billingHistoryStorageKey, JSON.stringify(nextRecords));
-  }
 
   function readForm33ASettings(): Form33ARuleSettings | null {
     const storedSettings = window.localStorage.getItem(form33ASettingsStorageKey);
@@ -134,17 +136,30 @@ export default function BillingPage() {
       .replace(/\[court\]/gi, draft.court);
   }
 
-  function applyForm33ASettings(record: BillingRecord): BillingRecord {
+  function buildConfiguredWording(record: BillingRecord): string {
     const isForm33A = record.formType === "33A";
     const settings = isForm33A ? readForm33ASettings() : readForm32BSettings();
     const rules = isForm33A ? form33AManagementRules : form32BManagementRules;
     const ruleMap = isForm33A ? categoryPrimaryRuleMap : form32BCategoryPrimaryRuleMap;
-    const ruleId = ruleMap[record.draft.category];
-    const configuredWording = ruleId ? settings?.wordingByRuleId[ruleId] : "";
-    const fallbackWording = ruleId
-      ? rules.find((rule) => rule.id === ruleId)?.standardWording
-      : "";
-    const standardWording = configuredWording || fallbackWording;
+    const categories = record.draft.categories?.length ? record.draft.categories : [record.draft.category];
+
+    return categories
+      .map((category) => {
+        const ruleId = ruleMap[category];
+        const configuredWording = ruleId ? settings?.wordingByRuleId[ruleId] : "";
+        const fallbackWording = ruleId
+          ? rules.find((rule) => rule.id === ruleId)?.standardWording
+          : "";
+        const wording = configuredWording || fallbackWording;
+
+        return wording ? applyDraftTokens(wording, record.draft) : "";
+      })
+      .filter((wording, index, wordings) => wording.trim() && wordings.indexOf(wording) === index)
+      .join("\n\n");
+  }
+
+  function applyFormSettings(record: BillingRecord): BillingRecord {
+    const standardWording = buildConfiguredWording(record);
 
     if (!standardWording) return record;
 
@@ -177,9 +192,7 @@ export default function BillingPage() {
         throw new Error(payload.error ?? "Unable to create billing draft.");
       }
 
-      const nextRecord = applyForm33ASettings(payload.record as BillingRecord);
-      const nextRecords = [nextRecord, ...records.filter((record) => record.id !== nextRecord.id)];
-      saveRecords(nextRecords);
+      const nextRecord = applyFormSettings(payload.record as BillingRecord);
       setSelectedRecord(nextRecord);
     } catch (caughtError) {
       setError(caughtError instanceof Error ? caughtError.message : "Unable to create billing draft.");
@@ -216,9 +229,32 @@ export default function BillingPage() {
   }
 
   function updateBillingRecord(recordId: string, updater: (record: BillingRecord) => BillingRecord) {
-    const nextRecords = records.map((record) => (record.id === recordId ? updater(record) : record));
-    saveRecords(nextRecords);
-    setSelectedRecord(nextRecords.find((record) => record.id === recordId) ?? selectedRecord);
+    if (!selectedRecord || selectedRecord.id !== recordId) return;
+    setSelectedRecord(updater(selectedRecord));
+  }
+
+  function updateDetectedCategories(recordId: string, category: BillingCategory, checked: boolean) {
+    updateBillingRecord(recordId, (record) => {
+      const currentCategories = record.draft.categories?.length ? record.draft.categories : [record.draft.category];
+      const nextCategories = checked
+        ? Array.from(new Set([...currentCategories.filter((item) => item !== "general_billing_entry"), category]))
+        : currentCategories.filter((item) => item !== category);
+      const categories = nextCategories.length ? nextCategories : ["general_billing_entry" as BillingCategory];
+      const categoryLabelsForDraft = categories.map((item) => categoryLabels[item]);
+      const nextRecord: BillingRecord = {
+        ...record,
+        draft: {
+          ...record.draft,
+          category: categories[0],
+          categoryLabel: categoryLabelsForDraft[0],
+          categories,
+          categoryLabels: categoryLabelsForDraft,
+        },
+        updatedAt: new Date().toISOString(),
+      };
+
+      return applyFormSettings(nextRecord);
+    });
   }
 
   function updateDraftField(recordId: string, field: EditableBillingDraftField, value: string | number) {
@@ -339,6 +375,13 @@ export default function BillingPage() {
             </button>
 
             {error ? <p className="mt-3 text-sm font-medium text-red-700">{error}</p> : null}
+
+            {selectedRecord ? (
+              <DetectedWorkPanel
+                record={selectedRecord}
+                onCategoryChange={updateDetectedCategories}
+              />
+            ) : null}
           </form>
 
           <div className="space-y-6">
@@ -351,11 +394,6 @@ export default function BillingPage() {
                   onDraftFieldChange={updateDraftField}
                   onEvidenceUploaded={markEvidenceUploaded}
                   onGenerate={generateBillingDocument}
-                />
-                <HistoryPanel
-                  records={records}
-                  selectedRecordId={selectedRecord.id}
-                  onSelect={setSelectedRecord}
                 />
               </>
             ) : (
@@ -423,9 +461,46 @@ function EmptyState() {
     <div className="rounded-lg border border-dashed border-slate-300 bg-white px-5 py-12 text-center shadow-form">
       <h2 className="text-lg font-semibold text-slate-950">No draft yet</h2>
       <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-slate-600">
-        Enter a billing note and generate a draft to see the extracted matter, form, wording, travel, disbursements, and evidence status.
+        Enter a billing note and generate a draft to review the identified work, client details, wording, disbursements, and evidence status.
       </p>
     </div>
+  );
+}
+
+function DetectedWorkPanel({
+  record,
+  onCategoryChange,
+}: {
+  record: BillingRecord;
+  onCategoryChange: (recordId: string, category: BillingCategory, checked: boolean) => void;
+}) {
+  const selectedCategories = record.draft.categories?.length ? record.draft.categories : [record.draft.category];
+
+  return (
+    <section className="mt-5 border-t border-slate-200 pt-5">
+      <div className="flex items-center justify-between gap-3">
+        <h2 className="text-sm font-semibold text-slate-950">Identified work</h2>
+        <span className="rounded-md bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-700">
+          Review before generating
+        </span>
+      </div>
+      <div className="mt-3 space-y-2">
+        {reviewableCategories.map((item) => (
+          <label
+            key={item.category}
+            className="flex items-center gap-3 rounded-md border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700"
+          >
+            <input
+              type="checkbox"
+              className="h-4 w-4 rounded border-slate-300 text-sky-600 focus:ring-sky-500"
+              checked={selectedCategories.includes(item.category)}
+              onChange={(event) => onCategoryChange(record.id, item.category, event.target.checked)}
+            />
+            {item.label}
+          </label>
+        ))}
+      </div>
+    </section>
   );
 }
 
@@ -451,8 +526,8 @@ function DraftPanel({
       <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-form">
         <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
           <div>
-            <h2 className="text-lg font-semibold text-slate-950">Draft billing entry</h2>
-            <p className="mt-1 text-sm text-slate-600">Form {draft.formType} | {draft.categoryLabel}</p>
+            <h2 className="text-lg font-semibold text-slate-950">Review and generate</h2>
+            <p className="mt-1 text-sm text-slate-600">Form {draft.formType} | {(draft.categoryLabels?.length ? draft.categoryLabels : [draft.categoryLabel]).join(", ")}</p>
           </div>
           <span className={draft.status === "pending_evidence" ? "rounded-md bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-900" : "rounded-md bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-900"}>
             {draft.status === "pending_evidence" ? "Pending evidence" : "Ready to review"}
@@ -468,11 +543,7 @@ function DraftPanel({
           <Detail label="Attendance" value={draft.startTime && draft.endTime ? `${draft.startTime}-${draft.endTime} (${draft.attendanceHours}h)` : "Not identified"} />
           <Detail label="Disbursements" value={`Parking $${draft.parking.toFixed(2)} | Office $${draft.officeDisbursements.toFixed(2)}`} />
         </dl>
-      </section>
-
-      <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-form">
-        <h2 className="text-lg font-semibold text-slate-950">Review and edit</h2>
-        <div className="mt-5 grid gap-4 sm:grid-cols-2">
+        <div className="mt-6 grid gap-4 sm:grid-cols-2">
           <Field
             label="Client name"
             value={draft.clientName}
@@ -534,35 +605,7 @@ function DraftPanel({
           />
         </label>
         <p className="mt-2 text-sm leading-6 text-slate-600">
-          This is the reviewed wording that will be inserted into the Form33A wording section. Edit it here before generating the Word document.
-        </p>
-      </section>
-
-      <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-form">
-        <h2 className="text-lg font-semibold text-slate-950">Travel calculation</h2>
-        {draft.travel ? (
-          <div className="mt-4 grid gap-4 sm:grid-cols-2">
-            <Detail label="Court" value={draft.travel.court} />
-            <Detail label="Return travel" value={draft.travel.returnTravelTime} />
-            <Detail label="Travel time row" value={draft.travel.travelTimeBillingRow} />
-            <Detail label="Travel time value" value={String(draft.travel.travelTimeValue)} />
-            <Detail label="Mileage row" value={draft.travel.mileageBillingRow} />
-            <Detail label="Mileage value" value={String(draft.travel.mileageValue)} />
-            <Detail label="Return distance" value={draft.travel.returnDistance} />
-            <Detail label="Progress/results" value={draft.travel.progressResultsWording} />
-          </div>
-        ) : (
-          <p className="mt-3 text-sm text-slate-600">
-            No supported travel reference matched this prompt. Supported courts are Manukau Court, Auckland Court,
-            North Shore Court, and Waitakere Court.
-          </p>
-        )}
-      </section>
-
-      <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-form">
-        <h2 className="text-lg font-semibold text-slate-950">Controlled wording</h2>
-        <p className="mt-3 whitespace-pre-wrap rounded-md bg-slate-50 p-4 text-sm leading-6 text-slate-700">
-          {draft.standardWording}
+          This is the reviewed wording that will be inserted into the Word form. Edit it here before generating the document.
         </p>
       </section>
 
@@ -642,50 +685,6 @@ function NumberField({
         onChange={(event) => onChange(Number(event.target.value))}
       />
     </label>
-  );
-}
-
-function HistoryPanel({
-  records,
-  selectedRecordId,
-  onSelect,
-}: {
-  records: BillingRecord[];
-  selectedRecordId: string;
-  onSelect: (record: BillingRecord) => void;
-}) {
-  return (
-    <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-form">
-      <div className="flex items-center justify-between gap-4">
-        <h2 className="text-lg font-semibold text-slate-950">Billing history</h2>
-        <span className="text-sm text-slate-500">{records.length} saved</span>
-      </div>
-
-      <div className="mt-4 space-y-2">
-        {records.map((record) => (
-          <button
-            key={record.id}
-            type="button"
-            className={record.id === selectedRecordId
-              ? "w-full rounded-md border border-sky-300 bg-sky-50 p-3 text-left transition"
-              : "w-full rounded-md border border-slate-200 p-3 text-left transition hover:bg-slate-50"}
-            onClick={() => onSelect(record)}
-          >
-            <div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-start">
-              <div>
-                <p className="text-sm font-semibold text-slate-950">{record.clientName || "Unknown client"}</p>
-                <p className="mt-1 text-xs text-slate-500">
-                  Form {record.formType} | {new Date(record.createdAt).toLocaleString()}
-                </p>
-              </div>
-              <span className={record.status === "pending_evidence" ? "rounded-md bg-amber-100 px-2 py-1 text-xs font-semibold text-amber-900" : "rounded-md bg-emerald-100 px-2 py-1 text-xs font-semibold text-emerald-900"}>
-                {record.status === "pending_evidence" ? "Pending evidence" : "Ready"}
-              </span>
-            </div>
-          </button>
-        ))}
-      </div>
-    </section>
   );
 }
 
