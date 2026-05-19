@@ -2,9 +2,9 @@ import Link from "next/link";
 
 const notifications = [
   {
-    title: "Legal aid screenshots",
-    detail: "Waiting for signed engagement letter before screenshot uploads.",
-    status: "Later",
+    title: "Legal aid billing",
+    detail: "Billing workbench is ready for prompt-to-draft testing with controlled wording and travel references.",
+    status: "New",
   },
   {
     title: "Template placeholders",
@@ -21,8 +21,8 @@ const notifications = [
 const workItems = [
   "Matter intake",
   "DOCX placeholder merge",
+  "Legal aid billing",
   "Domestic violence affidavit draft",
-  "PDF assembly",
 ];
 
 export default function Dashboard() {
@@ -38,12 +38,20 @@ export default function Dashboard() {
               Dashboard
             </h1>
           </div>
-          <Link
-            href="/new-client"
-            className="inline-flex h-10 items-center justify-center rounded-md bg-sky-600 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-sky-700"
-          >
-            New client
-          </Link>
+          <div className="flex flex-col gap-3 sm:flex-row">
+            <Link
+              href="/billing"
+              className="inline-flex h-10 items-center justify-center rounded-md border border-sky-200 bg-white px-4 text-sm font-semibold text-sky-700 shadow-sm transition hover:bg-sky-50"
+            >
+              Billing workbench
+            </Link>
+            <Link
+              href="/new-client"
+              className="inline-flex h-10 items-center justify-center rounded-md bg-sky-600 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-sky-700"
+            >
+              New client
+            </Link>
+          </div>
         </header>
 
         <section className="mb-6 grid gap-4 md:grid-cols-4">
