@@ -278,8 +278,8 @@ function calculateForm33AAmounts(record: BillingRecord) {
     defendedProtectionOrder;
   const travelTimeAmount = (draft.travel?.travelTimeValue ?? 0) *
     form33AFeeRules.fixedFeePlusActivities.travelTimeHourlyRate;
-  const totalFixedFeePlusActivities = travelTimeAmount;
-  const totalDisbursementsExcludingMileage = draft.parking + draft.officeDisbursements;
+  const totalFixedFeePlusActivities = 0;
+  const totalDisbursementsExcludingMileage = draft.parking + draft.officeDisbursements + travelTimeAmount;
   const totalGst =
     (totalApplication + totalFixedFeePlusActivities + totalDisbursementsExcludingMileage) *
     form33AFeeRules.gstRate;

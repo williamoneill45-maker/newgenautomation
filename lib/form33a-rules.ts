@@ -22,6 +22,12 @@ export const form33AFeeRules = {
   fixedFeePlusActivities: {
     travelTimeHourlyRate: 63,
   },
+  totalRules: {
+    totalApplication:
+      "Sum of applicant fixed fee rows from Termination of Instructions through Subsequent Direction(s).",
+    totalDisbursementsExcludingMileage:
+      "Sum of disbursement rows from Disbursements through Prior approval disbursements, excluding mileage.",
+  },
 } as const;
 
 export const form33ASettingsStorageKey = "newgenautomation.form33a.management.settings";
@@ -216,12 +222,12 @@ export const form33AManagementRules: Form33AManagementRule[] = [
     placeholders: ["travel_time", "travel time", "tt_total"],
     quantityRule: "Uses the supported court travel time reference.",
     feeRule: `$${form33AFeeRules.fixedFeePlusActivities.travelTimeHourlyRate} per hour.`,
-    totalBucket: "Fixed fee plus activities",
-    gstTreatment: "Currently treated as GST-bearing fixed fee plus activity; confirm if this should move to disbursements.",
+    totalBucket: "Disbursements",
+    gstTreatment: "GST applies through total disbursements excluding mileage.",
     standardWording: "Travel time and mileage to [court] return",
     status: "Needs review",
-    inactiveReason: "The current engine treats travel time as fixed-fee-plus activity, but you have flagged that this may need to be disbursements instead.",
-    howToFix: "Confirm the correct Form33A total bucket and GST treatment for travel time. Then update the bucket and calculation rule.",
+    inactiveReason: "Travel time now feeds td as a non-mileage disbursement, but should be tested against real examples before marking fully active.",
+    howToFix: "Run prompts with travel time, parking, office disbursements, and mileage. Confirm td includes all non-mileage disbursements and m_t carries mileage only.",
   },
   {
     id: "mileage",

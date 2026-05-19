@@ -149,7 +149,12 @@ export default function Form33AManagementPage() {
           <Metric label="Template" value="Form33A" detail="Final uploaded Word structure" />
           <Metric label="GST" value={`${form33AFeeRules.gstRate * 100}%`} detail="Excludes mileage" />
           <Metric label="Mileage" value={`$${form33AFeeRules.mileageRatePerKm.toFixed(2)}/km`} detail="No GST" />
-          <Metric label="Travel time" value={`$${form33AFeeRules.fixedFeePlusActivities.travelTimeHourlyRate}/hr`} detail="Needs final bucket confirmation" />
+          <Metric label="Travel time" value={`$${form33AFeeRules.fixedFeePlusActivities.travelTimeHourlyRate}/hr`} detail="Feeds td as non-mileage disbursement" />
+        </section>
+
+        <section className="mb-6 grid gap-4 lg:grid-cols-2">
+          <RuleNote label="ta" value={form33AFeeRules.totalRules.totalApplication} />
+          <RuleNote label="td" value={form33AFeeRules.totalRules.totalDisbursementsExcludingMileage} />
         </section>
 
         <section className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_420px]">
@@ -327,6 +332,15 @@ function Metric({ label, value, detail }: { label: string; value: string; detail
       <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</p>
       <p className="mt-2 text-xl font-semibold text-slate-950">{value}</p>
       <p className="mt-1 text-sm text-slate-600">{detail}</p>
+    </div>
+  );
+}
+
+function RuleNote({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-form">
+      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{label} rule</p>
+      <p className="mt-2 text-sm leading-6 text-slate-700">{value}</p>
     </div>
   );
 }
