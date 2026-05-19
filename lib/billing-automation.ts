@@ -5,6 +5,12 @@ export type BillingStatus = "ready_to_review" | "pending_evidence";
 export type BillingCategory =
   | "pre_hearing_conference"
   | "judicial_conference"
+  | "formal_proof"
+  | "instructing_agent"
+  | "pre_hearing_matters"
+  | "defended_protection_order"
+  | "additional_factors"
+  | "interlocutories"
   | "directions_conference"
   | "settlement_conference"
   | "lawyer_for_child_report"
@@ -50,6 +56,7 @@ export type EvidenceRequirement = {
 };
 
 export type BillingDraft = {
+  sourcePrompt: string;
   matterId: string;
   clientName: string;
   legalAidNumber: string;
@@ -108,12 +115,18 @@ export type BillingRecordRow = {
 
 export const billingTemplatePaths: Record<BillingFormType, string> = {
   "32B": "templates/billing/Form32B.dotx",
-  "33A": "templates/Form 33a - master tempalte.docx",
+  "33A": "templates/Form 33a - master tempalte W PALCEHODLERS.docx",
 };
 
 const CATEGORY_LABELS: Record<BillingCategory, string> = {
   pre_hearing_conference: "Pre-hearing conference",
   judicial_conference: "Judicial conference",
+  formal_proof: "Formal proof",
+  instructing_agent: "Instructing agent",
+  pre_hearing_matters: "Pre-hearing matters",
+  defended_protection_order: "Defended protection order",
+  additional_factors: "Additional factors",
+  interlocutories: "Interlocutories",
   directions_conference: "Directions conference",
   settlement_conference: "Settlement conference",
   lawyer_for_child_report: "Lawyer for Child report",
@@ -194,9 +207,21 @@ const knownUnsupportedCourtPattern =
 
 export const standardBillingWording: Record<BillingCategory, string> = {
   pre_hearing_conference:
-    "Received defended Application - All correspondence and phone calls with client, court and counsel with respect to those proceedings. Advise client and instruct Counsel as to the Direction of the proceedings. Inform the Court of Direction required to advance the proceedings. Attendance from [attendance time].",
+    "Preparing for Judicial Conference, taking client's instructions, advising of procedural steps, advising of what will take place at the Conference. All correspondence and calls with Counsel and parties. Enclosed Notice of Fixture, Directions granted to advance the proceedings. Attendance at Pre-Hearing Conference on [billing date] from [attendance time].",
   judicial_conference:
     "Preparing for Judicial Conference, taking client's instructions, advising of procedural steps, advising of what will take place at the Conference. All correspondence and calls with Counsel and parties. Enclosed Notice of Fixture, Directions granted to advance the proceedings. Attendance at Pre-Hearing Conference on [billing date] from [attendance time].",
+  formal_proof:
+    "Preparing for Formal Proof, taking client's instructions, advising of procedural steps, advising of what will take place at the Formal Proof hearing. All correspondence and calls with Counsel and parties. Enclosed Notice of Fixture. Directions made. Attendance at Formal Proof on [billing date] from [attendance time].",
+  instructing_agent:
+    "Enclosed Notice of Fixture, Agents Report and invoice. Directions made as per Agent's Report. Briefing Agent - preparing written brief for Counsel. Attendance at Directions Conference on [billing date] from [attendance time].",
+  pre_hearing_matters:
+    "Received defended Application - All correspondence and phone calls with client, court and counsel with respect to these proceedings. Advise client and instruct Counsel as to the Direction of the proceedings. Inform the Court of Direction required to advance the proceedings.",
+  defended_protection_order:
+    "Respondent has filed a Defence. Receiving / perusing notice of defence and associated documents from the Respondent. Taking instructions and attending client. Preparing, filing and serving Applicant's reply. Liaising with Court appointed Counsel and third parties. Preparing and attending Registrar's List.",
+  additional_factors:
+    "The Respondent is self represented and this makes negotiations very challenging and is causing delays in advancing proceedings.",
+  interlocutories:
+    "Draft billing entry prepared for interlocutory work. Review wording before filing.",
   directions_conference:
     "Preparing for Directions Conference, taking client's instructions, advising of procedural steps, advising of what will take place at the Conference. All correspondence and calls with Counsel and parties.",
   settlement_conference:
@@ -238,17 +263,28 @@ function createInvoiceNumber(): string {
 function inferCategory(prompt: string): BillingCategory {
   const text = prompt.toLowerCase();
 
-  if (text.includes("pre hearing") || text.includes("pre-hearing")) {
-    return "pre_hearing_conference";
+  if (text.includes("pre hearing matters") || text.includes("pre-hearing matters")) {
+    return "pre_hearing_matters";
   }
-
   if (text.includes("judicial conference")) return "judicial_conference";
+  if (text.includes("pre hearing conference") || text.includes("pre-hearing conference")) {
+    return "judicial_conference";
+  }
+  if (text.includes("formal proof")) return "formal_proof";
+  if (text.includes("instructing agent") || text.includes("agent appears") || text.includes("agent appearance")) {
+    return "instructing_agent";
+  }
+  if (text.includes("defended protection order")) return "defended_protection_order";
+  if (text.includes("additional factors") || text.includes("additional factor")) return "additional_factors";
+  if (text.includes("interlocutories") || text.includes("interlocutory") || text.includes("document preparation where there is no hearing")) {
+    return "interlocutories";
+  }
   if (text.includes("directions conference") || text.includes("direction conference")) {
     return "directions_conference";
   }
   if (text.includes("settlement conference")) return "settlement_conference";
   if (text.includes("lawyer for child") || text.includes("lfc")) return "lawyer_for_child_report";
-  if (text.includes("defended hearing") || text.includes("hearing")) return "defended_hearing";
+  if (text.includes("defended hearing") || text.includes("short cause fixture")) return "defended_hearing";
   if (text.includes("consent memorandum") || text.includes("consent memo")) return "consent_memorandum";
   if (text.includes("judge") && text.includes("direction")) return "complying_judges_directions";
 
@@ -427,6 +463,7 @@ export function createBillingDraft(input: BillingDraftInput): BillingDraft {
     : "ready_to_review";
 
   return {
+    sourcePrompt: prompt,
     matterId: matter.matterId?.trim() || createBillingId("matter"),
     clientName: extractClient(prompt, matter.clientName),
     legalAidNumber: matter.legalAidNumber?.trim() ?? "",

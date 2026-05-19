@@ -246,6 +246,36 @@ export function mergePlaceholdersInXml(xml: string, fields: MergeFields): string
     }
   }
 
+  for (const malformedKey of ["tt_total"]) {
+    if (!hasPlaceholderValue(malformedKey, fields, lookup)) {
+      continue;
+    }
+
+    const malformedPattern = new RegExp(`\\{\\{${escapeRegExp(malformedKey)}`, "g");
+    while ((match = malformedPattern.exec(fullText)) !== null) {
+      replacements.push({
+        start: match.index,
+        end: match.index + match[0].length,
+        value: getPlaceholderValue(malformedKey, fields, lookup),
+      });
+    }
+  }
+
+  for (const malformedKey of ["travel_time"]) {
+    if (!hasPlaceholderValue(malformedKey, fields, lookup)) {
+      continue;
+    }
+
+    const malformedPattern = new RegExp(`\\{${escapeRegExp(malformedKey)}\\}\\}`, "g");
+    while ((match = malformedPattern.exec(fullText)) !== null) {
+      replacements.push({
+        start: match.index,
+        end: match.index + match[0].length,
+        value: getPlaceholderValue(malformedKey, fields, lookup),
+      });
+    }
+  }
+
   for (const replacement of replacements.reverse()) {
     replaceTextRange(
       nodes,

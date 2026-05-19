@@ -88,6 +88,47 @@ export const approvedBillingPlaceholderKeys = [
   "x*$160.00",
   "x*$190.00",
   "x*$430.00",
+  "FORMAL_PROOF_PREP_QTY",
+  "FORMAL_PROOF_PREP_UNIT",
+  "FORMAL_PROOF_PREP_TOTAL",
+  "FORMAL_PROOF_HEARING_QTY",
+  "FORMAL_PROOF_HEARING_UNIT",
+  "FORMAL_PROOF_HEARING_TOTAL",
+  "FP_AGENT_QTY",
+  "FP_AGENT_UNIT",
+  "FP_AGENT_TOTAL",
+  "AF_A_O",
+  "INT_QTY",
+  "INT_UNIT",
+  "INT_TOTAL",
+  "PH_MATTERS",
+  "JC_PREP_QTY",
+  "JC_PREP_UNIT",
+  "JC_PREP_TOTAL",
+  "JC_HEARING_QTY",
+  "JC_HEARING_UNIT",
+  "JC_HEARING_TOTAL",
+  "JC_AGENT_QTY",
+  "JC_AGENT_UNIT",
+  "JC_AGENT_TOTAL",
+  "AF_P_H",
+  "JUDGE_DIRECTIONS",
+  "DH_PREP_QTY",
+  "DH_PREP_UNIT",
+  "DH_PREP_TOTAL",
+  "DH_HEAR_QTY",
+  "DH_HEAR_UNIT",
+  "DH_HEAR_TOTAL",
+  "DH_AGENT_QTY",
+  "DH_AGENT_UNIT",
+  "DH_AGENT_TOTAL",
+  "AF_D_H",
+  "DPO",
+  "mileage",
+  "mileage_total",
+  "travel time",
+  "travel_time",
+  "tt_total",
   "ta",
   "tffp",
   "td",
@@ -124,6 +165,24 @@ export const billingTemplateDefinitions: Record<BillingFormType, BillingTemplate
 export const form33AFeeRules = {
   gstRate: 0.15,
   mileageRatePerKm: 1.17,
+  fixedFees: {
+    formalProofPreparation: 140,
+    formalProofHearingPerHalfHour: 67,
+    formalProofAgent: 190,
+    applicationsOrdersAdditionalFactors: 190,
+    interlocutories: 140,
+    preHearingMatters: 620,
+    judicialConferencePreparation: 140,
+    judicialConferenceHearingPerHalfHour: 67,
+    judicialConferenceAgent: 190,
+    preHearingAdditionalFactors: 190,
+    judgeDirections: 190,
+    defendedHearingPreparation: 160,
+    defendedHearingPerHalfHour: 67,
+    defendedHearingAgent: 190,
+    defendedHearingAdditionalFactors: 190,
+    defendedProtectionOrder: 430,
+  },
   judicialConference: {
     preparationFee: 140,
     hearingFeePerHalfHour: 67,
@@ -164,16 +223,78 @@ function calculateHalfHourUnits(hours: number): number {
 
 function calculateForm33AAmounts(record: BillingRecord) {
   const draft = record.draft;
-  const isJudicialConference = draft.category === "judicial_conference";
+  const isJudicialConference = draft.category === "judicial_conference" || draft.category === "pre_hearing_conference";
+  const isFormalProof = draft.category === "formal_proof";
+  const isInterlocutory = draft.category === "interlocutories";
+  const isPreHearingMatters = draft.category === "pre_hearing_matters";
+  const isJudgeDirections = draft.category === "complying_judges_directions";
+  const isDefendedHearing = draft.category === "defended_hearing";
+  const isDefendedProtectionOrder = draft.category === "defended_protection_order";
+  const isAdditionalFactors = draft.category === "additional_factors";
+  const isAgent = draft.category === "instructing_agent";
+  const sourcePrompt = draft.sourcePrompt?.toLowerCase() ?? "";
+  const isFormalProofAgent = isAgent && sourcePrompt.includes("formal proof");
+  const isDefendedHearingAgent =
+    isAgent &&
+    !isFormalProofAgent &&
+    (sourcePrompt.includes("defended") || sourcePrompt.includes("hearing"));
+  const isJudicialConferenceAgent = isAgent && !isFormalProofAgent && !isDefendedHearingAgent;
+  const isAdditionalFactorsForDefended =
+    isAdditionalFactors && (sourcePrompt.includes("defended") || sourcePrompt.includes("hearing"));
+  const isAdditionalFactorsForApplications =
+    isAdditionalFactors &&
+    (sourcePrompt.includes("application") || sourcePrompt.includes("order"));
+  const isAdditionalFactorsForPreHearing =
+    isAdditionalFactors && !isAdditionalFactorsForDefended && !isAdditionalFactorsForApplications;
+  const halfHourUnits = calculateHalfHourUnits(draft.attendanceHours);
+  const fixedFees = form33AFeeRules.fixedFees;
   const judicialConferencePreparation = isJudicialConference
-    ? form33AFeeRules.judicialConference.preparationFee
+    ? fixedFees.judicialConferencePreparation
     : 0;
   const judicialConferenceHearingUnits = isJudicialConference
-    ? calculateHalfHourUnits(draft.attendanceHours)
+    ? halfHourUnits
     : 0;
-  const judicialConferenceHearingRate = form33AFeeRules.judicialConference.hearingFeePerHalfHour;
+  const judicialConferenceHearingRate = fixedFees.judicialConferenceHearingPerHalfHour;
   const judicialConferenceHearingTotal = judicialConferenceHearingUnits * judicialConferenceHearingRate;
-  const totalApplication = judicialConferencePreparation + judicialConferenceHearingTotal;
+  const formalProofPreparation = isFormalProof ? fixedFees.formalProofPreparation : 0;
+  const formalProofHearingUnits = isFormalProof ? halfHourUnits : 0;
+  const formalProofHearingTotal = formalProofHearingUnits * fixedFees.formalProofHearingPerHalfHour;
+  const formalProofAgent = isFormalProofAgent ? fixedFees.formalProofAgent : 0;
+  const applicationsOrdersAdditionalFactors = isAdditionalFactorsForApplications
+    ? fixedFees.applicationsOrdersAdditionalFactors
+    : 0;
+  const interlocutories = isInterlocutory ? fixedFees.interlocutories : 0;
+  const preHearingMatters = isPreHearingMatters ? fixedFees.preHearingMatters : 0;
+  const judicialConferenceAgent = isJudicialConferenceAgent ? fixedFees.judicialConferenceAgent : 0;
+  const preHearingAdditionalFactors = isAdditionalFactorsForPreHearing
+    ? fixedFees.preHearingAdditionalFactors
+    : 0;
+  const judgeDirections = isJudgeDirections ? fixedFees.judgeDirections : 0;
+  const defendedHearingPreparation = isDefendedHearing ? fixedFees.defendedHearingPreparation : 0;
+  const defendedHearingUnits = isDefendedHearing ? halfHourUnits : 0;
+  const defendedHearingTotal = defendedHearingUnits * fixedFees.defendedHearingPerHalfHour;
+  const defendedHearingAgent = isDefendedHearingAgent ? fixedFees.defendedHearingAgent : 0;
+  const defendedHearingAdditionalFactors = isAdditionalFactorsForDefended
+    ? fixedFees.defendedHearingAdditionalFactors
+    : 0;
+  const defendedProtectionOrder = isDefendedProtectionOrder ? fixedFees.defendedProtectionOrder : 0;
+  const totalApplication =
+    judicialConferencePreparation +
+    judicialConferenceHearingTotal +
+    formalProofPreparation +
+    formalProofHearingTotal +
+    formalProofAgent +
+    applicationsOrdersAdditionalFactors +
+    interlocutories +
+    preHearingMatters +
+    judicialConferenceAgent +
+    preHearingAdditionalFactors +
+    judgeDirections +
+    defendedHearingPreparation +
+    defendedHearingTotal +
+    defendedHearingAgent +
+    defendedHearingAdditionalFactors +
+    defendedProtectionOrder;
   const travelTimeAmount = (draft.travel?.travelTimeValue ?? 0) *
     form33AFeeRules.fixedFeePlusActivities.travelTimeHourlyRate;
   const totalFixedFeePlusActivities = travelTimeAmount;
@@ -194,6 +315,22 @@ function calculateForm33AAmounts(record: BillingRecord) {
     judicialConferenceHearingRate,
     judicialConferenceHearingUnits,
     judicialConferenceHearingTotal,
+    formalProofPreparation,
+    formalProofHearingUnits,
+    formalProofHearingTotal,
+    formalProofAgent,
+    applicationsOrdersAdditionalFactors,
+    interlocutories,
+    preHearingMatters,
+    judicialConferenceAgent,
+    preHearingAdditionalFactors,
+    judgeDirections,
+    defendedHearingPreparation,
+    defendedHearingUnits,
+    defendedHearingTotal,
+    defendedHearingAgent,
+    defendedHearingAdditionalFactors,
+    defendedProtectionOrder,
     travelTimeAmount,
     totalApplication,
     totalFixedFeePlusActivities,
@@ -269,6 +406,67 @@ export function buildBillingMergeFields(record: BillingRecord): MergeFields {
     "1": form33AAmounts.judicialConferencePreparation ? "1" : "",
     "1p/30 m": formatNumber(form33AAmounts.judicialConferenceHearingUnits),
     "1p/30m*jca": formatMoney(form33AAmounts.judicialConferenceHearingTotal),
+    FORMAL_PROOF_PREP_QTY: form33AAmounts.formalProofPreparation ? "1" : "",
+    FORMAL_PROOF_PREP_UNIT: form33AAmounts.formalProofPreparation
+      ? formatMoney(form33AFeeRules.fixedFees.formalProofPreparation)
+      : "",
+    FORMAL_PROOF_PREP_TOTAL: formatMoney(form33AAmounts.formalProofPreparation),
+    FORMAL_PROOF_HEARING_QTY: formatNumber(form33AAmounts.formalProofHearingUnits),
+    FORMAL_PROOF_HEARING_UNIT: form33AAmounts.formalProofHearingUnits
+      ? formatMoney(form33AFeeRules.fixedFees.formalProofHearingPerHalfHour)
+      : "",
+    FORMAL_PROOF_HEARING_TOTAL: formatMoney(form33AAmounts.formalProofHearingTotal),
+    FP_AGENT_QTY: form33AAmounts.formalProofAgent ? "1" : "",
+    FP_AGENT_UNIT: form33AAmounts.formalProofAgent
+      ? formatMoney(form33AFeeRules.fixedFees.formalProofAgent)
+      : "",
+    FP_AGENT_TOTAL: formatMoney(form33AAmounts.formalProofAgent),
+    AF_A_O: formatMoney(form33AAmounts.applicationsOrdersAdditionalFactors),
+    INT_QTY: form33AAmounts.interlocutories ? "1" : "",
+    INT_UNIT: form33AAmounts.interlocutories
+      ? formatMoney(form33AFeeRules.fixedFees.interlocutories)
+      : "",
+    INT_TOTAL: formatMoney(form33AAmounts.interlocutories),
+    PH_MATTERS: formatMoney(form33AAmounts.preHearingMatters),
+    JC_PREP_QTY: form33AAmounts.judicialConferencePreparation ? "1" : "",
+    JC_PREP_UNIT: form33AAmounts.judicialConferencePreparation
+      ? formatMoney(form33AFeeRules.fixedFees.judicialConferencePreparation)
+      : "",
+    JC_PREP_TOTAL: formatMoney(form33AAmounts.judicialConferencePreparation),
+    JC_HEARING_QTY: formatNumber(form33AAmounts.judicialConferenceHearingUnits),
+    JC_HEARING_UNIT: form33AAmounts.judicialConferenceHearingUnits
+      ? formatMoney(form33AFeeRules.fixedFees.judicialConferenceHearingPerHalfHour)
+      : "",
+    JC_HEARING_TOTAL: formatMoney(form33AAmounts.judicialConferenceHearingTotal),
+    JC_AGENT_QTY: form33AAmounts.judicialConferenceAgent ? "1" : "",
+    JC_AGENT_UNIT: form33AAmounts.judicialConferenceAgent
+      ? formatMoney(form33AFeeRules.fixedFees.judicialConferenceAgent)
+      : "",
+    JC_AGENT_TOTAL: formatMoney(form33AAmounts.judicialConferenceAgent),
+    AF_P_H: formatMoney(form33AAmounts.preHearingAdditionalFactors),
+    JUDGE_DIRECTIONS: formatMoney(form33AAmounts.judgeDirections),
+    DH_PREP_QTY: form33AAmounts.defendedHearingPreparation ? "1" : "",
+    DH_PREP_UNIT: form33AAmounts.defendedHearingPreparation
+      ? formatMoney(form33AFeeRules.fixedFees.defendedHearingPreparation)
+      : "",
+    DH_PREP_TOTAL: formatMoney(form33AAmounts.defendedHearingPreparation),
+    DH_HEAR_QTY: formatNumber(form33AAmounts.defendedHearingUnits),
+    DH_HEAR_UNIT: form33AAmounts.defendedHearingUnits
+      ? formatMoney(form33AFeeRules.fixedFees.defendedHearingPerHalfHour)
+      : "",
+    DH_HEAR_TOTAL: formatMoney(form33AAmounts.defendedHearingTotal),
+    DH_AGENT_QTY: form33AAmounts.defendedHearingAgent ? "1" : "",
+    DH_AGENT_UNIT: form33AAmounts.defendedHearingAgent
+      ? formatMoney(form33AFeeRules.fixedFees.defendedHearingAgent)
+      : "",
+    DH_AGENT_TOTAL: formatMoney(form33AAmounts.defendedHearingAgent),
+    AF_D_H: formatMoney(form33AAmounts.defendedHearingAdditionalFactors),
+    DPO: formatMoney(form33AAmounts.defendedProtectionOrder),
+    mileage: formatNumber(draft.travel?.mileageValue),
+    mileage_total: formatMoney(form33AAmounts.totalMileage),
+    "travel time": formatNumber(draft.travel?.travelTimeValue),
+    travel_time: formatNumber(draft.travel?.travelTimeValue),
+    tt_total: formatMoney(form33AAmounts.travelTimeAmount),
     "x*$1.17": formatMoney(form33AAmounts.totalMileage),
     "x*$63.00": formatMoney(form33AAmounts.travelTimeAmount),
     "x*$67.00": [
