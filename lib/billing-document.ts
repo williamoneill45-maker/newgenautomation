@@ -4,6 +4,7 @@ import {
   type BillingFormType,
   type BillingRecord,
 } from "./billing-automation";
+import { form33AFeeRules } from "./form33a-rules";
 
 export const approvedBillingPlaceholderKeys = [
   "BILLING_RECORD_ID",
@@ -161,36 +162,6 @@ export const billingTemplateDefinitions: Record<BillingFormType, BillingTemplate
     outputFileName: "Completed Form33A.docx",
   },
 };
-
-export const form33AFeeRules = {
-  gstRate: 0.15,
-  mileageRatePerKm: 1.17,
-  fixedFees: {
-    formalProofPreparation: 140,
-    formalProofHearingPerHalfHour: 67,
-    formalProofAgent: 190,
-    applicationsOrdersAdditionalFactors: 190,
-    interlocutories: 140,
-    preHearingMatters: 620,
-    judicialConferencePreparation: 140,
-    judicialConferenceHearingPerHalfHour: 67,
-    judicialConferenceAgent: 190,
-    preHearingAdditionalFactors: 190,
-    judgeDirections: 190,
-    defendedHearingPreparation: 160,
-    defendedHearingPerHalfHour: 67,
-    defendedHearingAgent: 190,
-    defendedHearingAdditionalFactors: 190,
-    defendedProtectionOrder: 430,
-  },
-  judicialConference: {
-    preparationFee: 140,
-    hearingFeePerHalfHour: 67,
-  },
-  fixedFeePlusActivities: {
-    travelTimeHourlyRate: 63,
-  },
-} as const;
 
 function formatMoney(value: number): string {
   return value ? value.toFixed(2) : "";

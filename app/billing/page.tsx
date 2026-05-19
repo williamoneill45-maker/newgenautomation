@@ -192,9 +192,17 @@ export default function BillingPage() {
           <Link href="/" className="text-sm font-medium text-sky-700 transition hover:text-sky-900">
             Back to dashboard
           </Link>
-          <span className="rounded-md bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-900">
-            Forms 32B / 33A generation
-          </span>
+          <div className="flex items-center gap-3">
+            <Link
+              href="/billing-management/form-33a"
+              className="text-sm font-medium text-slate-600 transition hover:text-slate-950"
+            >
+              Form33A management
+            </Link>
+            <span className="rounded-md bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-900">
+              Forms 32B / 33A generation
+            </span>
+          </div>
         </div>
 
         <header className="mb-6 border-b border-slate-200 pb-5">
@@ -422,7 +430,7 @@ function DraftPanel({
           />
         </div>
         <label className="mt-4 block text-sm font-medium text-slate-700" htmlFor="standard-wording">
-          Controlled wording
+          Word form wording
           <textarea
             id="standard-wording"
             className="mt-2 min-h-32 w-full rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-950 shadow-sm outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-100"
@@ -430,6 +438,9 @@ function DraftPanel({
             onChange={(event) => onDraftFieldChange(record.id, "standardWording", event.target.value)}
           />
         </label>
+        <p className="mt-2 text-sm leading-6 text-slate-600">
+          This is the reviewed wording that will be inserted into the Form33A wording section. Edit it here before generating the Word document.
+        </p>
       </section>
 
       <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-form">

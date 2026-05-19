@@ -3,7 +3,7 @@ import Link from "next/link";
 const notifications = [
   {
     title: "Legal aid billing",
-    detail: "Billing workbench is ready for prompt-to-draft testing with controlled wording and travel references.",
+    detail: "Billing workbench and Form33A management are ready for prompt-to-draft testing.",
     status: "New",
   },
   {
@@ -22,6 +22,7 @@ const workItems = [
   "Matter intake",
   "DOCX placeholder merge",
   "Legal aid billing",
+  "Billing management",
   "Domestic violence affidavit draft",
 ];
 
@@ -40,6 +41,12 @@ export default function Dashboard() {
           </div>
           <div className="flex flex-col gap-3 sm:flex-row">
             <Link
+              href="/billing-management/form-33a"
+              className="inline-flex h-10 items-center justify-center rounded-md border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
+            >
+              Billing management
+            </Link>
+            <Link
               href="/billing"
               className="inline-flex h-10 items-center justify-center rounded-md border border-sky-200 bg-white px-4 text-sm font-semibold text-sky-700 shadow-sm transition hover:bg-sky-50"
             >
@@ -54,7 +61,7 @@ export default function Dashboard() {
           </div>
         </header>
 
-        <section className="mb-6 grid gap-4 md:grid-cols-4">
+        <section className="mb-6 grid gap-4 md:grid-cols-5">
           {workItems.map((item) => (
             <div
               key={item}
