@@ -24,6 +24,14 @@ export const form33AFeeRules = {
   },
 } as const;
 
+export const form33ASettingsStorageKey = "newgenautomation.form33a.management.settings";
+
+export type Form33ARuleSettings = {
+  wordingByRuleId: Record<string, string>;
+  statusByRuleId: Record<string, Form33AManagementRule["status"]>;
+  fixNotesByRuleId: Record<string, string>;
+};
+
 export type Form33AManagementRule = {
   id: string;
   section: string;
@@ -36,6 +44,8 @@ export type Form33AManagementRule = {
   gstTreatment: string;
   standardWording: string;
   status: "Active" | "Partial" | "Needs review";
+  inactiveReason: string;
+  howToFix: string;
 };
 
 export const form33AManagementRules: Form33AManagementRule[] = [
@@ -57,8 +67,10 @@ export const form33AManagementRules: Form33AManagementRule[] = [
     totalBucket: "Applicant fixed fees",
     gstTreatment: "GST applies through the total GST calculation.",
     standardWording:
-      "Preparing for Judicial Conference, taking client's instructions, advising of procedural steps, advising of what will take place at the Conference. All correspondence and calls with Counsel and parties. Enclosed Notice of Fixture, Directions granted to advance the proceedings. Attendance at Pre-Hearing Conference on [billing date] from [attendance time].",
+      "Preparing for Judicial Conference, taking client's instructions, advising of procedural steps, advising of what will take place at the Conference. All correspondence and calls with Counsel and parties. Enclosed Notice of Fixture, Directions granted to advance the proceedings. Attendance at Judicial Conference on [billing date] from [attendance time].",
     status: "Active",
+    inactiveReason: "No blocker. Prompt parsing, placeholders, pricing, wording, and travel references are implemented for the current demo path.",
+    howToFix: "Keep testing real examples. If wording changes, edit the wording here; the billing workbench will use saved local wording for new drafts until Supabase persistence is added.",
   },
   {
     id: "formal-proof",
@@ -80,6 +92,8 @@ export const form33AManagementRules: Form33AManagementRule[] = [
     standardWording:
       "Formal Proof Hearing preparation, taking instructions, reviewing evidence, preparing for hearing, attendance at hearing on [billing date] from [attendance time].",
     status: "Partial",
+    inactiveReason: "Rule is mapped, but real examples and final wording have not been fully checked end to end.",
+    howToFix: "Enter final wording, run a real formal proof prompt in the tester, confirm quantity and totals, then mark the working status as Active.",
   },
   {
     id: "judge-directions",
@@ -94,6 +108,8 @@ export const form33AManagementRules: Form33AManagementRule[] = [
     standardWording:
       "Complying with Judge's directions, reviewing directions, completing required work, correspondence and reporting to client.",
     status: "Partial",
+    inactiveReason: "Placeholder and price exist, but trigger wording and evidence requirements need confirmation.",
+    howToFix: "Confirm the exact prompt phrases lawyers will type and the wording that should be inserted. Then test the prompt and mark Active.",
   },
   {
     id: "pre-hearing-matters",
@@ -108,6 +124,8 @@ export const form33AManagementRules: Form33AManagementRule[] = [
     standardWording:
       "Pre-hearing matters including reviewing evidence, advising client, correspondence with parties and preparing matter for next procedural step.",
     status: "Partial",
+    inactiveReason: "Placeholder and price exist, but it needs real prompt examples to avoid clashing with Judicial Conference wording.",
+    howToFix: "Add example prompts that mean this row only, test them, and confirm the inserted wording.",
   },
   {
     id: "defended-hearing",
@@ -129,6 +147,8 @@ export const form33AManagementRules: Form33AManagementRule[] = [
     standardWording:
       "Defended hearing - review file, prepare for defended hearing, cross examination, brief witness, drafting submissions and reporting to client.",
     status: "Partial",
+    inactiveReason: "Pricing and placeholders are mapped, but defended-hearing quantity examples need review.",
+    howToFix: "Test a defended hearing prompt with a known duration and confirm prep, hearing quantity, totals, GST, and wording.",
   },
   {
     id: "defended-protection-order",
@@ -143,6 +163,8 @@ export const form33AManagementRules: Form33AManagementRule[] = [
     standardWording:
       "Defended protection order preparation, reviewing application and evidence, advising client, correspondence and attendance-related preparation.",
     status: "Partial",
+    inactiveReason: "Placeholder and price exist, but final standard wording and trigger phrases need confirmation.",
+    howToFix: "Confirm the exact wording and example prompts for this row, then test the generated draft.",
   },
   {
     id: "instructing-agent",
@@ -167,6 +189,8 @@ export const form33AManagementRules: Form33AManagementRule[] = [
     standardWording:
       "Instructing agent to attend on behalf of counsel, reviewing agent report, correspondence and reporting to client.",
     status: "Partial",
+    inactiveReason: "This rule can map to three different agent rows, so prompt context must be checked carefully.",
+    howToFix: "Test one prompt each for Judicial Conference agent, Formal Proof agent, and Defended Hearing agent. Confirm the correct row fills.",
   },
   {
     id: "additional-factors",
@@ -181,6 +205,8 @@ export const form33AManagementRules: Form33AManagementRule[] = [
     standardWording:
       "Additional factors including additional complexity, party conduct, self-represented party issues, or additional work required to progress the matter.",
     status: "Needs review",
+    inactiveReason: "Additional factors can sit under different sections, so the app needs clearer prompt examples before it should be active.",
+    howToFix: "Provide examples for applications/orders, pre-hearing, and defended hearing additional factors. Confirm which placeholder each example should fill.",
   },
   {
     id: "travel-time",
@@ -194,19 +220,22 @@ export const form33AManagementRules: Form33AManagementRule[] = [
     gstTreatment: "Currently treated as GST-bearing fixed fee plus activity; confirm if this should move to disbursements.",
     standardWording: "Travel time and mileage to [court] return",
     status: "Needs review",
+    inactiveReason: "The current engine treats travel time as fixed-fee-plus activity, but you have flagged that this may need to be disbursements instead.",
+    howToFix: "Confirm the correct Form33A total bucket and GST treatment for travel time. Then update the bucket and calculation rule.",
   },
   {
     id: "mileage",
     section: "Travel",
     keyword: "Manukau Court, Auckland Court, North Shore Court, Waitakere Court",
     formRow: "Travel - Personal car - necessary",
-    placeholders: ["mileage", "mileage_total", "m", "tm"],
+    placeholders: ["mileage", "m_t"],
     quantityRule: "Uses the supported court return kilometre reference.",
     feeRule: `$${form33AFeeRules.mileageRatePerKm} per kilometre.`,
     totalBucket: "Mileage",
     gstTreatment: "Mileage does not attract GST.",
-    standardWording: "Travel time and mileage to [court] return",
+    standardWording: "",
     status: "Active",
+    inactiveReason: "No blocker. Mileage uses the supported court kilometre reference and does not attract GST.",
+    howToFix: "Keep testing court examples. If the mileage total placeholder changes again, update this placeholder list and the merge field.",
   },
 ];
-

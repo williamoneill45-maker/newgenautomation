@@ -1,12 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 
 import type { BillingRecord } from "../../../lib/billing-automation";
 import {
   form33AFeeRules,
   form33AManagementRules,
+  form33ASettingsStorageKey,
+  type Form33ARuleSettings,
   type Form33AManagementRule,
 } from "../../../lib/form33a-rules";
 
@@ -38,9 +40,38 @@ export default function Form33AManagementPage() {
   const [wordingByRuleId, setWordingByRuleId] = useState<Record<string, string>>(() =>
     Object.fromEntries(form33AManagementRules.map((rule) => [rule.id, rule.standardWording])),
   );
+  const [statusByRuleId, setStatusByRuleId] = useState<Record<string, Form33AManagementRule["status"]>>(() =>
+    Object.fromEntries(form33AManagementRules.map((rule) => [rule.id, rule.status])),
+  );
+  const [fixNotesByRuleId, setFixNotesByRuleId] = useState<Record<string, string>>(() =>
+    Object.fromEntries(form33AManagementRules.map((rule) => [rule.id, rule.howToFix])),
+  );
   const [testRecord, setTestRecord] = useState<BillingRecord | null>(null);
   const [testError, setTestError] = useState("");
   const [isTesting, setIsTesting] = useState(false);
+
+  useEffect(() => {
+    const storedSettings = window.localStorage.getItem(form33ASettingsStorageKey);
+    if (!storedSettings) return;
+
+    try {
+      const settings = JSON.parse(storedSettings) as Partial<Form33ARuleSettings>;
+      setWordingByRuleId((current) => ({ ...current, ...settings.wordingByRuleId }));
+      setStatusByRuleId((current) => ({ ...current, ...settings.statusByRuleId }));
+      setFixNotesByRuleId((current) => ({ ...current, ...settings.fixNotesByRuleId }));
+    } catch {
+      window.localStorage.removeItem(form33ASettingsStorageKey);
+    }
+  }, []);
+
+  useEffect(() => {
+    const settings: Form33ARuleSettings = {
+      wordingByRuleId,
+      statusByRuleId,
+      fixNotesByRuleId,
+    };
+    window.localStorage.setItem(form33ASettingsStorageKey, JSON.stringify(settings));
+  }, [wordingByRuleId, statusByRuleId, fixNotesByRuleId]);
 
   const groupedRules = useMemo(() => {
     return form33AManagementRules.reduce<Record<string, Form33AManagementRule[]>>((groups, rule) => {
@@ -53,7 +84,9 @@ export default function Form33AManagementPage() {
   const activeRules = form33AManagementRules.filter((rule) => activeRuleIds.includes(rule.id));
   const activeWording = activeRules
     .map((rule) => wordingByRuleId[rule.id])
+    .concat(testRecord?.draft.parking ? "Parking" : "")
     .filter(Boolean)
+    .filter((wording, index, wordings) => wordings.indexOf(wording) === index)
     .join("\n\n");
 
   async function runPromptTest(event: FormEvent<HTMLFormElement>) {
@@ -137,7 +170,8 @@ export default function Form33AManagementPage() {
                         <th className="border-b border-slate-200 py-2 pr-4 font-semibold">Placeholders</th>
                         <th className="border-b border-slate-200 py-2 pr-4 font-semibold">Pricing</th>
                         <th className="border-b border-slate-200 py-2 pr-4 font-semibold">Bucket</th>
-                        <th className="border-b border-slate-200 py-2 font-semibold">Status</th>
+                        <th className="border-b border-slate-200 py-2 pr-4 font-semibold">Status</th>
+                        <th className="border-b border-slate-200 py-2 font-semibold">How to fix</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -162,8 +196,38 @@ export default function Form33AManagementPage() {
                             <p>{rule.totalBucket}</p>
                             <p className="mt-1 text-xs text-slate-500">{rule.gstTreatment}</p>
                           </td>
+                          <td className="border-b border-slate-100 py-3 pr-4">
+                            <label className="sr-only" htmlFor={`status-${rule.id}`}>
+                              Status for {rule.formRow}
+                            </label>
+                            <select
+                              id={`status-${rule.id}`}
+                              className="h-9 rounded-md border border-slate-300 bg-white px-2 text-sm font-medium text-slate-700 shadow-sm outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-100"
+                              value={statusByRuleId[rule.id] ?? rule.status}
+                              onChange={(event) =>
+                                setStatusByRuleId((current) => ({
+                                  ...current,
+                                  [rule.id]: event.target.value as Form33AManagementRule["status"],
+                                }))
+                              }
+                            >
+                              <option>Active</option>
+                              <option>Partial</option>
+                              <option>Needs review</option>
+                            </select>
+                            <p className="mt-2 text-xs leading-5 text-slate-500">{rule.inactiveReason}</p>
+                          </td>
                           <td className="border-b border-slate-100 py-3">
-                            <StatusPill status={rule.status} />
+                            <textarea
+                              className="min-h-24 w-72 rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-700 shadow-sm outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-100"
+                              value={fixNotesByRuleId[rule.id] ?? rule.howToFix}
+                              onChange={(event) =>
+                                setFixNotesByRuleId((current) => ({
+                                  ...current,
+                                  [rule.id]: event.target.value,
+                                }))
+                              }
+                            />
                           </td>
                         </tr>
                       ))}
@@ -219,9 +283,9 @@ export default function Form33AManagementPage() {
             </section>
 
             <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-form">
-              <h2 className="text-lg font-semibold text-slate-950">Editable wording working copy</h2>
+              <h2 className="text-lg font-semibold text-slate-950">Editable wording</h2>
               <p className="mt-2 text-sm leading-6 text-slate-600">
-                These edits are local to this review screen for now. Once Supabase is connected, this becomes saved configuration.
+                These edits are saved in this browser and applied to future Form33A drafts opened from the billing workbench. Supabase will make this shared configuration later.
               </p>
 
               <div className="mt-4 space-y-4">
@@ -267,21 +331,6 @@ function Metric({ label, value, detail }: { label: string; value: string; detail
   );
 }
 
-function StatusPill({ status }: { status: Form33AManagementRule["status"] }) {
-  const className =
-    status === "Active"
-      ? "bg-emerald-100 text-emerald-800"
-      : status === "Partial"
-        ? "bg-amber-100 text-amber-900"
-        : "bg-rose-100 text-rose-800";
-
-  return (
-    <span className={`inline-flex rounded-md px-2 py-1 text-xs font-semibold ${className}`}>
-      {status}
-    </span>
-  );
-}
-
 function Detail({ label, value }: { label: string; value: string }) {
   return (
     <div>
@@ -290,4 +339,3 @@ function Detail({ label, value }: { label: string; value: string }) {
     </div>
   );
 }
-

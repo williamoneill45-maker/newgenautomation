@@ -9,6 +9,11 @@ import {
   type BillingRecord,
   type BillingStatus,
 } from "../../lib/billing-automation";
+import {
+  form33AManagementRules,
+  form33ASettingsStorageKey,
+  type Form33ARuleSettings,
+} from "../../lib/form33a-rules";
 
 const examplePrompt =
   "Pre-hearing conference from 11:00am-11:30am at Waitakere Court, use form 33a.";
@@ -23,6 +28,18 @@ const emptyMatter = {
 };
 
 const billingHistoryStorageKey = "newgenautomation.billing.records";
+
+const categoryPrimaryRuleMap: Record<string, string> = {
+  judicial_conference: "judicial-conference",
+  pre_hearing_conference: "judicial-conference",
+  formal_proof: "formal-proof",
+  complying_judges_directions: "judge-directions",
+  pre_hearing_matters: "pre-hearing-matters",
+  defended_hearing: "defended-hearing",
+  defended_protection_order: "defended-protection-order",
+  instructing_agent: "instructing-agent",
+  additional_factors: "additional-factors",
+};
 
 type EditableBillingDraftField =
   | "clientName"
@@ -65,6 +82,54 @@ export default function BillingPage() {
     window.localStorage.setItem(billingHistoryStorageKey, JSON.stringify(nextRecords));
   }
 
+  function readForm33ASettings(): Form33ARuleSettings | null {
+    const storedSettings = window.localStorage.getItem(form33ASettingsStorageKey);
+    if (!storedSettings) return null;
+
+    try {
+      return JSON.parse(storedSettings) as Form33ARuleSettings;
+    } catch {
+      window.localStorage.removeItem(form33ASettingsStorageKey);
+      return null;
+    }
+  }
+
+  function applyDraftTokens(wording: string, draft: BillingDraft): string {
+    const attendanceTime = draft.startTime && draft.endTime ? `${draft.startTime}-${draft.endTime}` : "";
+
+    return wording
+      .replace(/\[billing date\]/gi, draft.date)
+      .replace(/\[attendance time\]/gi, attendanceTime)
+      .replace(/\[court\]/gi, draft.court);
+  }
+
+  function applyForm33ASettings(record: BillingRecord): BillingRecord {
+    if (record.formType !== "33A") return record;
+
+    const settings = readForm33ASettings();
+    if (!settings) return record;
+
+    const ruleId = categoryPrimaryRuleMap[record.draft.category];
+    const configuredWording = ruleId ? settings.wordingByRuleId[ruleId] : "";
+    const fallbackWording = ruleId
+      ? form33AManagementRules.find((rule) => rule.id === ruleId)?.standardWording
+      : "";
+    const standardWording = configuredWording || fallbackWording;
+
+    if (!standardWording) return record;
+
+    const draft = {
+      ...record.draft,
+      standardWording: applyDraftTokens(standardWording, record.draft),
+    };
+
+    return {
+      ...record,
+      draft,
+      updatedAt: new Date().toISOString(),
+    };
+  }
+
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setIsLoading(true);
@@ -82,7 +147,7 @@ export default function BillingPage() {
         throw new Error(payload.error ?? "Unable to create billing draft.");
       }
 
-      const nextRecord = payload.record as BillingRecord;
+      const nextRecord = applyForm33ASettings(payload.record as BillingRecord);
       const nextRecords = [nextRecord, ...records.filter((record) => record.id !== nextRecord.id)];
       saveRecords(nextRecords);
       setSelectedRecord(nextRecord);

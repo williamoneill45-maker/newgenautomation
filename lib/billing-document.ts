@@ -59,6 +59,7 @@ export const approvedBillingPlaceholderKeys = [
   "parking",
   "OFFICE_DISBURSEMENTS",
   "office_disbursements",
+  "od",
   "TOTAL_DISBURSEMENTS",
   "total_disbursements",
   "STANDARD_WORDING",
@@ -126,7 +127,6 @@ export const approvedBillingPlaceholderKeys = [
   "AF_D_H",
   "DPO",
   "mileage",
-  "mileage_total",
   "travel time",
   "travel_time",
   "tt_total",
@@ -135,8 +135,7 @@ export const approvedBillingPlaceholderKeys = [
   "td",
   "td-m",
   "tgst",
-  "m",
-  "tm",
+  "m_t",
   "total",
 ] as const;
 
@@ -191,8 +190,10 @@ function buildProgressResultsWording(draft: BillingRecord["draft"]): string {
   return [
     draft.standardWording,
     draft.travel?.progressResultsWording,
+    draft.parking > 0 ? "Parking" : "",
   ]
     .filter((value): value is string => Boolean(value?.trim()))
+    .filter((wording, index, wordings) => wordings.indexOf(wording) === index)
     .join("\n");
 }
 
@@ -370,6 +371,7 @@ export function buildBillingMergeFields(record: BillingRecord): MergeFields {
     TRAVEL_PROGRESS_WORDING: draft.travel?.progressResultsWording ?? "",
     PARKING: formatMoney(draft.parking),
     OFFICE_DISBURSEMENTS: formatMoney(draft.officeDisbursements),
+    od: formatMoney(draft.officeDisbursements),
     TOTAL_DISBURSEMENTS: formatMoney(totalDisbursements),
     STANDARD_WORDING: progressResultsWording,
     EVIDENCE_STATUS: evidenceStatus,
@@ -444,7 +446,6 @@ export function buildBillingMergeFields(record: BillingRecord): MergeFields {
     AF_D_H: formatMoney(form33AAmounts.defendedHearingAdditionalFactors),
     DPO: formatMoney(form33AAmounts.defendedProtectionOrder),
     mileage: formatNumber(draft.travel?.mileageValue),
-    mileage_total: formatMoney(form33AAmounts.totalMileage),
     "travel time": formatNumber(draft.travel?.travelTimeValue),
     travel_time: formatNumber(draft.travel?.travelTimeValue),
     tt_total: formatMoney(form33AAmounts.travelTimeAmount),
@@ -468,8 +469,7 @@ export function buildBillingMergeFields(record: BillingRecord): MergeFields {
     td: formatMoney(form33AAmounts.totalDisbursementsExcludingMileage),
     "td-m": formatMoney(form33AAmounts.totalDisbursementsExcludingMileage),
     tgst: formatMoney(form33AAmounts.totalGst),
-    m: formatMoney(form33AAmounts.totalMileage),
-    tm: formatMoney(form33AAmounts.totalMileage),
+    m_t: formatMoney(form33AAmounts.totalMileage),
     total: formatMoney(form33AAmounts.total),
   };
 

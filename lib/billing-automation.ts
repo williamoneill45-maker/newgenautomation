@@ -115,7 +115,7 @@ export type BillingRecordRow = {
 
 export const billingTemplatePaths: Record<BillingFormType, string> = {
   "32B": "templates/billing/Form32B.dotx",
-  "33A": "templates/Form 33a - master tempalte W PALCEHODLERS.docx",
+  "33A": "templates/Form 33a . Final Template . 1.docx",
 };
 
 const CATEGORY_LABELS: Record<BillingCategory, string> = {
@@ -207,9 +207,9 @@ const knownUnsupportedCourtPattern =
 
 export const standardBillingWording: Record<BillingCategory, string> = {
   pre_hearing_conference:
-    "Preparing for Judicial Conference, taking client's instructions, advising of procedural steps, advising of what will take place at the Conference. All correspondence and calls with Counsel and parties. Enclosed Notice of Fixture, Directions granted to advance the proceedings. Attendance at Pre-Hearing Conference on [billing date] from [attendance time].",
+    "Preparing for Judicial Conference, taking client's instructions, advising of procedural steps, advising of what will take place at the Conference. All correspondence and calls with Counsel and parties. Enclosed Notice of Fixture, Directions granted to advance the proceedings. Attendance at Judicial Conference on [billing date] from [attendance time].",
   judicial_conference:
-    "Preparing for Judicial Conference, taking client's instructions, advising of procedural steps, advising of what will take place at the Conference. All correspondence and calls with Counsel and parties. Enclosed Notice of Fixture, Directions granted to advance the proceedings. Attendance at Pre-Hearing Conference on [billing date] from [attendance time].",
+    "Preparing for Judicial Conference, taking client's instructions, advising of procedural steps, advising of what will take place at the Conference. All correspondence and calls with Counsel and parties. Enclosed Notice of Fixture, Directions granted to advance the proceedings. Attendance at Judicial Conference on [billing date] from [attendance time].",
   formal_proof:
     "Preparing for Formal Proof, taking client's instructions, advising of procedural steps, advising of what will take place at the Formal Proof hearing. All correspondence and calls with Counsel and parties. Enclosed Notice of Fixture. Directions made. Attendance at Formal Proof on [billing date] from [attendance time].",
   instructing_agent:
