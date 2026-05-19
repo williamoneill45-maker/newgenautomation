@@ -1,4 +1,4 @@
-import type { MergeFields } from "./document-automation";
+import type { MergeFields, MergeFieldTextValue } from "./document-automation";
 import {
   billingTemplatePaths,
   type BillingFormType,
@@ -71,13 +71,23 @@ export const approvedBillingPlaceholderKeys = [
   "DATE_TODAY",
   "date_today",
   "CLIENTSURNAME",
+  "CLIENT SUR NAME",
   "insert_wording_here",
+  "Insert_wording_here",
+  "dd,mmm,yyyy",
   "jcp",
   "jca",
   "1*jcp",
   "1",
   "1p/30 m",
   "1p/30m*jca",
+  "x*$1.17",
+  "x*$63.00",
+  "x*$67.00",
+  "x*$140.00",
+  "x*$160.00",
+  "x*$190.00",
+  "x*$430.00",
   "ta",
   "tffp",
   "td",
@@ -90,7 +100,7 @@ export const approvedBillingPlaceholderKeys = [
 
 export type ApprovedBillingPlaceholderKey = (typeof approvedBillingPlaceholderKeys)[number];
 
-export type BillingMergeFields = Partial<Record<ApprovedBillingPlaceholderKey, string>>;
+export type BillingMergeFields = Partial<Record<ApprovedBillingPlaceholderKey, MergeFieldTextValue>>;
 
 export type BillingTemplateDefinition = {
   formType: BillingFormType;
@@ -119,7 +129,7 @@ export const form33AFeeRules = {
     hearingFeePerHalfHour: 67,
   },
   fixedFeePlusActivities: {
-    travelTimeHourlyRate: 0,
+    travelTimeHourlyRate: 63,
   },
 } as const;
 
@@ -184,6 +194,7 @@ function calculateForm33AAmounts(record: BillingRecord) {
     judicialConferenceHearingRate,
     judicialConferenceHearingUnits,
     judicialConferenceHearingTotal,
+    travelTimeAmount,
     totalApplication,
     totalFixedFeePlusActivities,
     totalDisbursementsExcludingMileage,
@@ -191,6 +202,17 @@ function calculateForm33AAmounts(record: BillingRecord) {
     totalMileage,
     total,
   };
+}
+
+function formatDisplayDate(value: string): string {
+  const date = new Date(`${value}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return value;
+
+  return new Intl.DateTimeFormat("en-NZ", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  }).format(date);
 }
 
 export function buildBillingMergeFields(record: BillingRecord): MergeFields {
@@ -236,14 +258,32 @@ export function buildBillingMergeFields(record: BillingRecord): MergeFields {
     TEMPLATE_PATH: record.templatePath,
     REVIEW_STATUS: record.status === "pending_evidence" ? "Pending evidence" : "Ready to review",
     DATE_TODAY: draft.date,
+    "dd,mmm,yyyy": formatDisplayDate(draft.date),
     CLIENTSURNAME: getClientSurname(draft.clientName),
+    "CLIENT SUR NAME": getClientSurname(draft.clientName),
     insert_wording_here: draft.standardWording,
+    Insert_wording_here: draft.standardWording,
     jcp: formatMoney(form33AAmounts.judicialConferencePreparation),
     jca: formatMoney(form33AAmounts.judicialConferenceHearingRate),
     "1*jcp": formatMoney(form33AAmounts.judicialConferencePreparation),
     "1": form33AAmounts.judicialConferencePreparation ? "1" : "",
     "1p/30 m": formatNumber(form33AAmounts.judicialConferenceHearingUnits),
     "1p/30m*jca": formatMoney(form33AAmounts.judicialConferenceHearingTotal),
+    "x*$1.17": formatMoney(form33AAmounts.totalMileage),
+    "x*$63.00": formatMoney(form33AAmounts.travelTimeAmount),
+    "x*$67.00": [
+      "",
+      formatMoney(form33AAmounts.judicialConferenceHearingTotal),
+      "",
+    ],
+    "x*$140.00": [
+      "",
+      "",
+      formatMoney(form33AAmounts.judicialConferencePreparation),
+    ],
+    "x*$160.00": "",
+    "x*$190.00": ["", "", ""],
+    "x*$430.00": "",
     ta: formatMoney(form33AAmounts.totalApplication),
     tffp: formatMoney(form33AAmounts.totalFixedFeePlusActivities),
     td: formatMoney(form33AAmounts.totalDisbursementsExcludingMileage),

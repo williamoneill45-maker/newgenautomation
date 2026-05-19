@@ -1,6 +1,6 @@
 import JSZip from "jszip";
 
-import type { MergeFields } from "./document-automation";
+import type { MergeFields, MergeFieldTextValue } from "./document-automation";
 
 const WORD_XML_FILE_PATTERN =
   /^(word\/(?:document|header\d+|footer\d+|footnotes|endnotes|comments)\.xml)$/;
@@ -75,7 +75,7 @@ function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-function buildFieldLookup(fields: MergeFields): Record<string, string> {
+function buildFieldLookup(fields: MergeFields): Record<string, MergeFieldTextValue> {
   return Object.fromEntries(
     Object.entries(fields).flatMap(([key, value]) => {
       const safeValue = value ?? "";
@@ -90,7 +90,7 @@ function buildFieldLookup(fields: MergeFields): Record<string, string> {
 function hasPlaceholderValue(
   rawKey: string,
   fields: MergeFields,
-  lookup: Record<string, string>,
+  lookup: Record<string, MergeFieldTextValue>,
 ): boolean {
   if (Object.prototype.hasOwnProperty.call(fields, rawKey)) {
     return true;
@@ -102,18 +102,26 @@ function hasPlaceholderValue(
 function getPlaceholderValue(
   rawKey: string,
   fields: MergeFields,
-  lookup: Record<string, string>,
+  lookup: Record<string, MergeFieldTextValue>,
+  occurrenceIndex = 0,
 ): string {
-  const fieldValues = fields as Record<string, string | undefined>;
+  const fieldValues = fields as Record<string, MergeFieldTextValue>;
+  const resolveValue = (value: MergeFieldTextValue): string => {
+    if (Array.isArray(value)) {
+      return value[occurrenceIndex] ?? "";
+    }
+
+    return value ?? "";
+  };
 
   if (Object.prototype.hasOwnProperty.call(fields, rawKey)) {
-    return fieldValues[rawKey] ?? "";
+    return resolveValue(fieldValues[rawKey]);
   }
 
   const normalizedKey = normalizePlaceholderKey(rawKey);
 
   if (Object.prototype.hasOwnProperty.call(lookup, normalizedKey)) {
-    return lookup[normalizedKey] ?? "";
+    return resolveValue(lookup[normalizedKey]);
   }
 
   return "";
@@ -204,6 +212,7 @@ export function mergePlaceholdersInXml(xml: string, fields: MergeFields): string
   const lookup = buildFieldLookup(fields);
   const placeholderPattern = /\{\{([^{}]+)\}\}/g;
   const replacements: Array<{ start: number; end: number; value: string }> = [];
+  const occurrenceCounts: Record<string, number> = {};
   let match: RegExpExecArray | null;
 
   while ((match = placeholderPattern.exec(fullText)) !== null) {
@@ -211,10 +220,14 @@ export function mergePlaceholdersInXml(xml: string, fields: MergeFields): string
       continue;
     }
 
+    const normalizedKey = normalizePlaceholderKey(match[1]);
+    const occurrenceIndex = occurrenceCounts[normalizedKey] ?? 0;
+    occurrenceCounts[normalizedKey] = occurrenceIndex + 1;
+
     replacements.push({
       start: match.index,
       end: match.index + match[0].length,
-      value: getPlaceholderValue(match[1], fields, lookup),
+      value: getPlaceholderValue(match[1], fields, lookup, occurrenceIndex),
     });
   }
 

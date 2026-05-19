@@ -108,7 +108,7 @@ export type BillingRecordRow = {
 
 export const billingTemplatePaths: Record<BillingFormType, string> = {
   "32B": "templates/billing/Form32B.dotx",
-  "33A": "templates/billing/Form 33a Test Template.docx",
+  "33A": "templates/Form 33a - master tempalte.docx",
 };
 
 const CATEGORY_LABELS: Record<BillingCategory, string> = {
@@ -196,7 +196,7 @@ export const standardBillingWording: Record<BillingCategory, string> = {
   pre_hearing_conference:
     "Received defended Application - All correspondence and phone calls with client, court and counsel with respect to those proceedings. Advise client and instruct Counsel as to the Direction of the proceedings. Inform the Court of Direction required to advance the proceedings. Attendance from [attendance time].",
   judicial_conference:
-    "Preparing for Judicial Conference, taking client's instructions, advising of procedural steps, advising of what will take place at the Conference. All correspondence and calls with Counsel and parties. Attendance at Judicial Conference. Enclosed Notice of Fixture. Directions granted to advance the proceedings.",
+    "Preparing for Judicial Conference, taking client's instructions, advising of procedural steps, advising of what will take place at the Conference. All correspondence and calls with Counsel and parties. Enclosed Notice of Fixture, Directions granted to advance the proceedings. Attendance at Pre-Hearing Conference on [billing date] from [attendance time].",
   directions_conference:
     "Preparing for Directions Conference, taking client's instructions, advising of procedural steps, advising of what will take place at the Conference. All correspondence and calls with Counsel and parties.",
   settlement_conference:
@@ -396,6 +396,10 @@ function applyAttendanceTime(wording: string, attendance: { startTime: string; e
   return wording.replace("[attendance time]", `${attendance.startTime}-${attendance.endTime}`);
 }
 
+function applyBillingDate(wording: string, billingDate: string): string {
+  return wording.replace("[billing date]", billingDate);
+}
+
 export function createBillingDraft(input: BillingDraftInput): BillingDraft {
   const prompt = input.prompt.trim();
   const matter = input.matter ?? {};
@@ -404,6 +408,7 @@ export function createBillingDraft(input: BillingDraftInput): BillingDraft {
   const court = extractCourt(prompt);
   const unsupportedCourt = extractUnsupportedCourt(prompt);
   const attendance = extractAttendance(prompt);
+  const billingDate = extractDate(prompt);
   const travel = travelReferences.find((reference) => reference.court === court);
   const parking = moneyFromPrompt(prompt, /parking\s+(?:was|of)?\s*\$?([\d,.]+)/i);
   const officeDisbursements = moneyFromPrompt(prompt, /office\s+disbursements?\s+(?:was|of)?\s*\$?([\d,.]+)/i);
@@ -432,14 +437,14 @@ export function createBillingDraft(input: BillingDraftInput): BillingDraft {
     category,
     categoryLabel: CATEGORY_LABELS[category],
     court,
-    date: extractDate(prompt),
+    date: billingDate,
     startTime: attendance.startTime,
     endTime: attendance.endTime,
     attendanceHours: attendance.hours,
     travel,
     parking,
     officeDisbursements,
-    standardWording: applyAttendanceTime(standardBillingWording[category], attendance),
+    standardWording: applyBillingDate(applyAttendanceTime(standardBillingWording[category], attendance), billingDate),
     evidenceRequirements,
     status,
     templateStatus:
