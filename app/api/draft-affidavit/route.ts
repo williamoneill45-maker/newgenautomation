@@ -5,8 +5,25 @@ export const runtime = "nodejs";
 type DraftAffidavitRequest = {
   applicantName?: string;
   respondentName?: string;
+  selectedOrders?: string[];
+  ordersSought?: string;
+  protectedPersons?: string;
+  protectionOrderFacts?: string;
+  parentingProposal?: string;
+  preventingRemovalFacts?: string;
+  tenancyOrderFacts?: string;
+  warrantFacts?: string;
+  additionalGuardianFacts?: string;
   historyNotes?: string;
   recentEventsNotes?: string;
+  children?: Array<{
+    fullName?: string;
+    age?: string;
+    dateOfBirth?: string;
+    applicantRelationshipToChild?: string;
+    respondentRelationshipToChild?: string;
+    livingWithName?: string;
+  }>;
 };
 
 type OpenAITextContent = {
@@ -71,10 +88,40 @@ function buildNumberedSection(title: string, notes: string, startNumber: number)
 }
 
 function buildFallbackDraft({
+  applicantName,
+  respondentName,
+  selectedOrders,
+  ordersSought,
+  protectedPersons,
+  protectionOrderFacts,
+  parentingProposal,
+  preventingRemovalFacts,
+  tenancyOrderFacts,
+  warrantFacts,
+  additionalGuardianFacts,
   historyNotes,
   recentEventsNotes,
 }: Required<DraftAffidavitRequest>): string {
   return [
+    "Orders Sought",
+    ordersSought || selectedOrders.join(", "),
+    protectedPersons ? `Protected Persons\n\n${protectedPersons}` : "",
+    protectionOrderFacts
+      ? `Facts in Support of Protection Order\n\n${protectionOrderFacts}`
+      : "",
+    parentingProposal ? `Parenting Proposal\n\n${parentingProposal}` : "",
+    preventingRemovalFacts
+      ? `Facts in Support of Order Preventing Removal from New Zealand\n\n${preventingRemovalFacts}`
+      : "",
+    tenancyOrderFacts
+      ? `Facts in Support of Tenancy Order\n\n${tenancyOrderFacts}`
+      : "",
+    warrantFacts ? `Facts in Support of Warrant\n\n${warrantFacts}` : "",
+    additionalGuardianFacts
+      ? `Facts in Support of Additional Guardian Order\n\n${additionalGuardianFacts}`
+      : "",
+    `Applicant: ${applicantName}`,
+    `Respondent: ${respondentName}`,
     buildNumberedSection("History of Family Violence", historyNotes, 4),
     buildNumberedSection("Recent Events", recentEventsNotes, 26),
   ]
@@ -86,18 +133,52 @@ export async function POST(request: Request) {
   const body = (await request.json()) as DraftAffidavitRequest;
   const applicantName = cleanText(body.applicantName) || "the applicant";
   const respondentName = cleanText(body.respondentName) || "the respondent";
+  const selectedOrders = Array.isArray(body.selectedOrders)
+    ? body.selectedOrders.map(cleanText).filter(Boolean)
+    : [];
+  const ordersSought = cleanText(body.ordersSought);
+  const protectedPersons = cleanText(body.protectedPersons);
+  const protectionOrderFacts = cleanText(body.protectionOrderFacts);
+  const parentingProposal = cleanText(body.parentingProposal);
+  const preventingRemovalFacts = cleanText(body.preventingRemovalFacts);
+  const tenancyOrderFacts = cleanText(body.tenancyOrderFacts);
+  const warrantFacts = cleanText(body.warrantFacts);
+  const additionalGuardianFacts = cleanText(body.additionalGuardianFacts);
   const historyNotes = cleanText(body.historyNotes);
   const recentEventsNotes = cleanText(body.recentEventsNotes);
+  const children = Array.isArray(body.children) ? body.children : [];
 
-  if (!historyNotes && !recentEventsNotes) {
+  if (
+    selectedOrders.length === 0 &&
+    !ordersSought &&
+    !protectedPersons &&
+    !protectionOrderFacts &&
+    !parentingProposal &&
+    !preventingRemovalFacts &&
+    !tenancyOrderFacts &&
+    !warrantFacts &&
+    !additionalGuardianFacts &&
+    !historyNotes &&
+    !recentEventsNotes
+  ) {
     return NextResponse.json({ draft: "" });
   }
 
   const fallbackDraft = buildFallbackDraft({
     applicantName,
     respondentName,
+    selectedOrders,
+    ordersSought,
+    protectedPersons,
+    protectionOrderFacts,
+    parentingProposal,
+    preventingRemovalFacts,
+    tenancyOrderFacts,
+    warrantFacts,
+    additionalGuardianFacts,
     historyNotes,
     recentEventsNotes,
+    children,
   });
   const apiKey = process.env.OPENAI_API_KEY;
 
@@ -131,18 +212,63 @@ export async function POST(request: Request) {
             content: [
               `Applicant: ${applicantName}`,
               `Respondent: ${respondentName}`,
+              `Selected orders / sections: ${selectedOrders.join(", ") || "[None selected]"}`,
               "",
-              "Draft exactly two sections with these headings:",
+              "Children:",
+              children.length
+                ? children
+                    .map(
+                      (child, index) =>
+                        `${index + 1}. ${cleanText(child.fullName) || "[Unnamed child]"}; age ${cleanText(child.age) || "[not supplied]"}; dob ${cleanText(child.dateOfBirth) || "[not supplied]"}; applicant relationship ${cleanText(child.applicantRelationshipToChild) || "[not supplied]"}; respondent relationship ${cleanText(child.respondentRelationshipToChild) || "[not supplied]"}; living with ${cleanText(child.livingWithName) || "[not supplied]"}`,
+                    )
+                    .join("\n")
+                : "[No children supplied]",
+              "",
+              "Draft only the sections supported by the selected orders and supplied notes.",
+              "Use these headings where the matching notes or selected orders require them:",
+              "Orders Sought",
+              "Protected Persons",
+              "Facts in Support of Protection Order",
+              "Parenting Proposal",
+              "Facts in Support of Order Preventing Removal from New Zealand",
+              "Facts in Support of Tenancy Order",
+              "Facts in Support of Warrant",
+              "Facts in Support of Additional Guardian Order",
               "History of Family Violence",
               "Recent Events",
               "",
               "Formatting requirements:",
-              "- Number each affidavit paragraph on its own line before the paragraph text.",
+              "- Number each affidavit paragraph on its own line before the paragraph text where narrative paragraphs are drafted.",
               "- Start History of Family Violence at paragraph 4.",
               "- Start Recent Events at paragraph 26 unless the history section needs more paragraphs; if so, continue numbering sequentially.",
               "- Split different incidents into separate numbered paragraphs.",
               "- Preserve dates, places, quotes, names, and exhibit references only where they are supplied in the notes.",
+              "- Do not add sections that are not selected or not supported by the supplied notes.",
               "- Do not add a safety concerns section.",
+              "",
+              "Orders sought notes:",
+              ordersSought || "[No orders sought notes supplied]",
+              "",
+              "Protected persons notes:",
+              protectedPersons || "[No protected persons notes supplied]",
+              "",
+              "Protection order facts:",
+              protectionOrderFacts || "[No protection order facts supplied]",
+              "",
+              "Parenting proposal notes:",
+              parentingProposal || "[No parenting proposal supplied]",
+              "",
+              "Preventing removal facts:",
+              preventingRemovalFacts || "[No preventing removal facts supplied]",
+              "",
+              "Tenancy order facts:",
+              tenancyOrderFacts || "[No tenancy order facts supplied]",
+              "",
+              "Warrant facts:",
+              warrantFacts || "[No warrant facts supplied]",
+              "",
+              "Additional guardian facts:",
+              additionalGuardianFacts || "[No additional guardian facts supplied]",
               "",
               "History notes:",
               historyNotes || "[No history notes supplied]",
