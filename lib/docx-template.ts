@@ -71,6 +71,10 @@ function normalizePlaceholderKey(key: string): string {
   return key.replace(/\s+/g, " ").trim();
 }
 
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 function buildFieldLookup(fields: MergeFields): Record<string, string> {
   return Object.fromEntries(
     Object.entries(fields).flatMap(([key, value]) => {
@@ -212,6 +216,21 @@ export function mergePlaceholdersInXml(xml: string, fields: MergeFields): string
       end: match.index + match[0].length,
       value: getPlaceholderValue(match[1], fields, lookup),
     });
+  }
+
+  for (const malformedKey of ["tgst"]) {
+    if (!hasPlaceholderValue(malformedKey, fields, lookup)) {
+      continue;
+    }
+
+    const malformedPattern = new RegExp(`\\{\\{${escapeRegExp(malformedKey)}(?=Total|\\$|$)`, "g");
+    while ((match = malformedPattern.exec(fullText)) !== null) {
+      replacements.push({
+        start: match.index,
+        end: match.index + match[0].length,
+        value: getPlaceholderValue(malformedKey, fields, lookup),
+      });
+    }
   }
 
   for (const replacement of replacements.reverse()) {
