@@ -14,6 +14,7 @@ export type BillingCategory =
   | "general_billing_entry";
 
 export type BillingMatterInput = {
+  matterId?: string;
   clientName?: string;
   legalAidNumber?: string;
   invoiceNumber?: string;
@@ -28,10 +29,17 @@ export type BillingDraftInput = {
 };
 
 export type TravelReference = {
+  code: "MANUKAU_COURT" | "AUCKLAND_COURT" | "NORTH_SHORE_COURT" | "WAITAKERE_COURT";
   court: string;
-  oneWayKm: number;
+  travelTimeBillingRow: string;
+  travelTimeValue: number;
+  returnTravelTime: string;
+  mileageBillingRow: string;
+  mileageValue: number;
+  returnDistance: string;
   returnKm: number;
   returnTravelHours: number;
+  progressResultsWording: string;
 };
 
 export type EvidenceRequirement = {
@@ -41,6 +49,7 @@ export type EvidenceRequirement = {
 };
 
 export type BillingDraft = {
+  matterId: string;
   clientName: string;
   legalAidNumber: string;
   invoiceNumber: string;
@@ -64,6 +73,43 @@ export type BillingDraft = {
   warnings: string[];
 };
 
+export type BillingRecord = {
+  id: string;
+  matterId: string;
+  clientName: string;
+  legalAidNumber: string;
+  invoiceNumber: string;
+  formType: BillingFormType;
+  status: BillingStatus;
+  draft: BillingDraft;
+  evidence: EvidenceRequirement[];
+  evidenceStoragePaths: string[];
+  templatePath: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type BillingRecordRow = {
+  id: string;
+  matter_id: string;
+  client_name: string;
+  legal_aid_number: string;
+  invoice_number: string;
+  form_type: BillingFormType;
+  status: BillingStatus;
+  draft_json: BillingDraft;
+  evidence_json: EvidenceRequirement[];
+  evidence_storage_paths: string[];
+  template_path: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export const billingTemplatePaths: Record<BillingFormType, string> = {
+  "32B": "templates/billing/Form32B.dotx",
+  "33A": "templates/billing/Form33A.dotx",
+};
+
 const CATEGORY_LABELS: Record<BillingCategory, string> = {
   pre_hearing_conference: "Pre-hearing conference",
   judicial_conference: "Judicial conference",
@@ -77,11 +123,73 @@ const CATEGORY_LABELS: Record<BillingCategory, string> = {
 };
 
 export const travelReferences: TravelReference[] = [
-  { court: "Manukau Court", oneWayKm: 19, returnKm: 38, returnTravelHours: 1 },
-  { court: "Auckland Court", oneWayKm: 10, returnKm: 20, returnTravelHours: 1 },
-  { court: "North Shore Court", oneWayKm: 28.6, returnKm: 57.2, returnTravelHours: 1.5 },
-  { court: "Waitakere Court", oneWayKm: 24.5, returnKm: 49, returnTravelHours: 1.5 },
+  {
+    code: "MANUKAU_COURT",
+    court: "Manukau Court",
+    travelTimeBillingRow: "Travel – Time – necessary",
+    travelTimeValue: 1,
+    returnTravelTime: "1 hour",
+    mileageBillingRow: "Travel – Personal car – necessary – @ $1.17 per km",
+    mileageValue: 38,
+    returnDistance: "38km",
+    returnKm: 38,
+    returnTravelHours: 1,
+    progressResultsWording: "Travel time and mileage to Manukau Court return",
+  },
+  {
+    code: "AUCKLAND_COURT",
+    court: "Auckland Court",
+    travelTimeBillingRow: "Travel – Time – necessary",
+    travelTimeValue: 1,
+    returnTravelTime: "1 hour",
+    mileageBillingRow: "Travel – Personal car – necessary – @ $1.17 per km",
+    mileageValue: 20,
+    returnDistance: "20km",
+    returnKm: 20,
+    returnTravelHours: 1,
+    progressResultsWording: "Travel time and mileage to Auckland Court return",
+  },
+  {
+    code: "NORTH_SHORE_COURT",
+    court: "North Shore Court",
+    travelTimeBillingRow: "Travel – Time – necessary",
+    travelTimeValue: 1.5,
+    returnTravelTime: "1.5 hours",
+    mileageBillingRow: "Travel – Personal car – necessary – @ $1.17 per km",
+    mileageValue: 57.2,
+    returnDistance: "57.2km",
+    returnKm: 57.2,
+    returnTravelHours: 1.5,
+    progressResultsWording: "Travel time and mileage to North Shore Court return",
+  },
+  {
+    code: "WAITAKERE_COURT",
+    court: "Waitakere Court",
+    travelTimeBillingRow: "Travel – Time – necessary",
+    travelTimeValue: 1.5,
+    returnTravelTime: "1.5 hours",
+    mileageBillingRow: "Travel – Personal car – necessary – @ $1.17 per km",
+    mileageValue: 49,
+    returnDistance: "49km",
+    returnKm: 49,
+    returnTravelHours: 1.5,
+    progressResultsWording: "Travel time and mileage to Waitakere Court return",
+  },
 ];
+
+const SUPPORTED_COURT_LABELS = travelReferences.map((reference) => reference.court).join(", ");
+const UNSUPPORTED_COURT_MESSAGE =
+  `Unsupported court. Please select one of: ${SUPPORTED_COURT_LABELS}.`;
+
+const courtAliases: Array<{ pattern: RegExp; court: string }> = [
+  { pattern: /\bmanukau(?:\s+court)?\b/i, court: "Manukau Court" },
+  { pattern: /\bauckland(?:\s+court)?\b/i, court: "Auckland Court" },
+  { pattern: /\bnorth\s+shore(?:\s+court)?\b/i, court: "North Shore Court" },
+  { pattern: /\bwaitakere(?:\s+court)?\b/i, court: "Waitakere Court" },
+];
+
+const knownUnsupportedCourtPattern =
+  /\b(Wellington|Dunedin|Christchurch|Hamilton|Tauranga|Rotorua|Whangarei|Nelson|Invercargill|New Plymouth|Palmerston North|Napier|Hastings|Porirua|Lower Hutt)(?:\s+Court)?\b/i;
 
 export const standardBillingWording: Record<BillingCategory, string> = {
   pre_hearing_conference:
@@ -115,6 +223,10 @@ function inferFormType(prompt: string): BillingFormType {
   return "32B";
 }
 
+function createBillingId(prefix: string): string {
+  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
 function inferCategory(prompt: string): BillingCategory {
   const text = prompt.toLowerCase();
 
@@ -146,14 +258,21 @@ function inferProceedingType(prompt: string, fallback?: string): string {
 }
 
 function extractCourt(prompt: string): string {
-  const knownCourt = travelReferences.find((reference) =>
-    new RegExp(reference.court.replace(" ", "\\s+"), "i").test(prompt),
-  );
+  const knownCourt = courtAliases.find((alias) => alias.pattern.test(prompt));
 
-  if (knownCourt) return knownCourt.court;
+  return knownCourt?.court ?? "";
+}
 
-  const match = prompt.match(/\b([A-Z][A-Za-z]+(?:\s+[A-Z][A-Za-z]+){0,2}\s+Court)\b/);
-  return match?.[1] ?? "";
+function extractUnsupportedCourt(prompt: string): string {
+  if (extractCourt(prompt)) return "";
+
+  const knownUnsupportedCourt = prompt.match(knownUnsupportedCourtPattern);
+  if (knownUnsupportedCourt?.[1]) {
+    return `${knownUnsupportedCourt[1]} Court`;
+  }
+
+  const explicitCourt = prompt.match(/\b([A-Z][A-Za-z]+(?:\s+[A-Z][A-Za-z]+){0,2}\s+Court)\b/);
+  return explicitCourt?.[1] ?? "";
 }
 
 function extractClient(prompt: string, fallback?: string): string {
@@ -275,6 +394,7 @@ export function createBillingDraft(input: BillingDraftInput): BillingDraft {
   const formType = inferFormType(prompt);
   const category = inferCategory(prompt);
   const court = extractCourt(prompt);
+  const unsupportedCourt = extractUnsupportedCourt(prompt);
   const attendance = extractAttendance(prompt);
   const travel = travelReferences.find((reference) => reference.court === court);
   const parking = moneyFromPrompt(prompt, /parking\s+(?:was|of)?\s*\$?([\d,.]+)/i);
@@ -282,8 +402,11 @@ export function createBillingDraft(input: BillingDraftInput): BillingDraft {
   const evidenceRequirements = buildEvidenceRequirements(category, prompt, parking, input.uploadedEvidence ?? []);
   const warnings: string[] = [];
 
-  if (!court) warnings.push("No court was identified from the prompt.");
-  if (!travel && court) warnings.push(`No standard travel reference is stored for ${court}.`);
+  if (unsupportedCourt) {
+    warnings.push(UNSUPPORTED_COURT_MESSAGE);
+  } else if (!court) {
+    warnings.push(UNSUPPORTED_COURT_MESSAGE);
+  }
   if (!attendance.startTime || !attendance.endTime) warnings.push("No attendance time range was identified.");
 
   const status: BillingStatus = evidenceRequirements.some((requirement) => !requirement.uploaded)
@@ -291,6 +414,7 @@ export function createBillingDraft(input: BillingDraftInput): BillingDraft {
     : "ready_to_review";
 
   return {
+    matterId: matter.matterId?.trim() || createBillingId("matter"),
     clientName: extractClient(prompt, matter.clientName),
     legalAidNumber: matter.legalAidNumber?.trim() ?? "",
     invoiceNumber: matter.invoiceNumber?.trim() ?? "",
@@ -311,7 +435,46 @@ export function createBillingDraft(input: BillingDraftInput): BillingDraft {
     evidenceRequirements,
     status,
     templateStatus:
-      "Forms 32B and 33A are legacy .dot templates. Exact deterministic merge will be enabled after converted .docx or .dotx source templates with placeholders are uploaded.",
+      `Valid source template: ${billingTemplatePaths[formType]}. Final generation uses deterministic placeholder replacement only.`,
     warnings,
+  };
+}
+
+export function createBillingRecord(input: BillingDraftInput): BillingRecord {
+  const draft = createBillingDraft(input);
+  const now = new Date().toISOString();
+
+  return {
+    id: createBillingId("billing"),
+    matterId: draft.matterId,
+    clientName: draft.clientName,
+    legalAidNumber: draft.legalAidNumber,
+    invoiceNumber: draft.invoiceNumber,
+    formType: draft.formType,
+    status: draft.status,
+    draft,
+    evidence: draft.evidenceRequirements,
+    evidenceStoragePaths: [],
+    templatePath: billingTemplatePaths[draft.formType],
+    createdAt: now,
+    updatedAt: now,
+  };
+}
+
+export function toBillingRecordRow(record: BillingRecord): BillingRecordRow {
+  return {
+    id: record.id,
+    matter_id: record.matterId,
+    client_name: record.clientName,
+    legal_aid_number: record.legalAidNumber,
+    invoice_number: record.invoiceNumber,
+    form_type: record.formType,
+    status: record.status,
+    draft_json: record.draft,
+    evidence_json: record.evidence,
+    evidence_storage_paths: record.evidenceStoragePaths,
+    template_path: record.templatePath,
+    created_at: record.createdAt,
+    updated_at: record.updatedAt,
   };
 }

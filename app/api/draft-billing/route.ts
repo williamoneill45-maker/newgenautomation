@@ -1,5 +1,9 @@
 import { NextResponse } from "next/server";
-import { createBillingDraft, type BillingDraftInput } from "../../../lib/billing-automation";
+import {
+  createBillingRecord,
+  toBillingRecordRow,
+  type BillingDraftInput,
+} from "../../../lib/billing-automation";
 
 export async function POST(request: Request) {
   try {
@@ -9,7 +13,14 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "A billing prompt is required." }, { status: 400 });
     }
 
-    return NextResponse.json({ draft: createBillingDraft(body) });
+    const record = createBillingRecord(body);
+
+    return NextResponse.json({
+      draft: record.draft,
+      record,
+      supabaseRow: toBillingRecordRow(record),
+      validationMessages: record.draft.warnings,
+    });
   } catch (error) {
     console.error("Billing draft failed", error);
     return NextResponse.json(

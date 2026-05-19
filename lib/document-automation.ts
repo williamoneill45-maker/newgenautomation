@@ -71,7 +71,7 @@ export const informationSheetPlaceholders: TemplatePlaceholder[] = [
 
 export type MergeFieldValue = string | number | boolean | null | undefined;
 
-export type MergeFields = Partial<Record<PlaceholderKey, string>>;
+export type MergeFields = Partial<Record<PlaceholderKey, string>> & Record<string, string | undefined>;
 
 export type RawMergeFields = Partial<Record<PlaceholderKey, MergeFieldValue>>;
 

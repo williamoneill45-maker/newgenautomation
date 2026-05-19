@@ -1,13 +1,19 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useState } from "react";
-import type { BillingDraft } from "../../lib/billing-automation";
+import { FormEvent, useEffect, useState } from "react";
+import {
+  travelReferences,
+  type BillingDraft,
+  type BillingRecord,
+  type BillingStatus,
+} from "../../lib/billing-automation";
 
 const examplePrompt =
   "I attended a pre hearing conference today at Waitakere Court for Phillip Jones from 12pm-1pm, parking was $12.50, office disbursements of $15, use form 32b.";
 
 const emptyMatter = {
+  matterId: "matter-demo-phillip-jones",
   clientName: "Phillip Jones",
   legalAidNumber: "",
   invoiceNumber: "",
@@ -15,18 +21,54 @@ const emptyMatter = {
   proceedingType: "COCA / parenting",
 };
 
+const billingHistoryStorageKey = "newgenautomation.billing.records";
+
+type EditableBillingDraftField =
+  | "clientName"
+  | "legalAidNumber"
+  | "invoiceNumber"
+  | "court"
+  | "date"
+  | "proceedingType"
+  | "startTime"
+  | "endTime"
+  | "attendanceHours"
+  | "parking"
+  | "officeDisbursements"
+  | "standardWording";
+
 export default function BillingPage() {
   const [prompt, setPrompt] = useState(examplePrompt);
   const [matter, setMatter] = useState(emptyMatter);
-  const [draft, setDraft] = useState<BillingDraft | null>(null);
+  const [selectedRecord, setSelectedRecord] = useState<BillingRecord | null>(null);
+  const [records, setRecords] = useState<BillingRecord[]>([]);
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [generationError, setGenerationError] = useState("");
+  const [isGenerating, setIsGenerating] = useState(false);
+
+  useEffect(() => {
+    const storedRecords = window.localStorage.getItem(billingHistoryStorageKey);
+    if (!storedRecords) return;
+
+    try {
+      const parsedRecords = JSON.parse(storedRecords) as BillingRecord[];
+      setRecords(parsedRecords);
+      setSelectedRecord(parsedRecords[0] ?? null);
+    } catch {
+      window.localStorage.removeItem(billingHistoryStorageKey);
+    }
+  }, []);
+
+  function saveRecords(nextRecords: BillingRecord[]) {
+    setRecords(nextRecords);
+    window.localStorage.setItem(billingHistoryStorageKey, JSON.stringify(nextRecords));
+  }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setIsLoading(true);
     setError("");
-    setDraft(null);
 
     try {
       const response = await fetch("/api/draft-billing", {
@@ -40,11 +82,106 @@ export default function BillingPage() {
         throw new Error(payload.error ?? "Unable to create billing draft.");
       }
 
-      setDraft(payload.draft);
+      const nextRecord = payload.record as BillingRecord;
+      const nextRecords = [nextRecord, ...records.filter((record) => record.id !== nextRecord.id)];
+      saveRecords(nextRecords);
+      setSelectedRecord(nextRecord);
     } catch (caughtError) {
       setError(caughtError instanceof Error ? caughtError.message : "Unable to create billing draft.");
     } finally {
       setIsLoading(false);
+    }
+  }
+
+  function markEvidenceUploaded(recordId: string, evidenceType: string) {
+    updateBillingRecord(recordId, (record) => {
+      if (record.id !== recordId) return record;
+
+      const evidence = record.evidence.map((requirement) =>
+        requirement.type === evidenceType ? { ...requirement, uploaded: true } : requirement,
+      );
+      const status: BillingStatus = evidence.some((requirement) => !requirement.uploaded)
+        ? "pending_evidence"
+        : "ready_to_review";
+      const updatedRecord: BillingRecord = {
+        ...record,
+        status,
+        evidence,
+        evidenceStoragePaths: Array.from(new Set([...record.evidenceStoragePaths, `pending-upload/${evidenceType}`])),
+        draft: {
+          ...record.draft,
+          status,
+          evidenceRequirements: evidence,
+        },
+        updatedAt: new Date().toISOString(),
+      };
+
+      return updatedRecord;
+    });
+  }
+
+  function updateBillingRecord(recordId: string, updater: (record: BillingRecord) => BillingRecord) {
+    const nextRecords = records.map((record) => (record.id === recordId ? updater(record) : record));
+    saveRecords(nextRecords);
+    setSelectedRecord(nextRecords.find((record) => record.id === recordId) ?? selectedRecord);
+  }
+
+  function updateDraftField(recordId: string, field: EditableBillingDraftField, value: string | number) {
+    updateBillingRecord(recordId, (record) => {
+      if (record.id !== recordId) return record;
+
+      const draft = {
+        ...record.draft,
+        [field]: value,
+        travel:
+          field === "court"
+            ? travelReferences.find((reference) => reference.court === String(value))
+            : record.draft.travel,
+      } as BillingDraft;
+
+      return {
+        ...record,
+        clientName: field === "clientName" ? String(value) : record.clientName,
+        legalAidNumber: field === "legalAidNumber" ? String(value) : record.legalAidNumber,
+        invoiceNumber: field === "invoiceNumber" ? String(value) : record.invoiceNumber,
+        draft,
+        updatedAt: new Date().toISOString(),
+      };
+    });
+  }
+
+  async function generateBillingDocument(record: BillingRecord) {
+    setIsGenerating(true);
+    setGenerationError("");
+
+    try {
+      const response = await fetch("/api/generate-billing-document", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ record, reviewed: true }),
+      });
+
+      if (!response.ok) {
+        const payload = await response.json();
+        throw new Error(payload.error ?? "Unable to generate billing document.");
+      }
+
+      const blob = await response.blob();
+      const disposition = response.headers.get("Content-Disposition") ?? "";
+      const fileNameMatch = disposition.match(/filename="([^"]+)"/);
+      const fileName = fileNameMatch?.[1] ?? `Completed Form${record.formType}.docx`;
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = fileName;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (caughtError) {
+      setGenerationError(caughtError instanceof Error ? caughtError.message : "Unable to generate billing document.");
+    } finally {
+      setIsGenerating(false);
     }
   }
 
@@ -56,7 +193,7 @@ export default function BillingPage() {
             Back to dashboard
           </Link>
           <span className="rounded-md bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-900">
-            Forms 32B / 33A phase 1
+            Forms 32B / 33A generation
           </span>
         </div>
 
@@ -65,7 +202,8 @@ export default function BillingPage() {
           <h1 className="mt-2 text-3xl font-semibold tracking-normal text-slate-950">Billing Workbench</h1>
           <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-600">
             Create a structured billing draft from a lawyer note, using controlled wording and stored travel references.
-            Exact Form 32B and 33A merging will switch on once the legacy .dot forms are uploaded as editable .docx or .dotx templates with placeholders.
+            Billing records are linked to a matter/client, kept in local history, and shaped for later Supabase persistence.
+            Review or edit the draft, then generate Form 32B or 33A from the exact .dotx template in /templates/billing.
           </p>
         </header>
 
@@ -84,6 +222,11 @@ export default function BillingPage() {
             />
 
             <div className="mt-6 grid gap-4">
+              <Field
+                label="Matter ID"
+                value={matter.matterId}
+                onChange={(value) => setMatter((current) => ({ ...current, matterId: value }))}
+              />
               <Field
                 label="Client name"
                 value={matter.clientName}
@@ -123,7 +266,25 @@ export default function BillingPage() {
           </form>
 
           <div className="space-y-6">
-            {draft ? <DraftPanel draft={draft} /> : <EmptyState />}
+            {selectedRecord ? (
+              <>
+                <DraftPanel
+                  record={selectedRecord}
+                  generationError={generationError}
+                  isGenerating={isGenerating}
+                  onDraftFieldChange={updateDraftField}
+                  onEvidenceUploaded={markEvidenceUploaded}
+                  onGenerate={generateBillingDocument}
+                />
+                <HistoryPanel
+                  records={records}
+                  selectedRecordId={selectedRecord.id}
+                  onSelect={setSelectedRecord}
+                />
+              </>
+            ) : (
+              <EmptyState />
+            )}
           </div>
         </section>
       </div>
@@ -166,7 +327,23 @@ function EmptyState() {
   );
 }
 
-function DraftPanel({ draft }: { draft: BillingDraft }) {
+function DraftPanel({
+  record,
+  generationError,
+  isGenerating,
+  onDraftFieldChange,
+  onEvidenceUploaded,
+  onGenerate,
+}: {
+  record: BillingRecord;
+  generationError: string;
+  isGenerating: boolean;
+  onDraftFieldChange: (recordId: string, field: EditableBillingDraftField, value: string | number) => void;
+  onEvidenceUploaded: (recordId: string, evidenceType: string) => void;
+  onGenerate: (record: BillingRecord) => void;
+}) {
+  const draft = record.draft;
+
   return (
     <>
       <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-form">
@@ -181,6 +358,8 @@ function DraftPanel({ draft }: { draft: BillingDraft }) {
         </div>
 
         <dl className="mt-5 grid gap-4 sm:grid-cols-2">
+          <Detail label="Matter ID" value={record.matterId} />
+          <Detail label="Billing record" value={record.id} />
           <Detail label="Client" value={draft.clientName || "Not identified"} />
           <Detail label="Legal aid number" value={draft.legalAidNumber || "Not supplied"} />
           <Detail label="Invoice number" value={draft.invoiceNumber || "Not supplied"} />
@@ -193,15 +372,93 @@ function DraftPanel({ draft }: { draft: BillingDraft }) {
       </section>
 
       <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-form">
+        <h2 className="text-lg font-semibold text-slate-950">Review and edit</h2>
+        <div className="mt-5 grid gap-4 sm:grid-cols-2">
+          <Field
+            label="Client name"
+            value={draft.clientName}
+            onChange={(value) => onDraftFieldChange(record.id, "clientName", value)}
+          />
+          <Field
+            label="Legal aid number"
+            value={draft.legalAidNumber}
+            onChange={(value) => onDraftFieldChange(record.id, "legalAidNumber", value)}
+          />
+          <Field
+            label="Invoice number"
+            value={draft.invoiceNumber}
+            onChange={(value) => onDraftFieldChange(record.id, "invoiceNumber", value)}
+          />
+          <Field
+            label="Court"
+            value={draft.court}
+            onChange={(value) => onDraftFieldChange(record.id, "court", value)}
+          />
+          <Field
+            label="Billing date"
+            value={draft.date}
+            onChange={(value) => onDraftFieldChange(record.id, "date", value)}
+          />
+          <Field
+            label="Proceeding type"
+            value={draft.proceedingType}
+            onChange={(value) => onDraftFieldChange(record.id, "proceedingType", value)}
+          />
+          <Field
+            label="Start time"
+            value={draft.startTime}
+            onChange={(value) => onDraftFieldChange(record.id, "startTime", value)}
+          />
+          <Field
+            label="End time"
+            value={draft.endTime}
+            onChange={(value) => onDraftFieldChange(record.id, "endTime", value)}
+          />
+          <NumberField
+            label="Attendance hours"
+            value={draft.attendanceHours}
+            onChange={(value) => onDraftFieldChange(record.id, "attendanceHours", value)}
+          />
+          <NumberField
+            label="Parking"
+            value={draft.parking}
+            onChange={(value) => onDraftFieldChange(record.id, "parking", value)}
+          />
+          <NumberField
+            label="Office disbursements"
+            value={draft.officeDisbursements}
+            onChange={(value) => onDraftFieldChange(record.id, "officeDisbursements", value)}
+          />
+        </div>
+        <label className="mt-4 block text-sm font-medium text-slate-700" htmlFor="standard-wording">
+          Controlled wording
+          <textarea
+            id="standard-wording"
+            className="mt-2 min-h-32 w-full rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-950 shadow-sm outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-100"
+            value={draft.standardWording}
+            onChange={(event) => onDraftFieldChange(record.id, "standardWording", event.target.value)}
+          />
+        </label>
+      </section>
+
+      <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-form">
         <h2 className="text-lg font-semibold text-slate-950">Travel calculation</h2>
         {draft.travel ? (
-          <div className="mt-4 grid gap-4 sm:grid-cols-3">
+          <div className="mt-4 grid gap-4 sm:grid-cols-2">
             <Detail label="Court" value={draft.travel.court} />
-            <Detail label="Return mileage" value={`${draft.travel.returnKm} km`} />
-            <Detail label="Return travel" value={`${draft.travel.returnTravelHours} hours`} />
+            <Detail label="Return travel" value={draft.travel.returnTravelTime} />
+            <Detail label="Travel time row" value={draft.travel.travelTimeBillingRow} />
+            <Detail label="Travel time value" value={String(draft.travel.travelTimeValue)} />
+            <Detail label="Mileage row" value={draft.travel.mileageBillingRow} />
+            <Detail label="Mileage value" value={String(draft.travel.mileageValue)} />
+            <Detail label="Return distance" value={draft.travel.returnDistance} />
+            <Detail label="Progress/results" value={draft.travel.progressResultsWording} />
           </div>
         ) : (
-          <p className="mt-3 text-sm text-slate-600">No stored travel reference matched this prompt.</p>
+          <p className="mt-3 text-sm text-slate-600">
+            No supported travel reference matched this prompt. Supported courts are Manukau Court, Auckland Court,
+            North Shore Court, and Waitakere Court.
+          </p>
         )}
       </section>
 
@@ -219,9 +476,17 @@ function DraftPanel({ draft }: { draft: BillingDraft }) {
             {draft.evidenceRequirements.map((requirement) => (
               <div key={requirement.type} className="flex items-center justify-between gap-4 rounded-md border border-slate-200 px-3 py-2">
                 <span className="text-sm font-medium text-slate-700">{requirement.label}</span>
-                <span className={requirement.uploaded ? "text-xs font-semibold text-emerald-700" : "text-xs font-semibold text-amber-800"}>
-                  {requirement.uploaded ? "Uploaded" : "Needed"}
-                </span>
+                {requirement.uploaded ? (
+                  <span className="text-xs font-semibold text-emerald-700">Received</span>
+                ) : (
+                  <button
+                    type="button"
+                    className="rounded-md border border-amber-200 bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-900 transition hover:bg-amber-100"
+                    onClick={() => onEvidenceUploaded(record.id, requirement.type)}
+                  >
+                    Mark received
+                  </button>
+                )}
               </div>
             ))}
           </div>
@@ -242,8 +507,88 @@ function DraftPanel({ draft }: { draft: BillingDraft }) {
       <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-form">
         <h2 className="text-lg font-semibold text-slate-950">Template status</h2>
         <p className="mt-3 text-sm leading-6 text-slate-600">{draft.templateStatus}</p>
+        <p className="mt-2 text-sm font-medium text-slate-700">Template path: {record.templatePath}</p>
+        <button
+          type="button"
+          disabled={isGenerating}
+          className="mt-5 inline-flex h-10 items-center justify-center rounded-md bg-sky-600 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-sky-700 disabled:cursor-not-allowed disabled:bg-slate-300"
+          onClick={() => onGenerate(record)}
+        >
+          {isGenerating ? "Generating..." : `Generate reviewed Form ${record.formType}`}
+        </button>
+        {generationError ? <p className="mt-3 text-sm font-medium text-red-700">{generationError}</p> : null}
       </section>
     </>
+  );
+}
+
+function NumberField({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: number;
+  onChange: (value: number) => void;
+}) {
+  const id = label.toLowerCase().replace(/\s+/g, "-");
+
+  return (
+    <label className="block text-sm font-medium text-slate-700" htmlFor={id}>
+      {label}
+      <input
+        id={id}
+        type="number"
+        step="0.01"
+        className="mt-2 h-10 w-full rounded-md border border-slate-300 px-3 text-sm text-slate-950 shadow-sm outline-none transition placeholder:text-slate-400 focus:border-sky-500 focus:ring-2 focus:ring-sky-100"
+        value={value}
+        onChange={(event) => onChange(Number(event.target.value))}
+      />
+    </label>
+  );
+}
+
+function HistoryPanel({
+  records,
+  selectedRecordId,
+  onSelect,
+}: {
+  records: BillingRecord[];
+  selectedRecordId: string;
+  onSelect: (record: BillingRecord) => void;
+}) {
+  return (
+    <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-form">
+      <div className="flex items-center justify-between gap-4">
+        <h2 className="text-lg font-semibold text-slate-950">Billing history</h2>
+        <span className="text-sm text-slate-500">{records.length} saved</span>
+      </div>
+
+      <div className="mt-4 space-y-2">
+        {records.map((record) => (
+          <button
+            key={record.id}
+            type="button"
+            className={record.id === selectedRecordId
+              ? "w-full rounded-md border border-sky-300 bg-sky-50 p-3 text-left transition"
+              : "w-full rounded-md border border-slate-200 p-3 text-left transition hover:bg-slate-50"}
+            onClick={() => onSelect(record)}
+          >
+            <div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-start">
+              <div>
+                <p className="text-sm font-semibold text-slate-950">{record.clientName || "Unknown client"}</p>
+                <p className="mt-1 text-xs text-slate-500">
+                  {record.matterId} | Form {record.formType} | {new Date(record.createdAt).toLocaleString()}
+                </p>
+              </div>
+              <span className={record.status === "pending_evidence" ? "rounded-md bg-amber-100 px-2 py-1 text-xs font-semibold text-amber-900" : "rounded-md bg-emerald-100 px-2 py-1 text-xs font-semibold text-emerald-900"}>
+                {record.status === "pending_evidence" ? "Pending evidence" : "Ready"}
+              </span>
+            </div>
+          </button>
+        ))}
+      </div>
+    </section>
   );
 }
 

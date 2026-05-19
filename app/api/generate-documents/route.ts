@@ -24,7 +24,7 @@ type DocumentValidationReport = {
 };
 
 async function readSourceTemplate(fileName: string): Promise<ArrayBuffer> {
-  const templatePath = path.join(process.cwd(), "Templates", fileName);
+  const templatePath = path.join(process.cwd(), "templates", fileName);
   const template = await readFile(templatePath);
   return template.buffer.slice(
     template.byteOffset,
@@ -47,7 +47,7 @@ export async function POST(request: Request) {
     generatedAt: new Date().toISOString(),
     matterId: body.matter.id,
     rules: [
-      "Source DOCX templates are read from /Templates.",
+      "Source DOCX templates are read from /templates.",
       "Only double-curly placeholders are replaced.",
       "Missing fields are left unchanged in the completed DOCX.",
       "No AI generation is used for the standard DOCX forms.",

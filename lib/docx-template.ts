@@ -45,6 +45,10 @@ export type DocxMergeResult = {
   report: DocxMergeReport;
 };
 
+export type DocxMergeOptions = {
+  outputType?: "document" | "template";
+};
+
 function escapeXml(value: string): string {
   return value
     .replace(/&/g, "&amp;")
@@ -316,6 +320,7 @@ async function validateDocxStructure(
   originalTemplate: ArrayBuffer,
   generatedDocument: ArrayBuffer,
   fields: MergeFields,
+  options: DocxMergeOptions = {},
 ): Promise<DocxStructureValidation> {
   const [originalZip, generatedZip] = await Promise.all([
     JSZip.loadAsync(originalTemplate),
@@ -360,6 +365,17 @@ async function validateDocxStructure(
       continue;
     }
 
+    if (options.outputType === "document" && fileName === "[Content_Types].xml") {
+      const originalXml = await originalFile.async("string");
+      const generatedXml = await generatedFile.async("string");
+
+      if (generatedXml !== convertTemplateContentTypesToDocument(originalXml)) {
+        unchangedNonTemplateFiles = false;
+        onlyPlaceholderTextChanged = false;
+      }
+      continue;
+    }
+
     const [originalBytes, generatedBytes] = await Promise.all([
       originalFile.async("uint8array"),
       generatedFile.async("uint8array"),
@@ -382,9 +398,17 @@ async function validateDocxStructure(
   };
 }
 
+function convertTemplateContentTypesToDocument(xml: string): string {
+  return xml.replace(
+    /application\/vnd\.openxmlformats-officedocument\.wordprocessingml\.template\.main\+xml/g,
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml",
+  );
+}
+
 export async function mergeDocxTemplate(
   template: ArrayBuffer,
   fields: MergeFields,
+  options: DocxMergeOptions = {},
 ): Promise<DocxMergeResult> {
   const zip = await JSZip.loadAsync(template);
   const validation = await validateDocxTemplate(template, fields);
@@ -398,6 +422,13 @@ export async function mergeDocxTemplate(
     }),
   );
 
+  if (options.outputType === "document") {
+    const contentTypes = zip.file("[Content_Types].xml");
+    if (contentTypes) {
+      zip.file("[Content_Types].xml", convertTemplateContentTypesToDocument(await contentTypes.async("string")));
+    }
+  }
+
   const buffer = await zip.generateAsync({ type: "arraybuffer" });
 
   return {
@@ -405,7 +436,7 @@ export async function mergeDocxTemplate(
     report: {
       ...validation,
       replacedPlaceholders,
-      structure: await validateDocxStructure(template, buffer, fields),
+      structure: await validateDocxStructure(template, buffer, fields, options),
     },
   };
 }
