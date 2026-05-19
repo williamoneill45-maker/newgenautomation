@@ -173,7 +173,7 @@ function DraftPanel({ draft }: { draft: BillingDraft }) {
         <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
           <div>
             <h2 className="text-lg font-semibold text-slate-950">Draft billing entry</h2>
-            <p className="mt-1 text-sm text-slate-600">Form {draft.formType} · {draft.categoryLabel}</p>
+            <p className="mt-1 text-sm text-slate-600">Form {draft.formType} | {draft.categoryLabel}</p>
           </div>
           <span className={draft.status === "pending_evidence" ? "rounded-md bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-900" : "rounded-md bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-900"}>
             {draft.status === "pending_evidence" ? "Pending evidence" : "Ready to review"}
@@ -188,7 +188,7 @@ function DraftPanel({ draft }: { draft: BillingDraft }) {
           <Detail label="Court" value={draft.court || "Not identified"} />
           <Detail label="Date" value={draft.date} />
           <Detail label="Attendance" value={draft.startTime && draft.endTime ? `${draft.startTime}-${draft.endTime} (${draft.attendanceHours}h)` : "Not identified"} />
-          <Detail label="Disbursements" value={`Parking $${draft.parking.toFixed(2)} · Office $${draft.officeDisbursements.toFixed(2)}`} />
+          <Detail label="Disbursements" value={`Parking $${draft.parking.toFixed(2)} | Office $${draft.officeDisbursements.toFixed(2)}`} />
         </dl>
       </section>
 
