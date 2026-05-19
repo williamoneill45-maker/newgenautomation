@@ -1,3 +1,5 @@
+import { form32BManagementRules } from "./form32b-rules";
+
 export type BillingFormType = "32B" | "33A";
 
 export type BillingStatus = "ready_to_review" | "pending_evidence";
@@ -237,6 +239,30 @@ export const standardBillingWording: Record<BillingCategory, string> = {
   general_billing_entry:
     "Draft billing entry prepared from lawyer prompt. Review category, wording, disbursements, and evidence before filing.",
 };
+
+const form32BCategoryRuleIds: Partial<Record<BillingCategory, string>> = {
+  pre_hearing_conference: "pre-hearing-conference",
+  formal_proof: "formal-proof",
+  instructing_agent: "instructing-agent",
+  pre_hearing_matters: "pre-hearing-matters",
+  additional_factors: "additional-factors",
+  directions_conference: "directions-conference",
+  settlement_conference: "settlement-conference",
+  lawyer_for_child_report: "report",
+  defended_hearing: "defended-hearing",
+  consent_memorandum: "memorandum-of-consent",
+  complying_judges_directions: "complying-judges-directions",
+};
+
+function getStandardWording(formType: BillingFormType, category: BillingCategory): string {
+  if (formType === "32B") {
+    const ruleId = form32BCategoryRuleIds[category];
+    const ruleWording = form32BManagementRules.find((rule) => rule.id === ruleId)?.standardWording;
+    if (ruleWording) return ruleWording;
+  }
+
+  return standardBillingWording[category];
+}
 
 function moneyFromPrompt(prompt: string, label: RegExp): number {
   const match = prompt.match(label);
@@ -485,7 +511,7 @@ export function createBillingDraft(input: BillingDraftInput): BillingDraft {
     travel,
     parking,
     officeDisbursements,
-    standardWording: applyBillingDate(applyAttendanceTime(standardBillingWording[category], attendance), billingDate),
+    standardWording: applyBillingDate(applyAttendanceTime(getStandardWording(formType, category), attendance), billingDate),
     evidenceRequirements,
     status,
     templateStatus:
