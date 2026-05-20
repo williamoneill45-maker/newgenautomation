@@ -146,6 +146,7 @@ export default function IntakeForm() {
   const [affidavitDraft, setAffidavitDraft] = useState("");
   const [isDraftingAffidavit, setIsDraftingAffidavit] = useState(false);
   const [affidavitDraftError, setAffidavitDraftError] = useState("");
+  const [affidavitDraftSource, setAffidavitDraftSource] = useState("");
 
   const setMatterValue = (field: "legalAidNumber" | "clientName", value: string) => {
     setMatter((current) => ({ ...current, [field]: value, updatedAt: new Date().toISOString() }));
@@ -184,6 +185,7 @@ export default function IntakeForm() {
     if (!historyNotes && !recentEventsNotes) {
       setAffidavitDraft("");
       setAffidavitDraftError("");
+      setAffidavitDraftSource("");
       setIsDraftingAffidavit(false);
       return;
     }
@@ -211,8 +213,9 @@ export default function IntakeForm() {
           throw new Error("Drafting request failed");
         }
 
-        const data = (await response.json()) as { draft?: string };
+        const data = (await response.json()) as { draft?: string; source?: string };
         setAffidavitDraft(data.draft ?? "");
+        setAffidavitDraftSource(data.source ?? "");
       } catch (error) {
         if (!controller.signal.aborted) {
           setAffidavitDraftError("Draft could not be updated.");
@@ -456,6 +459,11 @@ export default function IntakeForm() {
               {isDraftingAffidavit ? <span className="text-xs font-medium text-sky-700">Drafting...</span> : null}
             </span>
             <textarea value={affidavitDraft} readOnly rows={22} className="w-full resize-y rounded-md border border-slate-300 bg-slate-50 px-3 py-2 text-sm leading-6 text-slate-950 shadow-sm outline-none" />
+            {affidavitDraftSource === "fallback" ? (
+              <span className="mt-2 block text-xs text-amber-700">
+                AI drafting is not active for this request. Showing structured fallback wording.
+              </span>
+            ) : null}
             {affidavitDraftError ? <span className="mt-2 block text-xs text-red-600">{affidavitDraftError}</span> : null}
           </label>
         </div>
