@@ -94,17 +94,19 @@ function polishAffidavitNote(note: string): string {
       const sentence = fragment
         .replace(/^(\d{1,2}\s+[A-Za-z]+\s+\d{4})\s+(.+)/, "On $1, $2")
         .replace(/^(\d{4})\s+(.+)/, "In $1, $2")
+        .replace(/^(In \d{4}, )(?=moved|immigrated|went|reported|called|left|arrived|started|got|signed)\b/i, "$1I ")
+        .replace(/^(On \d{1,2}\s+[A-Za-z]+\s+\d{4}, )(?=went|reported|called|left|arrived|woke|said|told|asked)\b/i, "$1I ")
         .replace(/\bRespondent\b/g, "the Respondent")
         .replace(/^the Respondent\b/, "The Respondent")
         .replace(/^respondent\b/i, "The Respondent")
         .replace(/^he\b/i, "The Respondent")
         .replace(/^she\b/i, "The Respondent")
-        .replace(/^children saw it$/i, "The children witnessed this")
-        .replace(/^children saw this$/i, "The children witnessed this")
-        .replace(/^bruising$/i, "This caused bruising")
-        .replace(/^police took statement$/i, "The Police took a statement")
+        .replace(/^children saw it\.?$/i, "The children witnessed this")
+        .replace(/^children saw this\.?$/i, "The children witnessed this")
+        .replace(/^bruising\.?$/i, "This caused bruising")
+        .replace(/^police took statement\.?$/i, "The Police took a statement")
         .replace(
-          /^exhibit\s+([A-Z])\s+photos$/i,
+          /^exhibit\s+([A-Z])\s+photos\.?$/i,
           (_match, exhibit: string) => `I refer to the photographs at Exhibit "${exhibit.toUpperCase()}"`,
         );
 
