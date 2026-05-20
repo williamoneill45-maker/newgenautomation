@@ -147,6 +147,12 @@ export function buildMatterMergeFields(matter: MatterFile): MergeFields {
     secondChild?.age || calculateAge(secondChild?.dateOfBirth ?? "");
   const applicantAge = calculateAge(intake.applicant.dateOfBirth);
   const respondentAge = calculateAge(intake.respondent.dateOfBirth);
+  const otherApplicationDetails = intake.otherApplicationDetails?.trim() ?? "";
+  const selectedApplications = intake.selectedApplications.map((application) =>
+    application === "Other" && otherApplicationDetails
+      ? otherApplicationDetails
+      : application,
+  );
 
   return normalizeMergeFields({
     APPLICANT_NAME: intake.applicant.fullName,
@@ -158,18 +164,18 @@ export function buildMatterMergeFields(matter: MatterFile): MergeFields {
     CHILD_1_NAME: firstChild?.fullName,
     CHILD_1_DOB: firstChild?.dateOfBirth,
     CHILD_1_AGE: childAge,
-    APPLICATION_TYPE_1: intake.selectedApplications[0],
-    APPLICATION_TYPE_2: intake.selectedApplications[1],
-    APPLICATION_TYPE_3: intake.selectedApplications[2],
+    APPLICATION_TYPE_1: selectedApplications[0],
+    APPLICATION_TYPE_2: selectedApplications[1],
+    APPLICATION_TYPE_3: selectedApplications[2],
     applicant_age: applicantAge,
     applicant_dob: intake.applicant.dateOfBirth,
     applicant_home_address: applicantAddress,
     applicant_name: intake.applicant.fullName,
     applicant_occupation: intake.applicant.occupation,
     applicant_phone_number: intake.applicant.mobilePhone,
-    application_type_1: intake.selectedApplications[0],
-    application_type_2: intake.selectedApplications[1],
-    application_type_3: intake.selectedApplications[2],
+    application_type_1: selectedApplications[0],
+    application_type_2: selectedApplications[1],
+    application_type_3: selectedApplications[2],
     child_1_age: childAge,
     child_1_dob: firstChild?.dateOfBirth,
     child_1_gender: firstChild?.gender,

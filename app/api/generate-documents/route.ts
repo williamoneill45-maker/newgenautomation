@@ -46,6 +46,10 @@ async function templateExists(fileName: string): Promise<boolean> {
   }
 }
 
+function safeFileName(value: string): string {
+  return value.replace(/[^A-Za-z0-9 ._-]/g, "").trim().replace(/\s+/g, "_") || "Client";
+}
+
 export async function POST(request: Request) {
   const body = (await request.json()) as {
     matter?: MatterFile;
@@ -113,7 +117,7 @@ export async function POST(request: Request) {
   return new NextResponse(output, {
     headers: {
       "Content-Type": "application/zip",
-      "Content-Disposition": 'attachment; filename="family-court-documents.zip"',
+      "Content-Disposition": `attachment; filename="${safeFileName(body.matter.clientName || body.matter.intake.applicant.fullName)}_Forms.zip"`,
     },
   });
 }

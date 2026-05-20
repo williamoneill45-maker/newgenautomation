@@ -148,7 +148,7 @@ export default function IntakeForm() {
   const [affidavitDraftError, setAffidavitDraftError] = useState("");
   const [affidavitDraftSource, setAffidavitDraftSource] = useState("");
 
-  const setMatterValue = (field: "legalAidNumber" | "clientName", value: string) => {
+  const setMatterValue = (field: "clientName", value: string) => {
     setMatter((current) => ({ ...current, [field]: value, updatedAt: new Date().toISOString() }));
   };
 
@@ -255,7 +255,10 @@ export default function IntakeForm() {
         ...current.intake,
         children: [
           ...current.intake.children,
-          createEmptyChild(current.id, current.intake.children.length + 1),
+          {
+            ...createEmptyChild(current.id, current.intake.children.length + 1),
+            livingWithName: current.intake.applicant.fullName || "Applicant",
+          },
         ],
       },
     }));
@@ -307,7 +310,7 @@ export default function IntakeForm() {
       <header className="flex flex-col justify-between gap-4 border-b border-slate-200 pb-6 md:flex-row md:items-end">
         <div>
           <p className="text-sm font-semibold uppercase tracking-wide text-sky-700">New Client</p>
-          <h1 className="mt-2 text-3xl font-semibold tracking-normal text-slate-950">Matter Intake</h1>
+          <h1 className="mt-2 text-3xl font-semibold tracking-normal text-slate-950">Client and Application Details</h1>
         </div>
         <button
           type="button"
@@ -318,14 +321,8 @@ export default function IntakeForm() {
         </button>
       </header>
 
-      <Card title="Matter Details">
+      <Card title="Client Details">
         <div className="grid gap-5 md:grid-cols-2">
-          <Field
-            label="Legal Aid Number"
-            value={matter.legalAidNumber}
-            onChange={(value) => setMatterValue("legalAidNumber", value)}
-            placeholder="Add later when issued"
-          />
           <Field
             label="Client Name"
             value={matter.clientName}
@@ -349,6 +346,16 @@ export default function IntakeForm() {
             </label>
           ))}
         </div>
+        {matter.intake.selectedApplications.includes("Other") ? (
+          <TextArea
+            label="Other application"
+            value={matter.intake.otherApplicationDetails ?? ""}
+            onChange={(value) => setIntakeValue("otherApplicationDetails", value)}
+            rows={3}
+            className="mt-4"
+            placeholder="Type the application being filed."
+          />
+        ) : null}
       </Card>
 
       <Card title="Court Filing Details">
@@ -360,7 +367,6 @@ export default function IntakeForm() {
             placeholder="Select court"
             options={courts}
           />
-          <Field label="FAM Number" value={matter.intake.famNumber} onChange={(value) => setIntakeValue("famNumber", value)} placeholder="FAM-" />
         </div>
       </Card>
 
@@ -373,6 +379,9 @@ export default function IntakeForm() {
           <Field label="Email Address" value={matter.intake.applicant.emailAddress} onChange={(value) => setPartyValue("applicant", "emailAddress", value)} className="md:col-span-2" />
           <TextArea label="Home Address" value={matter.intake.applicant.homeAddress} onChange={(value) => setPartyValue("applicant", "homeAddress", value)} rows={3} className="md:col-span-2" />
           <SelectField label="Ethnic Origin" value={matter.intake.applicant.ethnicity} onChange={(value) => setPartyValue("applicant", "ethnicity", value)} placeholder="Select ethnicity" options={ethnicities} />
+          {matter.intake.applicant.ethnicity === "Other" ? (
+            <Field label="Other Ethnic Origin" value={matter.intake.applicant.otherEthnicity ?? ""} onChange={(value) => setPartyValue("applicant", "otherEthnicity", value)} />
+          ) : null}
           <label className="flex min-h-10 items-center gap-3 rounded-md border border-slate-200 px-3 py-2 text-sm text-slate-950">
             <input
               type="checkbox"
@@ -394,6 +403,9 @@ export default function IntakeForm() {
           <TextArea label="Home Address" value={matter.intake.respondent.homeAddress} onChange={(value) => setPartyValue("respondent", "homeAddress", value)} rows={3} />
           <TextArea label="Work Address" value={matter.intake.respondent.workAddress} onChange={(value) => setPartyValue("respondent", "workAddress", value)} rows={3} />
           <SelectField label="Ethnic Origin" value={matter.intake.respondent.ethnicity} onChange={(value) => setPartyValue("respondent", "ethnicity", value)} placeholder="Select ethnicity" options={ethnicities} />
+          {matter.intake.respondent.ethnicity === "Other" ? (
+            <Field label="Other Ethnic Origin" value={matter.intake.respondent.otherEthnicity ?? ""} onChange={(value) => setPartyValue("respondent", "otherEthnicity", value)} />
+          ) : null}
         </div>
       </Card>
 
@@ -428,6 +440,9 @@ export default function IntakeForm() {
                   <Field label="Age" value={child.age} onChange={(value) => updateChild(child.id, "age", value)} />
                   <SelectField label="Gender" value={child.gender} onChange={(value) => updateChild(child.id, "gender", value)} placeholder="Select" options={["F", "M"]} />
                   <SelectField label="Ethnic Origin" value={child.ethnicity} onChange={(value) => updateChild(child.id, "ethnicity", value)} placeholder="Select ethnicity" options={ethnicities} />
+                  {child.ethnicity === "Other" ? (
+                    <Field label="Other Ethnic Origin" value={child.otherEthnicity ?? ""} onChange={(value) => updateChild(child.id, "otherEthnicity", value)} />
+                  ) : null}
                   <Field label="Applicant Relationship" value={child.applicantRelationshipToChild} onChange={(value) => updateChild(child.id, "applicantRelationshipToChild", value)} />
                   <Field label="Respondent Relationship" value={child.respondentRelationshipToChild} onChange={(value) => updateChild(child.id, "respondentRelationshipToChild", value)} />
                   <Field label="Living With" value={child.livingWithName} onChange={(value) => updateChild(child.id, "livingWithName", value)} className="md:col-span-1 lg:col-span-2" />

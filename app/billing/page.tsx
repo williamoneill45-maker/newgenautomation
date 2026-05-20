@@ -740,22 +740,13 @@ function DraftPanel({
           <div>
             <h2 className="text-lg font-semibold text-slate-950">Review and generate</h2>
             <p className="mt-1 text-sm text-slate-600">Form {draft.formType} | {(draft.categoryLabels?.length ? draft.categoryLabels : [draft.categoryLabel]).join(", ")}</p>
+            <p className="mt-2 text-sm font-semibold text-slate-950">Invoice total: ${totals.total.toFixed(2)}</p>
           </div>
           <span className={draft.status === "pending_evidence" ? "rounded-md bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-900" : "rounded-md bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-900"}>
             {draft.status === "pending_evidence" ? "Pending evidence" : "Ready to review"}
           </span>
         </div>
 
-        <dl className="mt-5 grid gap-4 sm:grid-cols-2">
-          <Detail label="Client" value={draft.clientName || "Not identified"} />
-          <Detail label="Legal aid number" value={draft.legalAidNumber || "Not supplied"} />
-          <Detail label="Invoice number" value={draft.invoiceNumber || "Not supplied"} />
-          <Detail label="Invoice total" value={`$${totals.total.toFixed(2)}`} />
-          <Detail label="Court" value={draft.court || "Not identified"} />
-          <Detail label="Date" value={draft.date} />
-          <Detail label="Attendance" value={draft.startTime && draft.endTime ? `${draft.startTime}-${draft.endTime} (${draft.attendanceHours}h)` : "Not identified"} />
-          <Detail label="Disbursements" value={`Parking $${draft.parking.toFixed(2)} | Office $${draft.officeDisbursements.toFixed(2)}`} />
-        </dl>
         <div className="mt-6 grid gap-4 sm:grid-cols-2">
           <Field
             label="Client name"
@@ -872,6 +863,21 @@ function DraftPanel({
         {generationError ? <p className="mt-3 text-sm font-medium text-red-700">{generationError}</p> : null}
         {generationNotice ? <p className="mt-3 text-sm font-medium text-emerald-700">{generationNotice}</p> : null}
       </section>
+
+      <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-form">
+        <h2 className="text-lg font-semibold text-slate-950">Temporary evidence follow-up rules</h2>
+        <div className="mt-4 grid gap-3 text-sm leading-6 text-slate-700">
+          <p>
+            If required evidence is still pending one day after the invoice is created, the dashboard will notify the lawyer.
+          </p>
+          <p>
+            Each morning after that, the dashboard will continue to show a reminder until the missing evidence is marked received.
+          </p>
+          <p>
+            Current evidence types include parking receipts, notices of fixture, Judge's directions, reports, and agent or counsel invoices.
+          </p>
+        </div>
+      </section>
     </>
   );
 }
@@ -899,14 +905,5 @@ function NumberField({
         onChange={(event) => onChange(Number(event.target.value))}
       />
     </label>
-  );
-}
-
-function Detail({ label, value }: { label: string; value: string }) {
-  return (
-    <div>
-      <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</dt>
-      <dd className="mt-1 text-sm font-medium text-slate-950">{value}</dd>
-    </div>
   );
 }

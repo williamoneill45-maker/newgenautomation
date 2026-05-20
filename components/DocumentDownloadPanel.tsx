@@ -45,10 +45,12 @@ export default function DocumentDownloadPanel() {
       }
 
       const blob = await response.blob();
+      const disposition = response.headers.get("Content-Disposition") ?? "";
+      const fileNameMatch = disposition.match(/filename="([^"]+)"/);
       const url = window.URL.createObjectURL(blob);
       const anchor = document.createElement("a");
       anchor.href = url;
-      anchor.download = "family-court-documents.zip";
+      anchor.download = fileNameMatch?.[1] ?? `${matter.clientName || matter.intake.applicant.fullName || "Client"}_Forms.zip`;
       document.body.appendChild(anchor);
       anchor.click();
       anchor.remove();

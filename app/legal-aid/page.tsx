@@ -132,6 +132,13 @@ export default function LegalAidPage() {
           </p>
         </header>
 
+        <section className="mb-6 rounded-lg border border-slate-200 bg-white p-5 shadow-form">
+          <h2 className="text-base font-semibold text-slate-950">Future client lookup</h2>
+          <p className="mt-2 text-sm leading-6 text-slate-600">
+            For now this uses the saved intake. Later it will let the lawyer select from clients created in the last 7 days or search manually to pull client details into the Legal Aid application.
+          </p>
+        </section>
+
         {!review ? (
           <section className="rounded-lg border border-dashed border-slate-300 bg-white px-5 py-12 text-center shadow-form">
             <h2 className="text-lg font-semibold text-slate-950">No saved matter found</h2>

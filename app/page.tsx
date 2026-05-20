@@ -19,7 +19,7 @@ const notifications = [
 ];
 
 const workItems = [
-  "Matter intake",
+  "New client",
   "Client details",
   "DOCX placeholder merge",
   "Legal aid billing",
