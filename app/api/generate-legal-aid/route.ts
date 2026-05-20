@@ -196,9 +196,13 @@ export async function POST(request: Request) {
     await insertUpload(pdfDoc, 5, signedPage, signedPageBytes, "signedPage");
 
     const buffer = await pdfDoc.save({ updateFieldAppearances: true });
+    const responseBody = buffer.buffer.slice(
+      buffer.byteOffset,
+      buffer.byteOffset + buffer.byteLength,
+    ) as ArrayBuffer;
     const fileName = safeFileName(`Legal Aid Application - ${review.clientName}.pdf`);
 
-    return new NextResponse(buffer, {
+    return new NextResponse(responseBody, {
       headers: {
         "Content-Type": "application/pdf",
         "Content-Disposition": `attachment; filename="${fileName}"`,

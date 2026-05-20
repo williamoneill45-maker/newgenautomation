@@ -191,7 +191,7 @@ export default function Form32BManagementPage() {
         </div>
 
         <section className="mb-6 grid gap-4 md:grid-cols-4">
-          <Metric label="Template" value="Form32B" detail="Form 32B - Master Template.docx" />
+          <Metric label="Template" value="Form32B" detail="Form32B Template.docx" />
           <Metric label="GST" value={`${form32BFeeRules.gstRate * 100}%`} detail="Excludes mileage" />
           <Metric label="Mileage" value={`$${form32BFeeRules.mileageRatePerKm.toFixed(2)}/km`} detail="No GST" />
           <Metric label="Travel time" value={`$${form32BFeeRules.disbursements.travelTimeHourlyRate}/hr`} detail="Feeds td" />
