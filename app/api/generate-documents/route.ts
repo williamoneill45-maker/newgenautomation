@@ -4,6 +4,7 @@ import path from "node:path";
 import JSZip from "jszip";
 import { NextResponse } from "next/server";
 
+import { draftDomesticViolenceAffidavit } from "../../../lib/affidavit-drafting";
 import { buildMatterMergeFields } from "../../../lib/document-automation";
 import { mergeDocxTemplate, type DocxMergeReport } from "../../../lib/docx-template";
 import type { MatterFile } from "../../../lib/matter";
@@ -26,6 +27,11 @@ type DocumentValidationReport = {
     title: string;
     report: DocxMergeReport;
   }>;
+  affidavitDraft?: {
+    output: string;
+    source: string;
+    diagnostic: string;
+  };
 };
 
 async function readSourceTemplate(fileName: string): Promise<ArrayBuffer> {
@@ -95,6 +101,21 @@ export async function POST(request: Request) {
       title: templateDefinition.title,
       report,
     });
+  }
+
+  const hasAffidavitNotes =
+    body.matter.intake.domesticViolenceNotes.history.trim() ||
+    body.matter.intake.domesticViolenceNotes.recentEvents.trim();
+
+  if (hasAffidavitNotes) {
+    const affidavit = await draftDomesticViolenceAffidavit(body.matter);
+    const outputName = "07 Domestic Violence Affidavit Draft.txt";
+    bundle.file(outputName, affidavit.draft);
+    validationReport.affidavitDraft = {
+      output: outputName,
+      source: affidavit.source,
+      diagnostic: affidavit.diagnostic,
+    };
   }
 
   if (validationReport.documents.length === 0) {
