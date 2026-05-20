@@ -4,6 +4,7 @@ import {
   toBillingRecordRow,
   type BillingDraftInput,
 } from "../../../lib/billing-automation";
+import { calculateBillingTotals } from "../../../lib/billing-document";
 
 export async function POST(request: Request) {
   try {
@@ -14,11 +15,17 @@ export async function POST(request: Request) {
     }
 
     const record = createBillingRecord(body);
+    const totals = calculateBillingTotals(record);
+    const supabaseRow = {
+      ...toBillingRecordRow(record),
+      invoice_total: totals.total,
+    };
 
     return NextResponse.json({
       draft: record.draft,
       record,
-      supabaseRow: toBillingRecordRow(record),
+      totals,
+      supabaseRow,
       validationMessages: record.draft.warnings,
     });
   } catch (error) {

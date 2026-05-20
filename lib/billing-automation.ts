@@ -107,6 +107,7 @@ export type BillingRecordRow = {
   client_name: string;
   legal_aid_number: string;
   invoice_number: string;
+  invoice_total: number | null;
   form_type: BillingFormType;
   status: BillingStatus;
   draft_json: BillingDraft;
@@ -281,11 +282,15 @@ function createBillingId(prefix: string): string {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-function createInvoiceNumber(): string {
+function getClientLastName(clientName?: string): string {
+  const nameParts = clientName?.trim().split(/\s+/).filter(Boolean) ?? [];
+  return nameParts.length ? nameParts[nameParts.length - 1].replace(/[^A-Za-z0-9]/g, "").toUpperCase() : "CLIENT";
+}
+
+function createInvoiceNumber(formType: BillingFormType, clientName?: string): string {
   const now = new Date();
   const datePart = now.toISOString().slice(0, 10).replace(/-/g, "");
-  const timePart = now.toISOString().slice(11, 19).replace(/:/g, "");
-  return `INV-${datePart}-${timePart}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
+  return `${datePart}.${formType}.${getClientLastName(clientName)}`;
 }
 
 function inferCategories(prompt: string): BillingCategory[] {
@@ -491,6 +496,7 @@ export function createBillingDraft(input: BillingDraftInput): BillingDraft {
   const formType = input.formType ?? inferFormType(prompt);
   const categories = inferCategories(prompt);
   const category = categories[0];
+  const clientName = extractClient(prompt, matter.clientName);
   const court = extractCourt(prompt);
   const unsupportedCourt = extractUnsupportedCourt(prompt);
   const attendance = extractAttendance(prompt);
@@ -515,9 +521,9 @@ export function createBillingDraft(input: BillingDraftInput): BillingDraft {
   return {
     sourcePrompt: prompt,
     matterId: matter.matterId?.trim() || createBillingId("matter"),
-    clientName: extractClient(prompt, matter.clientName),
+    clientName,
     legalAidNumber: matter.legalAidNumber?.trim() ?? "",
-    invoiceNumber: matter.invoiceNumber?.trim() || createInvoiceNumber(),
+    invoiceNumber: matter.invoiceNumber?.trim() || createInvoiceNumber(formType, clientName),
     matterDetails: matter.matterDetails?.trim() ?? "",
     proceedingType: inferProceedingType(prompt, matter.proceedingType),
     formType,
@@ -570,6 +576,7 @@ export function toBillingRecordRow(record: BillingRecord): BillingRecordRow {
     client_name: record.clientName,
     legal_aid_number: record.legalAidNumber,
     invoice_number: record.invoiceNumber,
+    invoice_total: null,
     form_type: record.formType,
     status: record.status,
     draft_json: record.draft,

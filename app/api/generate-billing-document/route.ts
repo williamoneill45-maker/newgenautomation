@@ -7,9 +7,11 @@ import JSZip from "jszip";
 import {
   billingTemplateDefinitions,
   buildBillingMergeFields,
+  calculateBillingTotals,
 } from "../../../lib/billing-document";
 import { mergeDocxTemplate } from "../../../lib/docx-template";
 import type { BillingRecord } from "../../../lib/billing-automation";
+import { uploadBillingDocumentToOneDrive } from "../../../lib/onedrive";
 
 export const runtime = "nodejs";
 
@@ -85,15 +87,39 @@ export async function POST(request: Request) {
     const { buffer, report } = await mergeDocxTemplate(sourceTemplate, fields, {
       outputType: "document",
     });
+    const outputBuffer = Buffer.from(buffer);
+    const uploadBuffer = outputBuffer.buffer.slice(
+      outputBuffer.byteOffset,
+      outputBuffer.byteOffset + outputBuffer.byteLength,
+    ) as ArrayBuffer;
+    const totals = calculateBillingTotals(body.record);
     const fileName = safeFileName(
-      `${templateDefinition.outputFileName.replace(/\.docx$/i, "")} - ${body.record.clientName || body.record.matterId}.docx`,
+      `${body.record.invoiceNumber || templateDefinition.outputFileName.replace(/\.docx$/i, "")}.docx`,
     );
+    let oneDriveStatus = "not_configured";
+    let oneDriveUrl = "";
+    let oneDrivePath = "";
 
-    return new NextResponse(buffer, {
+    try {
+      const upload = await uploadBillingDocumentToOneDrive(fileName, uploadBuffer);
+      oneDriveStatus = upload.status;
+      oneDriveUrl = upload.webUrl;
+      oneDrivePath = upload.path;
+    } catch (error) {
+      console.error("OneDrive upload failed", error);
+      oneDriveStatus = "failed";
+    }
+
+    return new NextResponse(outputBuffer, {
       headers: {
         "Content-Type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         "Content-Disposition": `attachment; filename="${fileName}"`,
         "X-Billing-Template": templateDefinition.sourcePath,
+        "X-Billing-Invoice-Number": body.record.invoiceNumber,
+        "X-Billing-Invoice-Total": totals.total.toFixed(2),
+        "X-OneDrive-Status": oneDriveStatus,
+        "X-OneDrive-Url": encodeURIComponent(oneDriveUrl),
+        "X-OneDrive-Path": encodeURIComponent(oneDrivePath),
         "X-Billing-Replaced-Placeholders": String(report.replacedPlaceholders),
         "X-Billing-Missing-Fields": encodeURIComponent(report.missingFields.join(",")),
       },

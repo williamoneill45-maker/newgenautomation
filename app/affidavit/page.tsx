@@ -38,6 +38,11 @@ type DraftForm = {
   children: ChildDetails[];
 };
 
+type AffidavitDiagnostic = {
+  level: "info" | "warning" | "error";
+  message: string;
+};
+
 const emptyChild: ChildDetails = {
   fullName: "",
   age: "",
@@ -121,6 +126,7 @@ export default function AffidavitWorkbenchPage() {
   });
   const [draft, setDraft] = useState("");
   const [status, setStatus] = useState("");
+  const [diagnostics, setDiagnostics] = useState<AffidavitDiagnostic[]>([]);
 
   const updateField = <T extends keyof DraftForm>(field: T, value: DraftForm[T]) => {
     setForm((current) => ({ ...current, [field]: value }));
@@ -165,6 +171,7 @@ export default function AffidavitWorkbenchPage() {
     if (!hasContent) {
       setDraft("");
       setStatus("");
+      setDiagnostics([]);
       return;
     }
 
@@ -184,12 +191,23 @@ export default function AffidavitWorkbenchPage() {
           throw new Error("Drafting failed");
         }
 
-        const data = (await response.json()) as { draft?: string; source?: string };
+        const data = (await response.json()) as {
+          draft?: string;
+          source?: string;
+          diagnostics?: AffidavitDiagnostic[];
+        };
         setDraft(data.draft ?? "");
+        setDiagnostics(data.diagnostics ?? []);
         setStatus(data.source === "openai" ? "AI draft" : "Structured preview");
       } catch {
         if (!controller.signal.aborted) {
           setStatus("Draft could not be updated.");
+          setDiagnostics([
+            {
+              level: "error",
+              message: "The affidavit draft endpoint could not be reached from the browser.",
+            },
+          ]);
         }
       }
     }, 900);
@@ -389,6 +407,22 @@ export default function AffidavitWorkbenchPage() {
               rows={34}
               className="w-full resize-y rounded-md border border-slate-300 bg-slate-50 px-3 py-2 text-sm leading-6 text-slate-950 shadow-sm outline-none"
             />
+            {diagnostics.length ? (
+              <div className="mt-4 space-y-2">
+                {diagnostics.map((diagnostic) => (
+                  <p
+                    key={diagnostic.message}
+                    className={diagnostic.level === "error"
+                      ? "rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-800"
+                      : diagnostic.level === "warning"
+                        ? "rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-900"
+                        : "rounded-md border border-sky-200 bg-sky-50 px-3 py-2 text-sm font-medium text-sky-900"}
+                  >
+                    {diagnostic.message}
+                  </p>
+                ))}
+              </div>
+            ) : null}
           </aside>
         </div>
       </div>

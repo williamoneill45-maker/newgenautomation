@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import {
   travelReferences,
   type BillingCategory,
@@ -10,6 +10,16 @@ import {
   type BillingRecord,
   type BillingStatus,
 } from "../../lib/billing-automation";
+import { calculateBillingTotals } from "../../lib/billing-document";
+import {
+  billingClientsStorageKey,
+  billingInvoicesStorageKey,
+  createBillingClientId,
+  formatInvoiceNumber,
+  normalizeClientName,
+  type BillingClientProfile,
+  type StoredBillingInvoice,
+} from "../../lib/billing-storage";
 import {
   form32BManagementRules,
   form32BSettingsStorageKey,
@@ -23,15 +33,6 @@ import {
 
 const examplePrompt =
   "Pre-hearing conference and memorandum of consent from 11:00am-11:30am at Waitakere Court, parking $12.";
-
-const emptyMatter = {
-  matterId: "matter-demo-phillip-jones",
-  clientName: "Phillip Jones",
-  legalAidNumber: "LA-DEMO-001",
-  invoiceNumber: "",
-  matterDetails: "COCA parenting proceedings",
-  proceedingType: "COCA / parenting",
-};
 
 const categoryPrimaryRuleMap: Record<string, string> = {
   judicial_conference: "judicial-conference",
@@ -94,14 +95,107 @@ type EditableBillingDraftField =
   | "officeDisbursements"
   | "standardWording";
 
+function readJsonArray<T>(key: string): T[] {
+  if (typeof window === "undefined") return [];
+
+  try {
+    const raw = window.localStorage.getItem(key);
+    return raw ? (JSON.parse(raw) as T[]) : [];
+  } catch {
+    window.localStorage.removeItem(key);
+    return [];
+  }
+}
+
+function writeJsonArray<T>(key: string, value: T[]) {
+  window.localStorage.setItem(key, JSON.stringify(value));
+}
+
+function createClientProfile(clientName: string, legalAidNumber: string, famNumber: string): BillingClientProfile {
+  const now = new Date().toISOString();
+  const normalizedName = normalizeClientName(clientName);
+
+  return {
+    id: createBillingClientId(`${normalizedName}-${legalAidNumber || famNumber || now}`),
+    clientName: normalizedName,
+    legalAidNumber: legalAidNumber.trim(),
+    famNumber: famNumber.trim(),
+    createdAt: now,
+    updatedAt: now,
+  };
+}
+
 export default function BillingPage() {
   const [prompt, setPrompt] = useState(examplePrompt);
   const [formType, setFormType] = useState<BillingFormType>("33A");
+  const [clients, setClients] = useState<BillingClientProfile[]>([]);
+  const [clientName, setClientName] = useState("");
+  const [legalAidNumber, setLegalAidNumber] = useState("");
+  const [famNumber, setFamNumber] = useState("");
+  const [selectedClientId, setSelectedClientId] = useState("");
+  const [clientNotice, setClientNotice] = useState("");
   const [selectedRecord, setSelectedRecord] = useState<BillingRecord | null>(null);
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [generationError, setGenerationError] = useState("");
+  const [generationNotice, setGenerationNotice] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
+
+  useEffect(() => {
+    setClients(readJsonArray<BillingClientProfile>(billingClientsStorageKey));
+  }, []);
+
+  const matchingClients = useMemo(() => {
+    const name = normalizeClientName(clientName).toLowerCase();
+    if (!name) return [];
+
+    return clients.filter((client) => client.clientName.toLowerCase().includes(name));
+  }, [clientName, clients]);
+
+  const selectedClient = clients.find((client) => client.id === selectedClientId) ?? null;
+
+  function saveClients(nextClients: BillingClientProfile[]) {
+    setClients(nextClients);
+    writeJsonArray(billingClientsStorageKey, nextClients);
+  }
+
+  function selectClient(client: BillingClientProfile) {
+    setSelectedClientId(client.id);
+    setClientName(client.clientName);
+    setLegalAidNumber(client.legalAidNumber);
+    setFamNumber(client.famNumber);
+    setClientNotice(`Loaded ${client.clientName}'s billing profile.`);
+  }
+
+  function saveOrUpdateClientProfile() {
+    const normalizedName = normalizeClientName(clientName);
+    if (!normalizedName || !legalAidNumber.trim()) {
+      setClientNotice("Enter the client name and legal aid number before saving a billing profile.");
+      return null;
+    }
+
+    const existing = selectedClient ?? clients.find((client) =>
+      client.clientName.toLowerCase() === normalizedName.toLowerCase(),
+    );
+    const now = new Date().toISOString();
+    const profile = existing
+      ? {
+          ...existing,
+          clientName: normalizedName,
+          legalAidNumber: legalAidNumber.trim(),
+          famNumber: famNumber.trim(),
+          updatedAt: now,
+        }
+      : createClientProfile(normalizedName, legalAidNumber, famNumber);
+    const nextClients = existing
+      ? clients.map((client) => (client.id === existing.id ? profile : client))
+      : [...clients, profile];
+
+    saveClients(nextClients);
+    setSelectedClientId(profile.id);
+    setClientNotice(existing ? "Updated the billing profile." : "Created a new billing profile.");
+    return profile;
+  }
 
   function readForm33ASettings(): Form33ARuleSettings | null {
     const storedSettings = window.localStorage.getItem(form33ASettingsStorageKey);
@@ -177,14 +271,27 @@ export default function BillingPage() {
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    const profile = saveOrUpdateClientProfile();
+    if (!profile) return;
+
     setIsLoading(true);
     setError("");
 
     try {
+      const invoiceNumber = formatInvoiceNumber(new Date().toISOString().slice(0, 10), formType, profile.clientName);
       const response = await fetch("/api/draft-billing", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt, formType, matter: emptyMatter }),
+        body: JSON.stringify({
+          prompt,
+          formType,
+          matter: {
+            matterId: profile.id,
+            clientName: profile.clientName,
+            legalAidNumber: profile.legalAidNumber,
+            invoiceNumber,
+          },
+        }),
       });
 
       const payload = await response.json();
@@ -284,6 +391,7 @@ export default function BillingPage() {
   async function generateBillingDocument(record: BillingRecord) {
     setIsGenerating(true);
     setGenerationError("");
+    setGenerationNotice("");
 
     try {
       const response = await fetch("/api/generate-billing-document", {
@@ -301,6 +409,10 @@ export default function BillingPage() {
       const disposition = response.headers.get("Content-Disposition") ?? "";
       const fileNameMatch = disposition.match(/filename="([^"]+)"/);
       const fileName = fileNameMatch?.[1] ?? `Completed Form${record.formType}.docx`;
+      const invoiceTotal = Number(response.headers.get("X-Billing-Invoice-Total") ?? "0");
+      const oneDriveStatus = response.headers.get("X-OneDrive-Status") ?? "not_configured";
+      const oneDriveUrl = decodeURIComponent(response.headers.get("X-OneDrive-Url") ?? "");
+      const oneDrivePath = decodeURIComponent(response.headers.get("X-OneDrive-Path") ?? "");
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
@@ -309,6 +421,46 @@ export default function BillingPage() {
       link.click();
       link.remove();
       window.URL.revokeObjectURL(url);
+
+      const profile = saveOrUpdateClientProfile();
+      if (profile) {
+        const invoice: StoredBillingInvoice = {
+          id: record.id,
+          clientId: profile.id,
+          clientName: record.clientName,
+          legalAidNumber: record.legalAidNumber,
+          famNumber: profile.famNumber,
+          invoiceNumber: record.invoiceNumber,
+          invoiceTotal,
+          formType: record.formType,
+          status: oneDriveStatus === "uploaded" ? "onedrive_uploaded" : "onedrive_pending",
+          oneDriveUrl,
+          oneDrivePath,
+          generatedFileName: fileName,
+          generatedAt: new Date().toISOString(),
+        };
+        const invoices = readJsonArray<StoredBillingInvoice>(billingInvoicesStorageKey);
+        writeJsonArray(
+          billingInvoicesStorageKey,
+          [invoice, ...invoices.filter((item) => item.id !== invoice.id)],
+        );
+
+        try {
+          await fetch("/api/billing-records", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(invoice),
+          });
+        } catch {
+          // Browser storage remains the immediate source of truth until Supabase env vars are configured.
+        }
+      }
+
+      setGenerationNotice(
+        oneDriveStatus === "uploaded"
+          ? "Generated, uploaded to OneDrive, and recorded in the invoice register."
+          : "Generated and recorded locally. OneDrive upload will activate once Microsoft Graph credentials are configured.",
+      );
     } catch (caughtError) {
       setGenerationError(caughtError instanceof Error ? caughtError.message : "Unable to generate billing document.");
     } finally {
@@ -330,6 +482,18 @@ export default function BillingPage() {
             >
               Form32B management
             </Link>
+            <Link
+              href="/clients"
+              className="text-sm font-medium text-slate-600 transition hover:text-slate-950"
+            >
+              Clients
+            </Link>
+            <Link
+              href="/invoices"
+              className="text-sm font-medium text-slate-600 transition hover:text-slate-950"
+            >
+              Invoices
+            </Link>
             <span className="rounded-md bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-900">
               Forms 32B / 33A generation
             </span>
@@ -347,6 +511,50 @@ export default function BillingPage() {
         <section className="grid gap-6 lg:grid-cols-[420px_1fr]">
           <form onSubmit={handleSubmit} className="rounded-lg border border-slate-200 bg-white p-5 shadow-form">
             <h2 className="text-lg font-semibold text-slate-950">Billing prompt</h2>
+
+            <section className="mt-5 rounded-md border border-slate-200 bg-slate-50 p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <h3 className="text-sm font-semibold text-slate-950">Client billing profile</h3>
+                  <p className="mt-1 text-xs leading-5 text-slate-600">
+                    Billing is separate from form production. First invoice creates or updates the client profile used for future bills.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
+                  onClick={saveOrUpdateClientProfile}
+                >
+                  Save profile
+                </button>
+              </div>
+              <div className="mt-4 grid gap-3">
+                <Field label="Client name" value={clientName} onChange={(value) => {
+                  setSelectedClientId("");
+                  setClientName(value);
+                }} />
+                <Field label="Legal aid number" value={legalAidNumber} onChange={setLegalAidNumber} />
+                <Field label="FAM number" value={famNumber} onChange={setFamNumber} />
+              </div>
+              {matchingClients.length && !selectedClient ? (
+                <div className="mt-3 rounded-md border border-sky-200 bg-sky-50 p-3">
+                  <p className="text-xs font-semibold text-sky-950">Existing clients found</p>
+                  <div className="mt-2 space-y-2">
+                    {matchingClients.slice(0, 4).map((client) => (
+                      <button
+                        key={client.id}
+                        type="button"
+                        className="block w-full rounded-md bg-white px-3 py-2 text-left text-xs font-medium text-slate-700 shadow-sm transition hover:bg-slate-50"
+                        onClick={() => selectClient(client)}
+                      >
+                        {client.clientName} | Legal aid {client.legalAidNumber || "not supplied"} | FAM {client.famNumber || "not supplied"}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+              {clientNotice ? <p className="mt-3 text-xs font-medium text-slate-600">{clientNotice}</p> : null}
+            </section>
 
             <label className="mt-5 block text-sm font-medium text-slate-700" htmlFor="prompt">
               Lawyer note
@@ -390,6 +598,7 @@ export default function BillingPage() {
                 <DraftPanel
                   record={selectedRecord}
                   generationError={generationError}
+                  generationNotice={generationNotice}
                   isGenerating={isGenerating}
                   onDraftFieldChange={updateDraftField}
                   onEvidenceUploaded={markEvidenceUploaded}
@@ -507,6 +716,7 @@ function DetectedWorkPanel({
 function DraftPanel({
   record,
   generationError,
+  generationNotice,
   isGenerating,
   onDraftFieldChange,
   onEvidenceUploaded,
@@ -514,12 +724,14 @@ function DraftPanel({
 }: {
   record: BillingRecord;
   generationError: string;
+  generationNotice: string;
   isGenerating: boolean;
   onDraftFieldChange: (recordId: string, field: EditableBillingDraftField, value: string | number) => void;
   onEvidenceUploaded: (recordId: string, evidenceType: string) => void;
   onGenerate: (record: BillingRecord) => void;
 }) {
   const draft = record.draft;
+  const totals = calculateBillingTotals(record);
 
   return (
     <>
@@ -538,6 +750,7 @@ function DraftPanel({
           <Detail label="Client" value={draft.clientName || "Not identified"} />
           <Detail label="Legal aid number" value={draft.legalAidNumber || "Not supplied"} />
           <Detail label="Invoice number" value={draft.invoiceNumber || "Not supplied"} />
+          <Detail label="Invoice total" value={`$${totals.total.toFixed(2)}`} />
           <Detail label="Court" value={draft.court || "Not identified"} />
           <Detail label="Date" value={draft.date} />
           <Detail label="Attendance" value={draft.startTime && draft.endTime ? `${draft.startTime}-${draft.endTime} (${draft.attendanceHours}h)` : "Not identified"} />
@@ -657,6 +870,7 @@ function DraftPanel({
           {isGenerating ? "Generating..." : `Generate reviewed Form ${record.formType}`}
         </button>
         {generationError ? <p className="mt-3 text-sm font-medium text-red-700">{generationError}</p> : null}
+        {generationNotice ? <p className="mt-3 text-sm font-medium text-emerald-700">{generationNotice}</p> : null}
       </section>
     </>
   );

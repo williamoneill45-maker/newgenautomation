@@ -39,6 +39,11 @@ type OpenAIResponse = {
   output?: OpenAIOutputItem[];
 };
 
+type AffidavitDiagnostic = {
+  level: "info" | "warning" | "error";
+  message: string;
+};
+
 function cleanText(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
 }
@@ -244,7 +249,16 @@ export async function POST(request: Request) {
   const apiKey = process.env.OPENAI_API_KEY;
 
   if (!apiKey) {
-    return NextResponse.json({ draft: fallbackDraft, source: "fallback" });
+    return NextResponse.json({
+      draft: fallbackDraft,
+      source: "fallback",
+      diagnostics: [
+        {
+          level: "error",
+          message: "OPENAI_API_KEY is not configured, so the affidavit workbench is using the basic structured fallback.",
+        },
+      ] satisfies AffidavitDiagnostic[],
+    });
   }
 
   try {
@@ -345,13 +359,47 @@ export async function POST(request: Request) {
     });
 
     if (!response.ok) {
-      return NextResponse.json({ draft: fallbackDraft, source: "fallback" });
+      return NextResponse.json({
+        draft: fallbackDraft,
+        source: "fallback",
+        diagnostics: [
+          {
+            level: "error",
+            message: `OpenAI affidavit drafting failed with status ${response.status}. Check the API key, model, and Vercel environment variables.`,
+          },
+        ] satisfies AffidavitDiagnostic[],
+      });
     }
 
     const data = (await response.json()) as OpenAIResponse;
     const draft = extractOutputText(data);
-    return NextResponse.json({ draft: draft || fallbackDraft, source: draft ? "openai" : "fallback" });
+    return NextResponse.json({
+      draft: draft || fallbackDraft,
+      source: draft ? "openai" : "fallback",
+      diagnostics: draft
+        ? [
+            {
+              level: "info",
+              message: "OpenAI affidavit drafting completed. Review all wording before filing.",
+            },
+          ]
+        : [
+            {
+              level: "warning",
+              message: "OpenAI returned an empty affidavit draft, so the workbench used the basic structured fallback.",
+            },
+          ],
+    });
   } catch {
-    return NextResponse.json({ draft: fallbackDraft, source: "fallback" });
+    return NextResponse.json({
+      draft: fallbackDraft,
+      source: "fallback",
+      diagnostics: [
+        {
+          level: "error",
+          message: "OpenAI affidavit drafting could not be reached. Check network access and Vercel function logs.",
+        },
+      ] satisfies AffidavitDiagnostic[],
+    });
   }
 }

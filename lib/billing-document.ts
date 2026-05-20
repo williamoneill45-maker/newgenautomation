@@ -484,6 +484,30 @@ function calculateForm32BAmounts(record: BillingRecord) {
   };
 }
 
+export type BillingTotals = {
+  totalApplication: number;
+  totalFixedFeePlusActivities: number;
+  totalDisbursementsExcludingMileage: number;
+  totalGst: number;
+  totalMileage: number;
+  total: number;
+};
+
+export function calculateBillingTotals(record: BillingRecord): BillingTotals {
+  const amounts = record.formType === "32B"
+    ? calculateForm32BAmounts(record)
+    : calculateForm33AAmounts(record);
+
+  return {
+    totalApplication: amounts.totalApplication,
+    totalFixedFeePlusActivities: amounts.totalFixedFeePlusActivities,
+    totalDisbursementsExcludingMileage: amounts.totalDisbursementsExcludingMileage,
+    totalGst: amounts.totalGst,
+    totalMileage: amounts.totalMileage,
+    total: amounts.total,
+  };
+}
+
 function formatDisplayDate(value: string): string {
   const date = new Date(`${value}T00:00:00`);
   if (Number.isNaN(date.getTime())) return value;
