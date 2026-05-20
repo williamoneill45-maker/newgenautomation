@@ -13,6 +13,7 @@ import {
   type Party,
 } from "../lib/matter";
 import { calculateAge } from "../lib/document-automation";
+import { legalAidMatterStorageKey } from "../lib/legal-aid";
 
 type FieldProps = {
   label: string;
@@ -289,8 +290,12 @@ export default function IntakeForm() {
   };
 
   const saveDraft = () => {
-    window.localStorage.setItem("newgenautomation:draftMatter", JSON.stringify(matter));
+    window.localStorage.setItem(legalAidMatterStorageKey, JSON.stringify(matter));
   };
+
+  useEffect(() => {
+    window.localStorage.setItem(legalAidMatterStorageKey, JSON.stringify(matter));
+  }, [matter]);
 
   return (
     <div className="space-y-6">

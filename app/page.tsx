@@ -22,6 +22,7 @@ const workItems = [
   "Matter intake",
   "DOCX placeholder merge",
   "Legal aid billing",
+  "Legal Aid application",
   "Billing management",
   "Domestic violence affidavit draft",
 ];
@@ -40,6 +41,12 @@ export default function Dashboard() {
             </h1>
           </div>
           <div className="flex flex-col gap-3 sm:flex-row">
+            <Link
+              href="/legal-aid"
+              className="inline-flex h-10 items-center justify-center rounded-md border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
+            >
+              Legal Aid
+            </Link>
             <Link
               href="/billing-management/form-32b"
               className="inline-flex h-10 items-center justify-center rounded-md border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
@@ -61,7 +68,7 @@ export default function Dashboard() {
           </div>
         </header>
 
-        <section className="mb-6 grid gap-4 md:grid-cols-5">
+        <section className="mb-6 grid gap-4 md:grid-cols-3 lg:grid-cols-6">
           {workItems.map((item) => (
             <div
               key={item}
