@@ -40,7 +40,8 @@ export default function DocumentDownloadPanel() {
       });
 
       if (!response.ok) {
-        throw new Error("Document generation failed");
+        const errorBody = (await response.json().catch(() => null)) as { error?: string } | null;
+        throw new Error(errorBody?.error || "Document generation failed");
       }
 
       const blob = await response.blob();
@@ -53,8 +54,8 @@ export default function DocumentDownloadPanel() {
       anchor.remove();
       window.URL.revokeObjectURL(url);
       setStatus("Documents downloaded.");
-    } catch {
-      setStatus("Documents could not be generated.");
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Documents could not be generated.");
     } finally {
       setIsGenerating(false);
     }

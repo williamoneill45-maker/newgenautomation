@@ -8,11 +8,10 @@ export const applicationTypes = [
 export type ApplicationType = (typeof applicationTypes)[number];
 
 export const courts = [
-  "Auckland Family Court",
-  "Manukau Family Court",
-  "Hamilton Family Court",
-  "Wellington Family Court",
-  "Christchurch Family Court",
+  "Manukau Court",
+  "Auckland Court",
+  "North Shore Court",
+  "Waitakere Court",
 ] as const;
 
 export type CourtLocation = (typeof courts)[number] | "";

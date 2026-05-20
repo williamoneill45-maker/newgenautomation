@@ -200,6 +200,7 @@ export default function IntakeForm() {
           body: JSON.stringify({
             applicantName: matter.intake.applicant.fullName,
             respondentName: matter.intake.respondent.fullName,
+            selectedOrders: matter.intake.selectedApplications,
             historyNotes,
             recentEventsNotes,
           }),
@@ -230,6 +231,7 @@ export default function IntakeForm() {
   }, [
     matter.intake.applicant.fullName,
     matter.intake.respondent.fullName,
+    matter.intake.selectedApplications,
     matter.intake.domesticViolenceNotes.history,
     matter.intake.domesticViolenceNotes.recentEvents,
   ]);

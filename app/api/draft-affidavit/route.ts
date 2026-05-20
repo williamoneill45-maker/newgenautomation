@@ -62,29 +62,61 @@ function extractOutputText(data: OpenAIResponse): string {
 
 function splitNotes(notes: string): string[] {
   return notes
-    .split(/\n+/)
+    .split(/\n{2,}|\n(?=\s*(?:[-*•]|\d+[.)])\s+)/)
     .map((note) => note.trim())
+    .map((note) => note.replace(/^\s*(?:[-*•]|\d+[.)])\s+/, ""))
+    .map((note) => note.replace(/\s+/g, " "))
     .filter(Boolean);
 }
 
-function buildNumberedSection(title: string, notes: string, startNumber: number): string {
-  const paragraphs = splitNotes(notes);
+function ensureSentence(value: string): string {
+  const trimmed = value.trim();
 
-  if (paragraphs.length === 0) {
+  if (!trimmed) {
     return "";
   }
 
-  return [
+  return /[.!?"]$/.test(trimmed) ? trimmed : `${trimmed}.`;
+}
+
+function polishAffidavitNote(note: string): string {
+  const trimmed = note.trim();
+
+  if (!trimmed) {
+    return "";
+  }
+
+  const withRespondent = trimmed
+    .replace(/^respondent\b/i, "The Respondent")
+    .replace(/^he\b/i, "The Respondent")
+    .replace(/^she\b/i, "The Respondent");
+
+  return ensureSentence(withRespondent);
+}
+
+function buildNumberedSection(
+  title: string,
+  notes: string,
+  startNumber: number,
+): { text: string; nextNumber: number } {
+  const paragraphs = splitNotes(notes);
+
+  if (paragraphs.length === 0) {
+    return { text: "", nextNumber: startNumber };
+  }
+
+  const text = [
     title,
     "",
     ...paragraphs.flatMap((paragraph, index) => [
-      String(startNumber + index),
-      paragraph,
+      `${startNumber + index}. ${polishAffidavitNote(paragraph)}`,
       "",
     ]),
   ]
     .join("\n")
     .trim();
+
+  return { text, nextNumber: startNumber + paragraphs.length };
 }
 
 function buildFallbackDraft({
@@ -102,28 +134,35 @@ function buildFallbackDraft({
   historyNotes,
   recentEventsNotes,
 }: Required<DraftAffidavitRequest>): string {
+  const history = buildNumberedSection("History of Family Violence", historyNotes, 4);
+  const recentEvents = buildNumberedSection(
+    "Recent Events",
+    recentEventsNotes,
+    Math.max(history.nextNumber, 26),
+  );
+  const ordersText = ensureSentence(ordersSought || selectedOrders.join(", "));
+
   return [
-    "Orders Sought",
-    ordersSought || selectedOrders.join(", "),
-    protectedPersons ? `Protected Persons\n\n${protectedPersons}` : "",
+    ordersText ? `Orders Sought\n\n${ordersText}` : "",
+    protectedPersons ? `Protected Persons\n\n${ensureSentence(protectedPersons)}` : "",
     protectionOrderFacts
-      ? `Facts in Support of Protection Order\n\n${protectionOrderFacts}`
+      ? `Facts in Support of Protection Order\n\n${ensureSentence(protectionOrderFacts)}`
       : "",
-    parentingProposal ? `Parenting Proposal\n\n${parentingProposal}` : "",
+    parentingProposal ? `Parenting Proposal\n\n${ensureSentence(parentingProposal)}` : "",
     preventingRemovalFacts
-      ? `Facts in Support of Order Preventing Removal from New Zealand\n\n${preventingRemovalFacts}`
+      ? `Facts in Support of Order Preventing Removal from New Zealand\n\n${ensureSentence(preventingRemovalFacts)}`
       : "",
     tenancyOrderFacts
-      ? `Facts in Support of Tenancy Order\n\n${tenancyOrderFacts}`
+      ? `Facts in Support of Tenancy Order\n\n${ensureSentence(tenancyOrderFacts)}`
       : "",
-    warrantFacts ? `Facts in Support of Warrant\n\n${warrantFacts}` : "",
+    warrantFacts ? `Facts in Support of Warrant\n\n${ensureSentence(warrantFacts)}` : "",
     additionalGuardianFacts
-      ? `Facts in Support of Additional Guardian Order\n\n${additionalGuardianFacts}`
+      ? `Facts in Support of Additional Guardian Order\n\n${ensureSentence(additionalGuardianFacts)}`
       : "",
     `Applicant: ${applicantName}`,
     `Respondent: ${respondentName}`,
-    buildNumberedSection("History of Family Violence", historyNotes, 4),
-    buildNumberedSection("Recent Events", recentEventsNotes, 26),
+    history.text,
+    recentEvents.text,
   ]
     .filter(Boolean)
     .join("\n\n");
@@ -201,9 +240,10 @@ export async function POST(request: Request) {
             content: [
               "You draft New Zealand Family Court affidavit wording for a lawyer.",
               "Use only the supplied notes. Do not invent facts, dates, injuries, witnesses, exhibits, allegations, legal conclusions, or safety concerns.",
-              "Draft in the applicant's first person voice, using formal affidavit style.",
+              "Turn shorthand lawyer intake notes into polished affidavit paragraphs in the applicant's first person voice, using formal New Zealand Family Court affidavit style.",
               "Refer to the other party as 'the Respondent' after the first mention unless the notes clearly require otherwise.",
-              "Keep wording factual, chronological, specific, and suitable for lawyer review.",
+              "Keep wording factual, chronological, specific, and suitable for lawyer review, similar to a protection order affidavit with separate paragraphs for each incident, pattern of control, threat, assault, sexual violence allegation, financial abuse allegation, monitoring, police report, medical report, or child-witness issue.",
+              "You may correct shorthand grammar and convert note fragments into complete sentences, but you must not add facts that are not clearly supplied.",
               "Do not include advice, commentary, summaries, caveats, or markdown formatting.",
             ].join(" "),
           },
@@ -238,10 +278,11 @@ export async function POST(request: Request) {
               "Recent Events",
               "",
               "Formatting requirements:",
-              "- Number each affidavit paragraph on its own line before the paragraph text where narrative paragraphs are drafted.",
+              "- Put the paragraph number and paragraph text on the same line, for example: 4. During the relationship, the Respondent...",
               "- Start History of Family Violence at paragraph 4.",
               "- Start Recent Events at paragraph 26 unless the history section needs more paragraphs; if so, continue numbering sequentially.",
               "- Split different incidents into separate numbered paragraphs.",
+              "- Do not merely repeat raw notes. Convert them into complete affidavit paragraphs.",
               "- Preserve dates, places, quotes, names, and exhibit references only where they are supplied in the notes.",
               "- Do not add sections that are not selected or not supported by the supplied notes.",
               "- Do not add a safety concerns section.",
