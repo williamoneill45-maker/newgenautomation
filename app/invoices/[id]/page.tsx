@@ -8,8 +8,13 @@ import type { ChangeEvent } from "react";
 import {
   billingInvoicesStorageKey,
   isInvoiceWithinRetention,
-  type StoredBillingInvoice,
+type StoredBillingInvoice,
 } from "../../../lib/billing-storage";
+
+type EvidenceUploadPayload =
+  | { status: "uploaded"; invoice: StoredBillingInvoice }
+  | { status: "not_configured"; missing: string[] }
+  | { error: string };
 
 function readInvoices(): StoredBillingInvoice[] {
   try {
@@ -74,10 +79,7 @@ export default function InvoiceDetailPage() {
         method: "POST",
         body: formData,
       });
-      const payload = await response.json() as
-        | { status: "uploaded"; invoice: StoredBillingInvoice }
-        | { status: "not_configured"; missing: string[] }
-        | { error?: string };
+      const payload = await response.json() as EvidenceUploadPayload;
 
       if (!response.ok) {
         throw new Error("error" in payload ? payload.error ?? "Evidence upload failed." : "Evidence upload failed.");
