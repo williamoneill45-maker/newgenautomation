@@ -58,7 +58,6 @@ export default function InvoicesPage() {
       [
         invoice.clientName,
         invoice.legalAidNumber,
-        invoice.famNumber,
         invoice.invoiceNumber,
         invoice.formType,
         invoice.status,
@@ -115,7 +114,6 @@ export default function InvoicesPage() {
                   <th className="px-4 py-3">Invoice</th>
                   <th className="px-4 py-3">Client</th>
                   <th className="px-4 py-3">Legal aid</th>
-                  <th className="px-4 py-3">FAM</th>
                   <th className="px-4 py-3">Form</th>
                   <th className="px-4 py-3">Total</th>
                   <th className="px-4 py-3">Status</th>
@@ -128,7 +126,6 @@ export default function InvoicesPage() {
                     <td className="px-4 py-3 font-medium text-slate-950">{invoice.invoiceNumber}</td>
                     <td className="px-4 py-3 text-slate-700">{invoice.clientName}</td>
                     <td className="px-4 py-3 text-slate-700">{invoice.legalAidNumber}</td>
-                    <td className="px-4 py-3 text-slate-700">{invoice.famNumber || "Not supplied"}</td>
                     <td className="px-4 py-3 text-slate-700">Form {invoice.formType}</td>
                     <td className="px-4 py-3 text-slate-700">${invoice.invoiceTotal.toFixed(2)}</td>
                     <td className="px-4 py-3">
@@ -152,7 +149,7 @@ export default function InvoicesPage() {
                 ))}
                 {!filteredInvoices.length ? (
                   <tr>
-                    <td colSpan={8} className="px-4 py-10 text-center text-slate-500">
+                    <td colSpan={7} className="px-4 py-10 text-center text-slate-500">
                       No invoices have been generated yet.
                     </td>
                   </tr>

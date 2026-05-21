@@ -111,15 +111,15 @@ function writeJsonArray<T>(key: string, value: T[]) {
   window.localStorage.setItem(key, JSON.stringify(value));
 }
 
-function createClientProfile(clientName: string, legalAidNumber: string, famNumber: string): BillingClientProfile {
+function createClientProfile(clientName: string, legalAidNumber: string): BillingClientProfile {
   const now = new Date().toISOString();
   const normalizedName = normalizeClientName(clientName);
 
   return {
-    id: createBillingClientId(`${normalizedName}-${legalAidNumber || famNumber || now}`),
+    id: createBillingClientId(`${normalizedName}-${legalAidNumber || now}`),
     clientName: normalizedName,
     legalAidNumber: legalAidNumber.trim(),
-    famNumber: famNumber.trim(),
+    famNumber: "",
     createdAt: now,
     updatedAt: now,
   };
@@ -131,7 +131,6 @@ export default function BillingPage() {
   const [clients, setClients] = useState<BillingClientProfile[]>([]);
   const [clientName, setClientName] = useState("");
   const [legalAidNumber, setLegalAidNumber] = useState("");
-  const [famNumber, setFamNumber] = useState("");
   const [selectedClientId, setSelectedClientId] = useState("");
   const [clientNotice, setClientNotice] = useState("");
   const [selectedRecord, setSelectedRecord] = useState<BillingRecord | null>(null);
@@ -163,14 +162,13 @@ export default function BillingPage() {
     setSelectedClientId(client.id);
     setClientName(client.clientName);
     setLegalAidNumber(client.legalAidNumber);
-    setFamNumber(client.famNumber);
     setClientNotice(`Loaded ${client.clientName}'s billing profile.`);
   }
 
   function saveOrUpdateClientProfile() {
     const normalizedName = normalizeClientName(clientName);
-    if (!normalizedName || !legalAidNumber.trim()) {
-      setClientNotice("Enter the client name and legal aid number before saving a billing profile.");
+    if (!normalizedName) {
+      setClientNotice("Enter the client name before saving a billing profile.");
       return null;
     }
 
@@ -183,10 +181,10 @@ export default function BillingPage() {
           ...existing,
           clientName: normalizedName,
           legalAidNumber: legalAidNumber.trim(),
-          famNumber: famNumber.trim(),
+          famNumber: "",
           updatedAt: now,
         }
-      : createClientProfile(normalizedName, legalAidNumber, famNumber);
+      : createClientProfile(normalizedName, legalAidNumber);
     const nextClients = existing
       ? clients.map((client) => (client.id === existing.id ? profile : client))
       : [...clients, profile];
@@ -429,7 +427,7 @@ export default function BillingPage() {
           clientId: profile.id,
           clientName: record.clientName,
           legalAidNumber: record.legalAidNumber,
-          famNumber: profile.famNumber,
+          famNumber: "",
           invoiceNumber: record.invoiceNumber,
           invoiceTotal,
           formType: record.formType,
@@ -534,7 +532,6 @@ export default function BillingPage() {
                   setClientName(value);
                 }} />
                 <Field label="Legal aid number" value={legalAidNumber} onChange={setLegalAidNumber} />
-                <Field label="FAM number" value={famNumber} onChange={setFamNumber} />
               </div>
               {matchingClients.length && !selectedClient ? (
                 <div className="mt-3 rounded-md border border-sky-200 bg-sky-50 p-3">
@@ -547,7 +544,7 @@ export default function BillingPage() {
                         className="block w-full rounded-md bg-white px-3 py-2 text-left text-xs font-medium text-slate-700 shadow-sm transition hover:bg-slate-50"
                         onClick={() => selectClient(client)}
                       >
-                        {client.clientName} | Legal aid {client.legalAidNumber || "not supplied"} | FAM {client.famNumber || "not supplied"}
+                        {client.clientName} | Legal aid {client.legalAidNumber || "not supplied"}
                       </button>
                     ))}
                   </div>

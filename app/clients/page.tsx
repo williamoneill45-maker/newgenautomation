@@ -35,7 +35,7 @@ export default function ClientsPage() {
     if (!normalizedQuery) return clients;
 
     return clients.filter((client) =>
-      [client.clientName, client.legalAidNumber, client.famNumber].some((value) =>
+      [client.clientName, client.legalAidNumber].some((value) =>
         value.toLowerCase().includes(normalizedQuery),
       ),
     );
@@ -57,7 +57,7 @@ export default function ClientsPage() {
           <p className="text-sm font-semibold uppercase tracking-wide text-sky-700">Billing clients</p>
           <h1 className="mt-2 text-3xl font-semibold tracking-normal text-slate-950">Client Details</h1>
           <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-600">
-            Store the billing details needed to prepare invoices: client name, legal aid number, and FAM number.
+            Store the billing details needed to prepare invoices: client name and legal aid number.
           </p>
         </header>
 
@@ -75,7 +75,7 @@ export default function ClientsPage() {
             <input
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="Search name, legal aid number, or FAM number"
+              placeholder="Search name or legal aid number"
               className="h-10 w-full rounded-md border border-slate-300 px-3 text-sm text-slate-950 shadow-sm outline-none transition placeholder:text-slate-400 focus:border-sky-500 focus:ring-2 focus:ring-sky-100 sm:max-w-sm"
             />
           </div>
@@ -86,7 +86,6 @@ export default function ClientsPage() {
                 <tr>
                   <th className="px-4 py-3">Client</th>
                   <th className="px-4 py-3">Legal aid number</th>
-                  <th className="px-4 py-3">FAM number</th>
                   <th className="px-4 py-3">Invoices</th>
                   <th className="px-4 py-3">Total billed</th>
                 </tr>
@@ -100,7 +99,6 @@ export default function ClientsPage() {
                     <tr key={client.id}>
                       <td className="px-4 py-3 font-medium text-slate-950">{client.clientName}</td>
                       <td className="px-4 py-3 text-slate-700">{client.legalAidNumber || "Not supplied"}</td>
-                      <td className="px-4 py-3 text-slate-700">{client.famNumber || "Not supplied"}</td>
                       <td className="px-4 py-3 text-slate-700">{clientInvoices.length}</td>
                       <td className="px-4 py-3 text-slate-700">${total.toFixed(2)}</td>
                     </tr>
@@ -108,7 +106,7 @@ export default function ClientsPage() {
                 })}
                 {!filteredClients.length ? (
                   <tr>
-                    <td colSpan={5} className="px-4 py-10 text-center text-slate-500">
+                    <td colSpan={4} className="px-4 py-10 text-center text-slate-500">
                       No billing client profiles yet. Create one from the Billing Workbench.
                     </td>
                   </tr>

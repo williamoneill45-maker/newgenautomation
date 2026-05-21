@@ -18,6 +18,26 @@ export async function saveBillingInvoiceToSupabase(
     return { status: "not_configured", missing };
   }
 
+  const clientResponse = await fetch(`${supabaseUrl.replace(/\/$/, "")}/rest/v1/billing_clients?on_conflict=id`, {
+    method: "POST",
+    headers: {
+      apikey: serviceKey,
+      Authorization: `Bearer ${serviceKey}`,
+      "Content-Type": "application/json",
+      Prefer: "resolution=merge-duplicates",
+    },
+    body: JSON.stringify({
+      id: invoice.clientId,
+      client_name: invoice.clientName,
+      legal_aid_number: invoice.legalAidNumber ?? "",
+      updated_at: new Date().toISOString(),
+    }),
+  });
+
+  if (!clientResponse.ok) {
+    throw new Error(`Supabase billing client save failed with status ${clientResponse.status}.`);
+  }
+
   const response = await fetch(`${supabaseUrl.replace(/\/$/, "")}/rest/v1/billing_invoices`, {
     method: "POST",
     headers: {
@@ -33,7 +53,7 @@ export async function saveBillingInvoiceToSupabase(
       invoice_number: invoice.invoiceNumber,
       invoice_total: invoice.invoiceTotal,
       client_id: invoice.clientId,
-      fam_number: invoice.famNumber,
+      fam_number: "",
       form_type: invoice.formType,
       status: invoice.status,
       onedrive_url: invoice.oneDriveUrl,

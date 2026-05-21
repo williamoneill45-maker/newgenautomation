@@ -1,7 +1,38 @@
+create table if not exists public.billing_clients (
+  id text primary key,
+  client_name text not null,
+  legal_aid_number text not null default '',
+  latest_legal_aid_generated_at timestamptz,
+  onedrive_client_folder text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+alter table public.billing_clients enable row level security;
+
+create policy "billing_clients_select_authenticated"
+on public.billing_clients
+for select
+to authenticated
+using (true);
+
+create policy "billing_clients_insert_authenticated"
+on public.billing_clients
+for insert
+to authenticated
+with check (true);
+
+create policy "billing_clients_update_authenticated"
+on public.billing_clients
+for update
+to authenticated
+using (true)
+with check (true);
+
 create table if not exists public.billing_invoices (
   id text primary key,
   client_name text not null,
-  legal_aid_number text not null,
+  legal_aid_number text not null default '',
   invoice_number text not null unique,
   invoice_total numeric(12, 2) not null default 0,
   client_id text,
@@ -78,4 +109,12 @@ with check (true);
 
 insert into storage.buckets (id, name, public)
 values ('legal-aid-uploads', 'legal-aid-uploads', false)
+on conflict (id) do nothing;
+
+insert into storage.buckets (id, name, public)
+values ('forms', 'forms', false)
+on conflict (id) do nothing;
+
+insert into storage.buckets (id, name, public)
+values ('billing', 'billing', false)
 on conflict (id) do nothing;

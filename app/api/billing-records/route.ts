@@ -25,9 +25,9 @@ export async function POST(request: Request) {
   try {
     const invoice = (await request.json()) as StoredBillingInvoice;
 
-    if (!invoice.clientName?.trim() || !invoice.legalAidNumber?.trim() || !invoice.invoiceNumber?.trim()) {
+    if (!invoice.clientName?.trim() || !invoice.invoiceNumber?.trim()) {
       return NextResponse.json(
-        { error: "Client name, legal aid number, and invoice number are required." },
+        { error: "Client name and invoice number are required." },
         { status: 400 },
       );
     }

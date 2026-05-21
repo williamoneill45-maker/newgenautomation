@@ -128,6 +128,10 @@ export const approvedBillingPlaceholderKeys = [
   "AF_D_H",
   "DPO",
   "PHM",
+  "CJD",
+  "CJD_QTY",
+  "CJD_UNIT",
+  "CJD_TOTAL",
   "AF_PHM",
   "IA_QTY",
   "IA_UNIT",
@@ -209,6 +213,10 @@ function formatMoney(value: number): string {
   return value ? value.toFixed(2) : "";
 }
 
+function formatTotalMoney(value: number): string {
+  return Number.isFinite(value) ? value.toFixed(2) : "0.00";
+}
+
 function formatNumber(value: number | undefined): string {
   return typeof value === "number" && Number.isFinite(value) && value > 0
     ? String(value)
@@ -237,7 +245,7 @@ function buildProgressResultsWording(draft: BillingRecord["draft"]): string {
   ]
     .filter((value): value is string => Boolean(value?.trim()))
     .filter((wording, index, wordings) => wordings.indexOf(wording) === index)
-    .join("\n");
+    .join("\n\n");
 }
 
 function calculateHalfHourUnits(hours: number): number {
@@ -633,6 +641,12 @@ export function buildBillingMergeFields(record: BillingRecord): MergeFields {
     AF_D_H: formatMoney(form33AAmounts.defendedHearingAdditionalFactors),
     DPO: formatMoney(form33AAmounts.defendedProtectionOrder),
     PHM: formatMoney(form32BAmounts.preHearingMatters),
+    CJD: formatMoney(form32BAmounts.complyingJudgesDirections),
+    CJD_QTY: form32BAmounts.complyingJudgesDirections ? "1" : "",
+    CJD_UNIT: form32BAmounts.complyingJudgesDirections
+      ? formatMoney(form32BFeeRules.fixedFees.complyingJudgesDirections)
+      : "",
+    CJD_TOTAL: formatMoney(form32BAmounts.complyingJudgesDirections),
     AF_PHM: formatMoney(form32BAmounts.additionalFactorsPreHearingMatters),
     IA_QTY: form32BAmounts.instructingAgent ? "1" : "",
     IA_UNIT: form32BAmounts.instructingAgent
@@ -718,14 +732,14 @@ export function buildBillingMergeFields(record: BillingRecord): MergeFields {
     "x*$160.00": "",
     "x*$190.00": ["", "", ""],
     "x*$430.00": "",
-    ta: formatMoney(record.formType === "32B" ? form32BAmounts.totalApplication : form33AAmounts.totalApplication),
-    ffp: formatMoney(record.formType === "32B" ? form32BAmounts.totalFixedFeePlusActivities : form33AAmounts.totalFixedFeePlusActivities),
-    tffp: formatMoney(record.formType === "32B" ? form32BAmounts.totalFixedFeePlusActivities : form33AAmounts.totalFixedFeePlusActivities),
-    td: formatMoney(record.formType === "32B" ? form32BAmounts.totalDisbursementsExcludingMileage : form33AAmounts.totalDisbursementsExcludingMileage),
-    "td-m": formatMoney(record.formType === "32B" ? form32BAmounts.totalDisbursementsExcludingMileage : form33AAmounts.totalDisbursementsExcludingMileage),
-    tgst: formatMoney(record.formType === "32B" ? form32BAmounts.totalGst : form33AAmounts.totalGst),
-    m_t: formatMoney(record.formType === "32B" ? form32BAmounts.totalMileage : form33AAmounts.totalMileage),
-    total: formatMoney(record.formType === "32B" ? form32BAmounts.total : form33AAmounts.total),
+    ta: formatTotalMoney(record.formType === "32B" ? form32BAmounts.totalApplication : form33AAmounts.totalApplication),
+    ffp: formatTotalMoney(record.formType === "32B" ? form32BAmounts.totalFixedFeePlusActivities : form33AAmounts.totalFixedFeePlusActivities),
+    tffp: formatTotalMoney(record.formType === "32B" ? form32BAmounts.totalFixedFeePlusActivities : form33AAmounts.totalFixedFeePlusActivities),
+    td: formatTotalMoney(record.formType === "32B" ? form32BAmounts.totalDisbursementsExcludingMileage : form33AAmounts.totalDisbursementsExcludingMileage),
+    "td-m": formatTotalMoney(record.formType === "32B" ? form32BAmounts.totalDisbursementsExcludingMileage : form33AAmounts.totalDisbursementsExcludingMileage),
+    tgst: formatTotalMoney(record.formType === "32B" ? form32BAmounts.totalGst : form33AAmounts.totalGst),
+    m_t: formatTotalMoney(record.formType === "32B" ? form32BAmounts.totalMileage : form33AAmounts.totalMileage),
+    total: formatTotalMoney(record.formType === "32B" ? form32BAmounts.total : form33AAmounts.total),
   };
 
   return withSnakeCaseAliases(fields);
