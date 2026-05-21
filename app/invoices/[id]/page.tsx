@@ -79,7 +79,11 @@ export default function InvoiceDetailPage() {
         | { status: "not_configured"; missing: string[] }
         | { error?: string };
 
-      if (!response.ok || "error" in payload) {
+      if (!response.ok) {
+        throw new Error("error" in payload ? payload.error ?? "Evidence upload failed." : "Evidence upload failed.");
+      }
+
+      if ("error" in payload) {
         throw new Error(payload.error ?? "Evidence upload failed.");
       }
 
