@@ -22,6 +22,7 @@ const workItems = [
   "New client",
   "Client details",
   "DOCX placeholder merge",
+  "Form production rules",
   "Legal aid billing",
   "Invoice register",
   "Legal Aid application",
@@ -54,6 +55,12 @@ export default function Dashboard() {
               className="inline-flex h-10 items-center justify-center rounded-md border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
             >
               Invoices
+            </Link>
+            <Link
+              href="/form-production-rules"
+              className="inline-flex h-10 items-center justify-center rounded-md border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
+            >
+              Form rules
             </Link>
             <Link
               href="/legal-aid"
