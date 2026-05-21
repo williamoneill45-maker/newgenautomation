@@ -47,7 +47,7 @@ export const standardDocxTemplates: SourceTemplateDefinition[] = [
   {
     id: "family_court_lawyer_certificate",
     title: "Family Court Lawyer Certificate",
-    sourceFileName: "family-court-lawyer-certificate.doc",
-    outputFileName: "08 Family Court Lawyer Certificate.doc",
+    sourceFileName: "family-court-lawyer-certificate.docx",
+    outputFileName: "08 Family Court Lawyer Certificate.docx",
   },
 ];

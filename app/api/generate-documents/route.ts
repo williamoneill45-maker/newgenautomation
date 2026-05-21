@@ -92,6 +92,15 @@ export async function POST(request: Request) {
     }
 
     const sourceTemplate = await readSourceTemplate(templateDefinition.sourceFileName);
+    const templateFields = {
+      ...fields,
+      ...(templateDefinition.id === "confidential_address_application"
+        ? {
+            APPLICANT_ADDRESS: body.matter.intake.applicant.homeAddress,
+            applicant_home_address: body.matter.intake.applicant.homeAddress,
+          }
+        : {}),
+    };
     if (!templateDefinition.sourceFileName.toLowerCase().endsWith(".docx")) {
       bundle.file(templateDefinition.outputFileName, sourceTemplate);
       validationReport.documents.push({
@@ -114,7 +123,7 @@ export async function POST(request: Request) {
       continue;
     }
 
-    const { buffer, report } = await mergeDocxTemplate(sourceTemplate, fields);
+    const { buffer, report } = await mergeDocxTemplate(sourceTemplate, templateFields);
 
     bundle.file(templateDefinition.outputFileName, buffer);
     validationReport.documents.push({

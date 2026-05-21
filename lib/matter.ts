@@ -231,7 +231,7 @@ export function createEmptyParty(role: PartyRole, matterId: string): Party {
     workAddress: "",
     ethnicity: "",
     otherEthnicity: "",
-    relationshipToApplicant: role === "respondent" ? "Father" : undefined,
+    relationshipToApplicant: "",
     isAddressConfidential: role === "applicant" ? false : undefined,
   };
 }

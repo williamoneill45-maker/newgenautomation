@@ -261,6 +261,27 @@ export function mergePlaceholdersInXml(xml: string, fields: MergeFields): string
     }
   }
 
+  for (const malformedKey of Object.keys(fields)) {
+    if (!hasPlaceholderValue(malformedKey, fields, lookup)) {
+      continue;
+    }
+
+    const malformedPatterns = [
+      new RegExp(`\\{\\{${escapeRegExp(malformedKey)}\\}(?!\\})`, "g"),
+      new RegExp(`\\{\\{${escapeRegExp(malformedKey)}(?=[\\s,.;:)])`, "g"),
+    ];
+
+    for (const malformedPattern of malformedPatterns) {
+      while ((match = malformedPattern.exec(fullText)) !== null) {
+        replacements.push({
+          start: match.index,
+          end: match.index + match[0].length,
+          value: getPlaceholderValue(malformedKey, fields, lookup),
+        });
+      }
+    }
+  }
+
   for (const malformedKey of ["JC_PREP_UNIT"]) {
     if (!hasPlaceholderValue(malformedKey, fields, lookup)) {
       continue;
@@ -314,7 +335,16 @@ export function mergePlaceholdersInXml(xml: string, fields: MergeFields): string
     }
   }
 
-  for (const replacement of replacements.reverse()) {
+  const uniqueReplacements = Array.from(
+    new Map(
+      replacements.map((replacement) => [
+        `${replacement.start}:${replacement.end}`,
+        replacement,
+      ]),
+    ).values(),
+  );
+
+  for (const replacement of uniqueReplacements.reverse()) {
     replaceTextRange(
       nodes,
       replacement.start,
