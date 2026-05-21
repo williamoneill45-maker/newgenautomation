@@ -92,6 +92,28 @@ export async function POST(request: Request) {
     }
 
     const sourceTemplate = await readSourceTemplate(templateDefinition.sourceFileName);
+    if (!templateDefinition.sourceFileName.toLowerCase().endsWith(".docx")) {
+      bundle.file(templateDefinition.outputFileName, sourceTemplate);
+      validationReport.documents.push({
+        template: templateDefinition.sourceFileName,
+        output: templateDefinition.outputFileName,
+        title: templateDefinition.title,
+        report: {
+          placeholders: [],
+          missingFields: [],
+          unusedFields: [],
+          replacedPlaceholders: 0,
+          structure: {
+            samePackageFileList: true,
+            unchangedNonTemplateFiles: true,
+            onlyPlaceholderTextChanged: true,
+            changedXmlFiles: [],
+          },
+        },
+      });
+      continue;
+    }
+
     const { buffer, report } = await mergeDocxTemplate(sourceTemplate, fields);
 
     bundle.file(templateDefinition.outputFileName, buffer);

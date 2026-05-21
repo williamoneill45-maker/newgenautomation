@@ -75,7 +75,8 @@ export type MergeFieldTextValue = string | string[] | undefined;
 
 export type MergeFields = Partial<Record<PlaceholderKey, string>> & Record<string, MergeFieldTextValue>;
 
-export type RawMergeFields = Partial<Record<PlaceholderKey, MergeFieldValue>>;
+export type RawMergeFields = Partial<Record<PlaceholderKey, MergeFieldValue>> &
+  Record<string, MergeFieldValue>;
 
 export type DocumentGenerationInput = {
   matterId: string;
@@ -134,10 +135,19 @@ function getFirstName(fullName: string): string {
   return fullName.trim().split(/\s+/)[0] ?? "";
 }
 
+function getEthnicity(ethnicity: string, otherEthnicity?: string): string {
+  return ethnicity === "Other" && otherEthnicity?.trim() ? otherEthnicity.trim() : ethnicity;
+}
+
+function isEthnicity(value: string, expected: string): string {
+  return value === expected ? "☒" : "☐";
+}
+
 export function buildMatterMergeFields(matter: MatterFile): MergeFields {
   const { intake } = matter;
   const firstChild = intake.children[0];
   const secondChild = intake.children[1];
+  const thirdChild = intake.children[2];
   const today = formatDateForForms();
   const applicantAddress = intake.applicant.isAddressConfidential
     ? "Confidential"
@@ -145,6 +155,8 @@ export function buildMatterMergeFields(matter: MatterFile): MergeFields {
   const childAge = firstChild?.age || calculateAge(firstChild?.dateOfBirth ?? "");
   const secondChildAge =
     secondChild?.age || calculateAge(secondChild?.dateOfBirth ?? "");
+  const thirdChildAge =
+    thirdChild?.age || calculateAge(thirdChild?.dateOfBirth ?? "");
   const applicantAge = calculateAge(intake.applicant.dateOfBirth);
   const respondentAge = calculateAge(intake.respondent.dateOfBirth);
   const otherApplicationDetails = intake.otherApplicationDetails?.trim() ?? "";
@@ -153,6 +165,11 @@ export function buildMatterMergeFields(matter: MatterFile): MergeFields {
       ? otherApplicationDetails
       : application,
   );
+  const applicantEthnicity = getEthnicity(intake.applicant.ethnicity, intake.applicant.otherEthnicity);
+  const respondentEthnicity = getEthnicity(intake.respondent.ethnicity, intake.respondent.otherEthnicity);
+  const child1Ethnicity = firstChild ? getEthnicity(firstChild.ethnicity, firstChild.otherEthnicity) : "";
+  const child2Ethnicity = secondChild ? getEthnicity(secondChild.ethnicity, secondChild.otherEthnicity) : "";
+  const child3Ethnicity = thirdChild ? getEthnicity(thirdChild.ethnicity, thirdChild.otherEthnicity) : "";
 
   return normalizeMergeFields({
     APPLICANT_NAME: intake.applicant.fullName,
@@ -173,25 +190,68 @@ export function buildMatterMergeFields(matter: MatterFile): MergeFields {
     applicant_name: intake.applicant.fullName,
     applicant_occupation: intake.applicant.occupation,
     applicant_phone_number: intake.applicant.mobilePhone,
+    applicant_phone: intake.applicant.mobilePhone,
+    applicant_email: intake.applicant.emailAddress,
+    applicant_ethnicity: applicantEthnicity,
+    applicant_ethnicity_nz_european: isEthnicity(intake.applicant.ethnicity, "New Zealand European"),
+    applicant_ethnicity_maori: isEthnicity(intake.applicant.ethnicity, "Maori"),
+    applicant_ethnicity_pacific: isEthnicity(intake.applicant.ethnicity, "Pacific Peoples"),
+    applicant_ethnicity_asian: isEthnicity(intake.applicant.ethnicity, "Asian"),
+    applicant_ethnicity_melaa: isEthnicity(intake.applicant.ethnicity, "Middle Eastern / Latin American / African"),
+    applicant_ethnicity_other: isEthnicity(intake.applicant.ethnicity, "Other"),
     application_type_1: selectedApplications[0],
     application_type_2: selectedApplications[1],
     application_type_3: selectedApplications[2],
     child_1_age: childAge,
     child_1_dob: firstChild?.dateOfBirth,
+    child_1_ethnicity: child1Ethnicity,
+    child_1_ethnicity_nz_european: isEthnicity(firstChild?.ethnicity ?? "", "New Zealand European"),
+    child_1_ethnicity_maori: isEthnicity(firstChild?.ethnicity ?? "", "Maori"),
+    child_1_ethnicity_pacific: isEthnicity(firstChild?.ethnicity ?? "", "Pacific Peoples"),
+    child_1_ethnicity_asian: isEthnicity(firstChild?.ethnicity ?? "", "Asian"),
+    child_1_ethnicity_melaa: isEthnicity(firstChild?.ethnicity ?? "", "Middle Eastern / Latin American / African"),
+    child_1_ethnicity_other: isEthnicity(firstChild?.ethnicity ?? "", "Other"),
     child_1_gender: firstChild?.gender,
     child_1_living_with: firstChild?.livingWithName,
     child_1_name: firstChild?.fullName,
+    child_1_nickname: getFirstName(firstChild?.fullName ?? ""),
+    "(“child_1_nickname”)": getFirstName(firstChild?.fullName ?? ""),
     child_1_relationship_to_applicant: firstChild?.applicantRelationshipToChild,
     child_1_relationship_to_respondent: firstChild?.respondentRelationshipToChild,
     child_2_age: secondChildAge,
     child_2_dob: secondChild?.dateOfBirth,
+    child_2_ethnicity: child2Ethnicity,
+    child_2_ethnicity_nz_european: isEthnicity(secondChild?.ethnicity ?? "", "New Zealand European"),
+    child_2_ethnicity_maori: isEthnicity(secondChild?.ethnicity ?? "", "Maori"),
+    child_2_ethnicity_pacific: isEthnicity(secondChild?.ethnicity ?? "", "Pacific Peoples"),
+    child_2_ethnicity_asian: isEthnicity(secondChild?.ethnicity ?? "", "Asian"),
+    child_2_ethnicity_melaa: isEthnicity(secondChild?.ethnicity ?? "", "Middle Eastern / Latin American / African"),
+    child_2_ethnicity_other: isEthnicity(secondChild?.ethnicity ?? "", "Other"),
     child_2_gender: secondChild?.gender,
     child_2_living_with: secondChild?.livingWithName,
     child_2_name: secondChild?.fullName,
+    child_2_nickname: getFirstName(secondChild?.fullName ?? ""),
+    "(“child_2_nickname”)": getFirstName(secondChild?.fullName ?? ""),
     child_2_relationship_to_applicant:
       secondChild?.applicantRelationshipToChild,
     child_2_relationship_to_respondent:
       secondChild?.respondentRelationshipToChild,
+    child_3_age: thirdChildAge,
+    child_3_dob: thirdChild?.dateOfBirth,
+    child_3_ethnicity: child3Ethnicity,
+    child_3_ethnicity_nz_european: isEthnicity(thirdChild?.ethnicity ?? "", "New Zealand European"),
+    child_3_ethnicity_maori: isEthnicity(thirdChild?.ethnicity ?? "", "Maori"),
+    child_3_ethnicity_pacific: isEthnicity(thirdChild?.ethnicity ?? "", "Pacific Peoples"),
+    child_3_ethnicity_asian: isEthnicity(thirdChild?.ethnicity ?? "", "Asian"),
+    child_3_ethnicity_melaa: isEthnicity(thirdChild?.ethnicity ?? "", "Middle Eastern / Latin American / African"),
+    child_3_ethnicity_other: isEthnicity(thirdChild?.ethnicity ?? "", "Other"),
+    child_3_gender: thirdChild?.gender,
+    child_3_living_with: thirdChild?.livingWithName,
+    child_3_name: thirdChild?.fullName,
+    child_3_nickname: getFirstName(thirdChild?.fullName ?? ""),
+    "(“child_3_nickname”)": getFirstName(thirdChild?.fullName ?? ""),
+    child_3_relationship_to_applicant: thirdChild?.applicantRelationshipToChild,
+    child_3_relationship_to_respondent: thirdChild?.respondentRelationshipToChild,
     court_location: intake.courtLocation,
     date_today: today,
     "date_today ": today,
@@ -206,9 +266,18 @@ export function buildMatterMergeFields(matter: MatterFile): MergeFields {
     todays_date: today,
     respondent_age: respondentAge,
     respondent_dob: intake.respondent.dateOfBirth,
+    respondent_email: intake.respondent.emailAddress,
     respondent_home_address: intake.respondent.homeAddress,
     respondent_name: intake.respondent.fullName,
     respondent_occupation: intake.respondent.occupation,
+    respondent_phone: intake.respondent.mobilePhone,
+    respondent_ethnicity: respondentEthnicity,
+    respondent_ethnicity_nz_european: isEthnicity(intake.respondent.ethnicity, "New Zealand European"),
+    respondent_ethnicity_maori: isEthnicity(intake.respondent.ethnicity, "Maori"),
+    respondent_ethnicity_pacific: isEthnicity(intake.respondent.ethnicity, "Pacific Peoples"),
+    respondent_ethnicity_asian: isEthnicity(intake.respondent.ethnicity, "Asian"),
+    respondent_ethnicity_melaa: isEthnicity(intake.respondent.ethnicity, "Middle Eastern / Latin American / African"),
+    respondent_ethnicity_other: isEthnicity(intake.respondent.ethnicity, "Other"),
     respondent_relationship_to_applicant:
       intake.respondent.relationshipToApplicant,
     respondent_work_address: intake.respondent.workAddress,
