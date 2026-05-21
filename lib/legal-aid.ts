@@ -2,6 +2,7 @@ import type { MatterFile } from "./matter";
 import { formatDateForForms } from "./document-automation";
 
 export const legalAidMatterStorageKey = "newgenautomation:draftMatter";
+export const recentMattersStorageKey = "newgenautomation:recentMatters";
 
 export type LegalAidStatus =
   | "draft"
@@ -42,10 +43,10 @@ export type LegalAidRecord = {
 export const legalAidTemplatePath = "templates/Legal Aid Template.pdf";
 
 export const confidentialLawyerPostalAddress = [
-  "Natalie Quirke",
+  "C/o Natalie Quirke",
   "Po Box 25977",
   "St Heliers",
-].join("\n");
+].join(", ");
 
 export const protectionOrderStandardWording =
   "The Respondent has been abusive to the Applicant. It is serious violence. She and the children need urgent protection. It includes physical and psychological abuse.";

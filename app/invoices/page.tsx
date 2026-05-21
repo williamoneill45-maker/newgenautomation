@@ -21,9 +21,33 @@ function readInvoices(): StoredBillingInvoice[] {
 export default function InvoicesPage() {
   const [invoices, setInvoices] = useState<StoredBillingInvoice[]>([]);
   const [query, setQuery] = useState("");
+  const [source, setSource] = useState("Browser storage");
+  const [loadError, setLoadError] = useState("");
 
   useEffect(() => {
-    setInvoices(readInvoices());
+    const localInvoices = readInvoices();
+    setInvoices(localInvoices);
+
+    fetch("/api/billing-records")
+      .then(async (response) => {
+        if (!response.ok) throw new Error("Unable to load Supabase invoice register.");
+        return response.json() as Promise<
+          | { status: "loaded"; invoices: StoredBillingInvoice[] }
+          | { status: "not_configured"; missing: string[] }
+        >;
+      })
+      .then((payload) => {
+        if (payload.status === "loaded") {
+          setInvoices(payload.invoices);
+          setSource("Supabase");
+          return;
+        }
+
+        setSource(`Browser storage; Supabase missing ${payload.missing.join(", ")}`);
+      })
+      .catch((error) => {
+        setLoadError(error instanceof Error ? error.message : "Unable to load Supabase invoice register.");
+      });
   }, []);
 
   const filteredInvoices = useMemo(() => {
@@ -63,6 +87,8 @@ export default function InvoicesPage() {
           <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-600">
             Track generated invoices, totals, status, and OneDrive storage references.
           </p>
+          <p className="mt-2 text-sm font-medium text-slate-700">Data source: {source}</p>
+          {loadError ? <p className="mt-2 text-sm font-medium text-amber-700">{loadError}</p> : null}
         </header>
 
         <section className="mb-6 grid gap-4 md:grid-cols-3">

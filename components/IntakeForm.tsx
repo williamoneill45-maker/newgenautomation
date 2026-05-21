@@ -13,7 +13,7 @@ import {
   type Party,
 } from "../lib/matter";
 import { calculateAge } from "../lib/document-automation";
-import { legalAidMatterStorageKey } from "../lib/legal-aid";
+import { legalAidMatterStorageKey, recentMattersStorageKey } from "../lib/legal-aid";
 
 type FieldProps = {
   label: string;
@@ -139,6 +139,16 @@ function SelectField({
       </select>
     </label>
   );
+}
+
+function readRecentMatters(): MatterFile[] {
+  try {
+    const raw = window.localStorage.getItem(recentMattersStorageKey);
+    return raw ? (JSON.parse(raw) as MatterFile[]) : [];
+  } catch {
+    window.localStorage.removeItem(recentMattersStorageKey);
+    return [];
+  }
 }
 
 export default function IntakeForm() {
@@ -299,6 +309,11 @@ export default function IntakeForm() {
 
   const saveDraft = () => {
     window.localStorage.setItem(legalAidMatterStorageKey, JSON.stringify(matter));
+    const existing = readRecentMatters();
+    window.localStorage.setItem(
+      recentMattersStorageKey,
+      JSON.stringify([matter, ...existing.filter((item) => item.id !== matter.id)].slice(0, 25)),
+    );
   };
 
   useEffect(() => {

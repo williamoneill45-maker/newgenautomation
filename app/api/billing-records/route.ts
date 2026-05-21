@@ -1,9 +1,25 @@
 import { NextResponse } from "next/server";
 
 import type { StoredBillingInvoice } from "../../../lib/billing-storage";
-import { saveBillingInvoiceToSupabase } from "../../../lib/supabase-billing";
+import {
+  listBillingInvoicesFromSupabase,
+  saveBillingInvoiceToSupabase,
+} from "../../../lib/supabase-billing";
 
 export const runtime = "nodejs";
+
+export async function GET() {
+  try {
+    const result = await listBillingInvoicesFromSupabase();
+    return NextResponse.json(result);
+  } catch (error) {
+    console.error("Billing invoice load failed", error);
+    return NextResponse.json(
+      { error: "Unable to load billing invoice metadata." },
+      { status: 500 },
+    );
+  }
+}
 
 export async function POST(request: Request) {
   try {
