@@ -36,3 +36,46 @@ for update
 to authenticated
 using (true)
 with check (true);
+
+create table if not exists public.legal_aid_applications (
+  id text primary key,
+  matter_id text not null,
+  client_name text not null,
+  status text not null default 'draft'
+    check (status in ('draft', 'pending_income_proof', 'pending_signed_page', 'ready_to_generate', 'generated')),
+  review jsonb not null default '{}'::jsonb,
+  has_income_proof boolean not null default false,
+  has_signed_page boolean not null default false,
+  income_proof_path text,
+  signed_page_path text,
+  income_proof_file_name text,
+  signed_page_file_name text,
+  template_path text not null default 'templates/Legal Aid Template.pdf',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+alter table public.legal_aid_applications enable row level security;
+
+create policy "legal_aid_applications_select_authenticated"
+on public.legal_aid_applications
+for select
+to authenticated
+using (true);
+
+create policy "legal_aid_applications_insert_authenticated"
+on public.legal_aid_applications
+for insert
+to authenticated
+with check (true);
+
+create policy "legal_aid_applications_update_authenticated"
+on public.legal_aid_applications
+for update
+to authenticated
+using (true)
+with check (true);
+
+insert into storage.buckets (id, name, public)
+values ('legal-aid-uploads', 'legal-aid-uploads', false)
+on conflict (id) do nothing;

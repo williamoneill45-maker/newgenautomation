@@ -31,14 +31,24 @@ export type LegalAidReview = {
 export type LegalAidRecord = {
   id: string;
   matterId: string;
+  clientName: string;
   status: LegalAidStatus;
   review: LegalAidReview;
   hasIncomeProof: boolean;
   hasSignedPage: boolean;
+  incomeProofPath: string;
+  signedPagePath: string;
+  incomeProofFileName: string;
+  signedPageFileName: string;
   templatePath: string;
   createdAt: string;
   updatedAt: string;
 };
+
+export type LegalAidPendingSummary = Pick<
+  LegalAidRecord,
+  "id" | "clientName" | "status" | "hasIncomeProof" | "hasSignedPage" | "updatedAt"
+>;
 
 export const legalAidTemplatePath = "templates/Legal Aid Template.pdf";
 

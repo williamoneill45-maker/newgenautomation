@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { LegalAidNotifications } from "../components/LegalAidNotifications";
 
 const notifications = [
   {
@@ -115,6 +116,7 @@ export default function Dashboard() {
           <aside className="rounded-lg border border-slate-200 bg-white p-5 shadow-form">
             <h2 className="text-lg font-semibold text-slate-950">Notifications</h2>
             <div className="mt-5 space-y-3">
+              <LegalAidNotifications />
               {notifications.map((notification) => (
                 <div
                   key={notification.title}

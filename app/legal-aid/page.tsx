@@ -12,6 +12,7 @@ import {
   protectionOrderStandardWording,
   recentMattersStorageKey,
   confidentialLawyerPostalAddress,
+  type LegalAidRecord,
   type LegalAidReview,
 } from "../../lib/legal-aid";
 import { courts, createEmptyMatter, type MatterFile } from "../../lib/matter";
@@ -55,23 +56,111 @@ export default function LegalAidPage() {
   const [otherProceedings, setOtherProceedings] = useState("");
   const [recentMatters, setRecentMatters] = useState<MatterFile[]>([]);
   const [selectedMatterId, setSelectedMatterId] = useState("");
+  const [application, setApplication] = useState<LegalAidRecord | null>(null);
+  const [savedApplications, setSavedApplications] = useState<LegalAidRecord[]>([]);
+  const [isSaving, setIsSaving] = useState(false);
+  const [notice, setNotice] = useState("");
 
   useEffect(() => {
     const recent = readRecentMatters().filter((item) => isWithinLastWeek(item.updatedAt || item.createdAt));
     setRecentMatters(recent);
+    void loadSavedApplications();
     const storedMatter = window.localStorage.getItem(legalAidMatterStorageKey);
 
     try {
       const parsedMatter = storedMatter
         ? JSON.parse(storedMatter) as MatterFile
         : recent[0] ?? null;
-      if (parsedMatter) loadMatter(parsedMatter);
+      if (parsedMatter) void loadMatter(parsedMatter);
     } catch {
       window.localStorage.removeItem(legalAidMatterStorageKey);
     }
   }, []);
 
-  function loadMatter(nextMatter: MatterFile) {
+  async function loadSavedApplications() {
+    try {
+      const response = await fetch("/api/legal-aid-applications", { cache: "no-store" });
+      const payload = await response.json();
+      if (payload.status === "loaded") {
+        setSavedApplications(payload.data);
+      }
+    } catch {
+      setSavedApplications([]);
+    }
+  }
+
+  function applyApplicationRecord(record: LegalAidRecord, nextMatter: MatterFile | null = matter) {
+    setApplication(record);
+    setReview(record.review);
+    setMatter(nextMatter);
+    setSelectedMatterId(record.matterId);
+    setIncludeProtectionOrder(Boolean(record.review.protectionOrderWording));
+    setIncludeParentingOrder(Boolean(record.review.parentingOrderWording));
+    setOtherProceedings(
+      record.review.proceedingsType
+        .replace(/^Without notice\s*/i, "")
+        .split(",")
+        .map((part) => part.trim())
+        .filter((part) => part && part !== "Protection Order" && part !== "Parenting Order")
+        .join(", "),
+    );
+    setIncomeProof(null);
+    setSignedPage(null);
+    setIsGenerated(record.status === "generated");
+  }
+
+  async function saveDraft(nextReview = review, currentApplication = application) {
+    if (!nextReview) return null;
+
+    setIsSaving(true);
+    setNotice("");
+
+    try {
+      const response = await fetch("/api/legal-aid-applications", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          record: currentApplication
+            ? {
+                ...currentApplication,
+                clientName: nextReview.clientName,
+                review: nextReview,
+                status: currentApplication.status === "generated"
+                  ? getLegalAidStatus(currentApplication.hasIncomeProof, currentApplication.hasSignedPage)
+                  : currentApplication.status,
+              }
+            : undefined,
+          review: currentApplication ? undefined : nextReview,
+        }),
+      });
+      const payload = await response.json();
+
+      if (payload.status === "not_configured") {
+        setNotice(`Supabase is not configured yet: ${payload.missing.join(", ")}.`);
+        return null;
+      }
+
+      if (!response.ok || payload.error) {
+        throw new Error(payload.error ?? "Unable to save Legal Aid application.");
+      }
+
+      const saved = payload.data as LegalAidRecord;
+      setApplication(saved);
+      setSavedApplications((current) => {
+        const withoutSaved = current.filter((item) => item.id !== saved.id);
+        return [saved, ...withoutSaved];
+      });
+      setNotice("Legal Aid draft saved.");
+      return saved;
+    } catch (caughtError) {
+      setNotice(caughtError instanceof Error ? caughtError.message : "Unable to save Legal Aid application.");
+      return null;
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  async function loadMatter(nextMatter: MatterFile) {
     const nextReview = buildLegalAidReview(nextMatter);
     const reviewWithConfidentialAddress = nextMatter.intake.applicant.isAddressConfidential
       ? {
@@ -80,6 +169,7 @@ export default function LegalAidPage() {
           lawyerPostalAddress: confidentialLawyerPostalAddress,
         }
       : nextReview;
+    const existingApplication = savedApplications.find((item) => item.matterId === nextMatter.id);
     const hasProtectionOrder = nextMatter.intake.selectedApplications.some((application) =>
       application.toLowerCase().includes("protection order"),
     );
@@ -89,7 +179,8 @@ export default function LegalAidPage() {
 
     setMatter(nextMatter);
     setSelectedMatterId(nextMatter.id);
-    setReview(reviewWithConfidentialAddress);
+    setReview(existingApplication?.review ?? reviewWithConfidentialAddress);
+    setApplication(existingApplication ?? null);
     setIncludeProtectionOrder(hasProtectionOrder);
     setIncludeParentingOrder(hasParentingOrder);
     setOtherProceedings(
@@ -98,11 +189,12 @@ export default function LegalAidPage() {
         : "",
     );
     window.localStorage.setItem(legalAidMatterStorageKey, JSON.stringify(nextMatter));
+    await saveDraft(existingApplication?.review ?? reviewWithConfidentialAddress, existingApplication ?? null);
   }
 
   function createManualMatter() {
     const nextMatter = createEmptyMatter();
-    loadMatter(nextMatter);
+    void loadMatter(nextMatter);
   }
 
   function buildProceedingsType({
@@ -135,33 +227,123 @@ export default function LegalAidPage() {
     setIncludeProtectionOrder(protectionOrder);
     setIncludeParentingOrder(parentingOrder);
     setOtherProceedings(other);
-    setReview((current) => current
-      ? {
-          ...current,
+    setReview((current) => {
+      if (!current) return current;
+      const nextReview = {
+        ...current,
           proceedingsType: buildProceedingsType({ protectionOrder, parentingOrder, other }),
           protectionOrderWording: protectionOrder ? current.protectionOrderWording || protectionOrderStandardWording : "",
           parentingOrderWording: parentingOrder ? current.parentingOrderWording || parentingOrderStandardWording : "",
           abuseSummary: protectionOrder ? current.abuseSummary : "",
-        }
-      : current);
+      };
+      void saveDraft(nextReview, application);
+      return nextReview;
+    });
   }
 
   const status = useMemo(
-    () => isGenerated ? "generated" : getLegalAidStatus(Boolean(incomeProof), Boolean(signedPage)),
-    [incomeProof, signedPage, isGenerated],
+    () => isGenerated
+      ? "generated"
+      : getLegalAidStatus(Boolean(incomeProof || application?.hasIncomeProof), Boolean(signedPage || application?.hasSignedPage)),
+    [application, incomeProof, signedPage, isGenerated],
   );
 
-  function handleFileChange(
+  async function handleFileChange(
     event: ChangeEvent<HTMLInputElement>,
     setter: (file: File | null) => void,
+    kind: "incomeProof" | "signedPage",
   ) {
-    setter(event.target.files?.[0] ?? null);
+    const file = event.target.files?.[0] ?? null;
+    setter(file);
     setIsGenerated(false);
+
+    if (!file || !review) return;
+
+    const saved = await saveDraft(review);
+    if (!saved) return;
+
+    setIsSaving(true);
+    setNotice("");
+
+    try {
+      const formData = new FormData();
+      formData.append("kind", kind);
+      formData.append("file", file);
+
+      const response = await fetch(`/api/legal-aid-applications/${encodeURIComponent(saved.id)}/upload`, {
+        method: "POST",
+        body: formData,
+      });
+      const payload = await response.json();
+
+      if (payload.status === "not_configured") {
+        setNotice(`Supabase is not configured yet: ${payload.missing.join(", ")}.`);
+        return;
+      }
+
+      if (!response.ok || payload.error) {
+        throw new Error(payload.error ?? "Unable to save Legal Aid upload.");
+      }
+
+      const nextApplication = payload.data as LegalAidRecord;
+      setApplication(nextApplication);
+      setSavedApplications((current) => {
+        const withoutSaved = current.filter((item) => item.id !== nextApplication.id);
+        return [nextApplication, ...withoutSaved];
+      });
+      setNotice(kind === "incomeProof" ? "Income proof saved. Signed page 5 can be uploaded later." : "Signed page 5 saved. Income proof can be uploaded later.");
+    } catch (caughtError) {
+      setNotice(caughtError instanceof Error ? caughtError.message : "Unable to save Legal Aid upload.");
+    } finally {
+      setIsSaving(false);
+    }
   }
 
   async function generateLegalAidApplication() {
     if (!review) {
       setError("Load or save a matter before generating the Legal Aid application.");
+      return;
+    }
+
+    const saved = await saveDraft(review);
+
+    if (saved?.hasIncomeProof && saved.hasSignedPage) {
+      setIsGenerating(true);
+      setError("");
+
+      try {
+        const formData = new FormData();
+        formData.append("applicationId", saved.id);
+
+        const response = await fetch("/api/generate-legal-aid", {
+          method: "POST",
+          body: formData,
+        });
+
+        if (!response.ok) {
+          const payload = await response.json();
+          throw new Error(payload.error ?? "Unable to generate Legal Aid application.");
+        }
+
+        const blob = await response.blob();
+        const disposition = response.headers.get("Content-Disposition") ?? "";
+        const fileNameMatch = disposition.match(/filename="([^"]+)"/);
+        const fileName = fileNameMatch?.[1] ?? "Legal Aid Application.pdf";
+        const url = window.URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = fileName;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        window.URL.revokeObjectURL(url);
+        setIsGenerated(true);
+        await loadSavedApplications();
+      } catch (caughtError) {
+        setError(caughtError instanceof Error ? caughtError.message : "Unable to generate Legal Aid application.");
+      } finally {
+        setIsGenerating(false);
+      }
       return;
     }
 
@@ -251,12 +433,12 @@ export default function LegalAidPage() {
             </button>
           </div>
           <div className="mt-4">
-            <SelectField
-              label="Recent client"
-              value={selectedMatterId}
-              onChange={(value) => {
-                const selected = recentMatters.find((item) => item.id === value);
-                if (selected) loadMatter(selected);
+              <SelectField
+                label="Recent client"
+                value={selectedMatterId}
+                onChange={(value) => {
+                  const selected = recentMatters.find((item) => item.id === value);
+                if (selected) void loadMatter(selected);
               }}
               options={recentMatters.map((item) => ({
                 label: item.intake.applicant.fullName || item.clientName || item.id,
@@ -265,6 +447,23 @@ export default function LegalAidPage() {
               placeholder="Select recent client"
             />
           </div>
+          {savedApplications.length ? (
+            <div className="mt-4">
+              <SelectField
+                label="Saved Legal Aid application"
+                value={application?.id ?? ""}
+                onChange={(value) => {
+                  const selected = savedApplications.find((item) => item.id === value);
+                  if (selected) applyApplicationRecord(selected);
+                }}
+                options={savedApplications.map((item) => ({
+                  label: `${item.clientName || item.review.clientName} - ${item.status.replace(/_/g, " ")}`,
+                  value: item.id,
+                }))}
+                placeholder="Reopen saved application"
+              />
+            </div>
+          ) : null}
         </section>
 
         {!review ? (
@@ -291,17 +490,25 @@ export default function LegalAidPage() {
                 onProtectionChange={(checked) => updateProceedings({ protectionOrder: checked })}
                 onParentingChange={(checked) => updateProceedings({ parentingOrder: checked })}
                 onOtherProceedingsChange={(value) => updateProceedings({ other: value })}
-                onCourtChange={(value) => setReview((current) => current ? updateReviewField(current, "courtLocation", value) : current)}
+                onCourtChange={(value) => setReview((current) => {
+                  if (!current) return current;
+                  const nextReview = updateReviewField(current, "courtLocation", value);
+                  void saveDraft(nextReview, application);
+                  return nextReview;
+                })}
               />
               <ReviewSection
                 review={review}
                 matter={matter}
                 onChange={(field, value) => setReview((current) => current ? updateReviewField(current, field, value) : current)}
+                onSave={() => void saveDraft(review)}
+                isSaving={isSaving}
               />
               <WordingSection
                 review={review}
                 onChange={(field, value) => setReview((current) => current ? updateReviewField(current, field, value) : current)}
               />
+              {notice ? <p className="text-sm font-medium text-sky-800">{notice}</p> : null}
             </div>
 
             <aside className="space-y-6">
@@ -317,13 +524,17 @@ export default function LegalAidPage() {
                     label="Income proof"
                     detail="Inserted after page 2."
                     file={incomeProof}
-                    onChange={(event) => handleFileChange(event, setIncomeProof)}
+                    savedFileName={application?.incomeProofFileName ?? ""}
+                    isSaved={Boolean(application?.hasIncomeProof)}
+                    onChange={(event) => void handleFileChange(event, setIncomeProof, "incomeProof")}
                   />
                   <UploadField
                     label="Signed client page 5"
                     detail="Replaces page 5."
                     file={signedPage}
-                    onChange={(event) => handleFileChange(event, setSignedPage)}
+                    savedFileName={application?.signedPageFileName ?? ""}
+                    isSaved={Boolean(application?.hasSignedPage)}
+                    onChange={(event) => void handleFileChange(event, setSignedPage, "signedPage")}
                   />
                 </div>
               </section>
@@ -335,7 +546,7 @@ export default function LegalAidPage() {
                 </p>
                 <button
                   type="button"
-                  disabled={isGenerating || !incomeProof || !signedPage}
+                  disabled={isGenerating || !(incomeProof || application?.hasIncomeProof) || !(signedPage || application?.hasSignedPage)}
                   className="mt-5 inline-flex h-10 w-full items-center justify-center rounded-md bg-sky-600 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-sky-700 disabled:cursor-not-allowed disabled:bg-slate-300"
                   onClick={generateLegalAidApplication}
                 >
@@ -355,10 +566,14 @@ function ReviewSection({
   review,
   matter,
   onChange,
+  onSave,
+  isSaving,
 }: {
   review: LegalAidReview;
   matter: MatterFile | null;
   onChange: (field: ReviewField, value: string) => void;
+  onSave: () => void;
+  isSaving: boolean;
 }) {
   return (
     <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-form">
@@ -384,6 +599,14 @@ function ReviewSection({
         <TextArea label="Home address" value={review.homeAddress} onChange={(value) => onChange("homeAddress", value)} rows={3} />
         <TextArea label="Lawyer postal address" value={review.lawyerPostalAddress} onChange={(value) => onChange("lawyerPostalAddress", value)} rows={3} />
       </div>
+      <button
+        type="button"
+        onClick={onSave}
+        disabled={isSaving}
+        className="mt-5 inline-flex h-10 items-center justify-center rounded-md border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
+      >
+        {isSaving ? "Saving..." : "Save Legal Aid draft"}
+      </button>
     </section>
   );
 }
@@ -583,11 +806,15 @@ function UploadField({
   label,
   detail,
   file,
+  savedFileName,
+  isSaved,
   onChange,
 }: {
   label: string;
   detail: string;
   file: File | null;
+  savedFileName: string;
+  isSaved: boolean;
   onChange: (event: ChangeEvent<HTMLInputElement>) => void;
 }) {
   const id = label.toLowerCase().replace(/\s+/g, "-");
@@ -604,6 +831,13 @@ function UploadField({
         onChange={onChange}
       />
       {file ? <span className="mt-2 block text-xs font-medium text-emerald-700">{file.name}</span> : null}
+      {isSaved ? (
+        <span className="mt-2 block text-xs font-medium text-emerald-700">
+          Saved{savedFileName ? `: ${savedFileName}` : ""}
+        </span>
+      ) : (
+        <span className="mt-2 block text-xs font-medium text-amber-700">Pending</span>
+      )}
     </label>
   );
 }

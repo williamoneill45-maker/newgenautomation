@@ -8,10 +8,16 @@ import {
   legalAidTemplatePath,
   type LegalAidReview,
 } from "../../../lib/legal-aid";
+import {
+  downloadLegalAidFileFromSupabase,
+  getLegalAidApplicationFromSupabase,
+  saveLegalAidApplicationToSupabase,
+} from "../../../lib/supabase-legal-aid";
 
 export const runtime = "nodejs";
 
 type UploadKind = "incomeProof" | "signedPage";
+type UploadDescriptor = Pick<File, "name" | "type">;
 
 const textFieldMap: Record<string, keyof LegalAidReview> = {
   "Question 2": "clientName",
@@ -66,7 +72,9 @@ function fillTextFields(pdfDoc: PDFDocument, review: LegalAidReview) {
       ? [review.courtLocation, review.proceedingsType].filter(Boolean).join(", ")
       : fieldName === "Question 33"
         ? combinedNarrative
-        : review[reviewKey];
+        : fieldName === "Question 6" && !review[reviewKey]?.trim()
+          ? " "
+          : review[reviewKey];
 
     field.setText(value ?? "");
   }
@@ -130,7 +138,7 @@ async function insertPdfPages(
 async function insertUpload(
   pdfDoc: PDFDocument,
   index: number,
-  file: File,
+  file: UploadDescriptor,
   bytes: Uint8Array,
   kind: UploadKind,
 ) {
@@ -160,9 +168,75 @@ async function insertUpload(
 export async function POST(request: Request) {
   try {
     const body = await request.formData();
+    const applicationId = body.get("applicationId");
     const reviewPayload = body.get("review");
     const incomeProof = body.get("incomeProof");
     const signedPage = body.get("signedPage");
+
+    if (typeof applicationId === "string" && applicationId.trim()) {
+      const applicationResult = await getLegalAidApplicationFromSupabase(applicationId);
+
+      if (applicationResult.status === "not_configured") {
+        return NextResponse.json(
+          { error: `Supabase is missing ${applicationResult.missing.join(", ")}.` },
+          { status: 500 },
+        );
+      }
+
+      const application = applicationResult.data;
+
+      if (!application) {
+        return NextResponse.json({ error: "Legal Aid application was not found." }, { status: 404 });
+      }
+
+      if (!application.incomeProofPath) {
+        return NextResponse.json({ error: "Income proof screenshot or scan is required." }, { status: 400 });
+      }
+
+      if (!application.signedPagePath) {
+        return NextResponse.json({ error: "Signed client page 5 screenshot or scan is required." }, { status: 400 });
+      }
+
+      const pdfDoc = await PDFDocument.load(await readTemplate(), { ignoreEncryption: true });
+      fillTextFields(pdfDoc, application.review);
+
+      const incomeProofBytes = await downloadLegalAidFileFromSupabase(application.incomeProofPath);
+      const signedPageBytes = await downloadLegalAidFileFromSupabase(application.signedPagePath);
+      const incomeProofFile = {
+        name: application.incomeProofFileName || "income-proof.pdf",
+        type: "",
+      };
+      const signedPageFile = {
+        name: application.signedPageFileName || "signed-page-5.pdf",
+        type: "",
+      };
+
+      await insertUpload(pdfDoc, 2, incomeProofFile, incomeProofBytes, "incomeProof");
+      pdfDoc.removePage(5);
+      await insertUpload(pdfDoc, 5, signedPageFile, signedPageBytes, "signedPage");
+
+      const generatedAt = new Date().toISOString();
+      await saveLegalAidApplicationToSupabase({
+        ...application,
+        status: "generated",
+        updatedAt: generatedAt,
+      });
+
+      const buffer = await pdfDoc.save({ updateFieldAppearances: true });
+      const responseBody = buffer.buffer.slice(
+        buffer.byteOffset,
+        buffer.byteOffset + buffer.byteLength,
+      ) as ArrayBuffer;
+      const fileName = safeFileName(`Legal Aid Application - ${application.review.clientName}.pdf`);
+
+      return new NextResponse(responseBody, {
+        headers: {
+          "Content-Type": "application/pdf",
+          "Content-Disposition": `attachment; filename="${fileName}"`,
+          "X-Legal-Aid-Template": legalAidTemplatePath,
+        },
+      });
+    }
 
     if (typeof reviewPayload !== "string") {
       return NextResponse.json({ error: "Legal Aid review data is required." }, { status: 400 });
