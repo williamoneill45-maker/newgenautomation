@@ -152,7 +152,11 @@ export default function InvoicesPage() {
               <tbody className="divide-y divide-slate-200 bg-white">
                 {filteredInvoices.map((invoice) => (
                   <tr key={invoice.id}>
-                    <td className="px-4 py-3 font-medium text-slate-950">{invoice.invoiceNumber}</td>
+                    <td className="px-4 py-3 font-medium text-slate-950">
+                      <Link href={`/invoices/${invoice.id}`} className="text-sky-700 hover:text-sky-900">
+                        {invoice.invoiceNumber}
+                      </Link>
+                    </td>
                     <td className="px-4 py-3 text-slate-700">{invoice.clientName}</td>
                     <td className="px-4 py-3 text-slate-700">{invoice.legalAidNumber}</td>
                     <td className="px-4 py-3 text-slate-700">Form {invoice.formType}</td>

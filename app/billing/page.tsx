@@ -177,6 +177,8 @@ export default function BillingPage() {
       missingEvidence: record.evidence
         .filter((requirement) => !requirement.uploaded)
         .map((requirement) => requirement.label),
+      evidenceFiles: [],
+      billingRecord: record,
       oneDriveUrl: "",
       oneDrivePath: fileName ? `NewGenAutomation/Billing/${fileName}` : "",
       generatedFileName: fileName,
@@ -236,6 +238,11 @@ export default function BillingPage() {
     saveClients(nextClients);
     setSelectedClientId(profile.id);
     setClientNotice(existing ? "Updated the billing profile." : "Created a new billing profile.");
+    fetch("/api/billing-clients", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(profile),
+    }).catch(() => undefined);
     return profile;
   }
 

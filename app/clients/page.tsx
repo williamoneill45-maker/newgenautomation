@@ -21,14 +21,84 @@ function readJsonArray<T>(key: string): T[] {
   }
 }
 
+function mergeClients(
+  localClients: BillingClientProfile[],
+  supabaseClients: BillingClientProfile[],
+): BillingClientProfile[] {
+  const merged = new Map<string, BillingClientProfile>();
+
+  for (const client of localClients) {
+    merged.set(client.id, client);
+  }
+
+  for (const client of supabaseClients) {
+    const existing = merged.get(client.id);
+    merged.set(client.id, {
+      ...existing,
+      ...client,
+      legalAidNumber: client.legalAidNumber || existing?.legalAidNumber || "",
+      createdAt: client.createdAt || existing?.createdAt || "",
+      updatedAt: client.updatedAt || existing?.updatedAt || "",
+    });
+  }
+
+  return [...merged.values()].sort((a, b) => a.clientName.localeCompare(b.clientName));
+}
+
+function mergeInvoices(
+  localInvoices: StoredBillingInvoice[],
+  supabaseInvoices: StoredBillingInvoice[],
+): StoredBillingInvoice[] {
+  const merged = new Map<string, StoredBillingInvoice>();
+  for (const invoice of localInvoices.filter(isInvoiceWithinRetention)) merged.set(invoice.id, invoice);
+  for (const invoice of supabaseInvoices.filter(isInvoiceWithinRetention)) {
+    merged.set(invoice.id, { ...merged.get(invoice.id), ...invoice });
+  }
+  return [...merged.values()];
+}
+
 export default function ClientsPage() {
   const [clients, setClients] = useState<BillingClientProfile[]>([]);
   const [invoices, setInvoices] = useState<StoredBillingInvoice[]>([]);
   const [query, setQuery] = useState("");
 
   useEffect(() => {
-    setClients(readJsonArray<BillingClientProfile>(billingClientsStorageKey));
-    setInvoices(readJsonArray<StoredBillingInvoice>(billingInvoicesStorageKey).filter(isInvoiceWithinRetention));
+    const localClients = readJsonArray<BillingClientProfile>(billingClientsStorageKey);
+    const localInvoices = readJsonArray<StoredBillingInvoice>(billingInvoicesStorageKey).filter(isInvoiceWithinRetention);
+    setClients(localClients);
+    setInvoices(localInvoices);
+
+    fetch("/api/billing-clients")
+      .then(async (response) => {
+        if (!response.ok) return null;
+        return response.json() as Promise<
+          | { status: "loaded"; clients: BillingClientProfile[] }
+          | { status: "not_configured"; missing: string[] }
+        >;
+      })
+      .then((payload) => {
+        if (payload?.status !== "loaded") return;
+        const mergedClients = mergeClients(localClients, payload.clients);
+        setClients(mergedClients);
+        window.localStorage.setItem(billingClientsStorageKey, JSON.stringify(mergedClients));
+      })
+      .catch(() => undefined);
+
+    fetch("/api/billing-records")
+      .then(async (response) => {
+        if (!response.ok) return null;
+        return response.json() as Promise<
+          | { status: "loaded"; invoices: StoredBillingInvoice[] }
+          | { status: "not_configured"; missing: string[] }
+        >;
+      })
+      .then((payload) => {
+        if (payload?.status !== "loaded") return;
+        const mergedInvoices = mergeInvoices(localInvoices, payload.invoices);
+        setInvoices(mergedInvoices);
+        window.localStorage.setItem(billingInvoicesStorageKey, JSON.stringify(mergedInvoices));
+      })
+      .catch(() => undefined);
   }, []);
 
   const filteredClients = useMemo(() => {

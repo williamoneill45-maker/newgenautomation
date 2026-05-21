@@ -231,6 +231,7 @@ export default function IntakeForm() {
             selectedOrders: matter.intake.selectedApplications,
             historyNotes,
             recentEventsNotes,
+            children: matter.intake.children,
           }),
           signal: controller.signal,
         });
@@ -359,6 +360,12 @@ export default function IntakeForm() {
           ? clients.map((client) => (client.id === existingClient.id ? profile : client))
           : [profile, ...clients]),
       );
+
+      fetch("/api/billing-clients", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(profile),
+      }).catch(() => undefined);
     }
   };
 

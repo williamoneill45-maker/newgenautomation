@@ -1,4 +1,4 @@
-import type { BillingFormType, BillingStatus } from "./billing-automation";
+import type { BillingFormType, BillingRecord, BillingStatus } from "./billing-automation";
 
 export type BillingClientProfile = {
   id: string;
@@ -18,8 +18,15 @@ export type StoredBillingInvoice = {
   invoiceNumber: string;
   invoiceTotal: number;
   formType: BillingFormType;
-  status: BillingStatus | "generated" | "onedrive_pending" | "onedrive_uploaded";
+  status: BillingStatus | "generated" | "ready_to_generate" | "onedrive_pending" | "onedrive_uploaded";
   missingEvidence?: string[];
+  evidenceFiles?: Array<{
+    label: string;
+    fileName: string;
+    storagePath: string;
+    uploadedAt: string;
+  }>;
+  billingRecord?: BillingRecord;
   oneDriveUrl: string;
   oneDrivePath: string;
   generatedFileName: string;

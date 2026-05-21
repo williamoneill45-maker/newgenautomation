@@ -27,6 +27,13 @@ function readJsonArray<T>(key: string): T[] {
   }
 }
 
+function mergeById<T extends { id: string }>(localItems: T[], remoteItems: T[]): T[] {
+  const merged = new Map<string, T>();
+  for (const item of localItems) merged.set(item.id, item);
+  for (const item of remoteItems) merged.set(item.id, { ...merged.get(item.id), ...item });
+  return [...merged.values()];
+}
+
 export default function ClientDetailPage() {
   const params = useParams<{ id: string }>();
   const [clients, setClients] = useState<BillingClientProfile[]>([]);
@@ -35,9 +42,29 @@ export default function ClientDetailPage() {
   const [legalAidRecords, setLegalAidRecords] = useState<LegalAidRecord[]>([]);
 
   useEffect(() => {
-    setClients(readJsonArray<BillingClientProfile>(billingClientsStorageKey));
-    setInvoices(readJsonArray<StoredBillingInvoice>(billingInvoicesStorageKey).filter(isInvoiceWithinRetention));
+    const localClients = readJsonArray<BillingClientProfile>(billingClientsStorageKey);
+    const localInvoices = readJsonArray<StoredBillingInvoice>(billingInvoicesStorageKey).filter(isInvoiceWithinRetention);
+    setClients(localClients);
+    setInvoices(localInvoices);
     setMatters(readJsonArray<MatterFile>(recentMattersStorageKey));
+
+    fetch("/api/billing-clients")
+      .then((response) => response.ok ? response.json() : null)
+      .then((payload: { status?: string; clients?: BillingClientProfile[] } | null) => {
+        if (payload?.status === "loaded" && Array.isArray(payload.clients)) {
+          setClients(mergeById(localClients, payload.clients));
+        }
+      })
+      .catch(() => undefined);
+
+    fetch("/api/billing-records")
+      .then((response) => response.ok ? response.json() : null)
+      .then((payload: { status?: string; invoices?: StoredBillingInvoice[] } | null) => {
+        if (payload?.status === "loaded" && Array.isArray(payload.invoices)) {
+          setInvoices(mergeById(localInvoices, payload.invoices).filter(isInvoiceWithinRetention));
+        }
+      })
+      .catch(() => undefined);
 
     fetch("/api/legal-aid-applications")
       .then((response) => response.ok ? response.json() : null)
@@ -152,7 +179,11 @@ export default function ClientDetailPage() {
               <tbody className="divide-y divide-slate-200">
                 {clientInvoices.map((invoice) => (
                   <tr key={invoice.id}>
-                    <td className="px-4 py-3 font-medium text-slate-950">{invoice.invoiceNumber}</td>
+                    <td className="px-4 py-3 font-medium text-slate-950">
+                      <Link href={`/invoices/${invoice.id}`} className="text-sky-700 hover:text-sky-900">
+                        {invoice.invoiceNumber}
+                      </Link>
+                    </td>
                     <td className="px-4 py-3 text-slate-700">Form {invoice.formType}</td>
                     <td className="px-4 py-3 text-slate-700">${invoice.invoiceTotal.toFixed(2)}</td>
                     <td className="px-4 py-3 text-slate-700">{invoice.status.replace(/_/g, " ")}</td>
