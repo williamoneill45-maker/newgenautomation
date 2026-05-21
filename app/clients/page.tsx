@@ -6,6 +6,7 @@ import { useEffect, useMemo, useState } from "react";
 import {
   billingClientsStorageKey,
   billingInvoicesStorageKey,
+  isInvoiceWithinRetention,
   type BillingClientProfile,
   type StoredBillingInvoice,
 } from "../../lib/billing-storage";
@@ -27,7 +28,7 @@ export default function ClientsPage() {
 
   useEffect(() => {
     setClients(readJsonArray<BillingClientProfile>(billingClientsStorageKey));
-    setInvoices(readJsonArray<StoredBillingInvoice>(billingInvoicesStorageKey));
+    setInvoices(readJsonArray<StoredBillingInvoice>(billingInvoicesStorageKey).filter(isInvoiceWithinRetention));
   }, []);
 
   const filteredClients = useMemo(() => {
@@ -97,7 +98,11 @@ export default function ClientsPage() {
 
                   return (
                     <tr key={client.id}>
-                      <td className="px-4 py-3 font-medium text-slate-950">{client.clientName}</td>
+                      <td className="px-4 py-3 font-medium text-slate-950">
+                        <Link href={`/clients/${client.id}`} className="text-sky-700 hover:text-sky-900">
+                          {client.clientName}
+                        </Link>
+                      </td>
                       <td className="px-4 py-3 text-slate-700">{client.legalAidNumber || "Not supplied"}</td>
                       <td className="px-4 py-3 text-slate-700">{clientInvoices.length}</td>
                       <td className="px-4 py-3 text-slate-700">${total.toFixed(2)}</td>

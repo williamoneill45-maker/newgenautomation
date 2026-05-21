@@ -16,6 +16,7 @@ import {
   billingInvoicesStorageKey,
   createBillingClientId,
   formatInvoiceNumber,
+  isInvoiceWithinRetention,
   normalizeClientName,
   type BillingClientProfile,
   type StoredBillingInvoice,
@@ -156,6 +157,49 @@ export default function BillingPage() {
   function saveClients(nextClients: BillingClientProfile[]) {
     setClients(nextClients);
     writeJsonArray(billingClientsStorageKey, nextClients);
+  }
+
+  async function saveInvoiceMetadata(record: BillingRecord, status: StoredBillingInvoice["status"], fileName = "") {
+    const totals = calculateBillingTotals(record);
+    const profile = saveOrUpdateClientProfile();
+    if (!profile) return false;
+
+    const invoice: StoredBillingInvoice = {
+      id: record.id,
+      clientId: profile.id,
+      clientName: record.clientName,
+      legalAidNumber: record.legalAidNumber,
+      famNumber: "",
+      invoiceNumber: record.invoiceNumber,
+      invoiceTotal: totals.total,
+      formType: record.formType,
+      status,
+      missingEvidence: record.evidence
+        .filter((requirement) => !requirement.uploaded)
+        .map((requirement) => requirement.label),
+      oneDriveUrl: "",
+      oneDrivePath: fileName ? `NewGenAutomation/Billing/${fileName}` : "",
+      generatedFileName: fileName,
+      generatedAt: new Date().toISOString(),
+    };
+    const invoices = readJsonArray<StoredBillingInvoice>(billingInvoicesStorageKey)
+      .filter(isInvoiceWithinRetention);
+    writeJsonArray(
+      billingInvoicesStorageKey,
+      [invoice, ...invoices.filter((item) => item.id !== invoice.id)],
+    );
+
+    try {
+      await fetch("/api/billing-records", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(invoice),
+      });
+    } catch {
+      // Browser storage remains visible even if server-side persistence is temporarily unavailable.
+    }
+
+    return true;
   }
 
   function selectClient(client: BillingClientProfile) {
@@ -363,6 +407,9 @@ export default function BillingPage() {
   }
 
   function updateDraftField(recordId: string, field: EditableBillingDraftField, value: string | number) {
+    if (field === "clientName") setClientName(String(value));
+    if (field === "legalAidNumber") setLegalAidNumber(String(value));
+
     updateBillingRecord(recordId, (record) => {
       if (record.id !== recordId) return record;
 
@@ -392,6 +439,12 @@ export default function BillingPage() {
     setGenerationNotice("");
 
     try {
+      const missingEvidence = record.evidence.filter((requirement) => !requirement.uploaded);
+      if (missingEvidence.length) {
+        await saveInvoiceMetadata(record, "pending_evidence");
+        throw new Error(`Upload or mark received before generation: ${missingEvidence.map((item) => item.label).join(", ")}.`);
+      }
+
       const response = await fetch("/api/generate-billing-document", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -407,10 +460,7 @@ export default function BillingPage() {
       const disposition = response.headers.get("Content-Disposition") ?? "";
       const fileNameMatch = disposition.match(/filename="([^"]+)"/);
       const fileName = fileNameMatch?.[1] ?? `Completed Form${record.formType}.docx`;
-      const invoiceTotal = Number(response.headers.get("X-Billing-Invoice-Total") ?? "0");
       const oneDriveStatus = response.headers.get("X-OneDrive-Status") ?? "not_configured";
-      const oneDriveUrl = decodeURIComponent(response.headers.get("X-OneDrive-Url") ?? "");
-      const oneDrivePath = decodeURIComponent(response.headers.get("X-OneDrive-Path") ?? "");
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
@@ -420,39 +470,14 @@ export default function BillingPage() {
       link.remove();
       window.URL.revokeObjectURL(url);
 
-      const profile = saveOrUpdateClientProfile();
-      if (profile) {
-        const invoice: StoredBillingInvoice = {
-          id: record.id,
-          clientId: profile.id,
-          clientName: record.clientName,
-          legalAidNumber: record.legalAidNumber,
-          famNumber: "",
-          invoiceNumber: record.invoiceNumber,
-          invoiceTotal,
-          formType: record.formType,
-          status: oneDriveStatus === "uploaded" ? "onedrive_uploaded" : "onedrive_pending",
-          oneDriveUrl,
-          oneDrivePath,
-          generatedFileName: fileName,
-          generatedAt: new Date().toISOString(),
-        };
-        const invoices = readJsonArray<StoredBillingInvoice>(billingInvoicesStorageKey);
-        writeJsonArray(
-          billingInvoicesStorageKey,
-          [invoice, ...invoices.filter((item) => item.id !== invoice.id)],
-        );
-
-        try {
-          await fetch("/api/billing-records", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(invoice),
-          });
-        } catch {
-          // Browser storage remains the immediate source of truth until Supabase env vars are configured.
-        }
-      }
+      await saveInvoiceMetadata(
+        {
+          ...record,
+          draft: record.draft,
+        },
+        oneDriveStatus === "uploaded" ? "onedrive_uploaded" : "onedrive_pending",
+        fileName,
+      );
 
       setGenerationNotice(
         oneDriveStatus === "uploaded"
@@ -463,6 +488,15 @@ export default function BillingPage() {
       setGenerationError(caughtError instanceof Error ? caughtError.message : "Unable to generate billing document.");
     } finally {
       setIsGenerating(false);
+    }
+  }
+
+  async function savePendingInvoice(record: BillingRecord) {
+    setGenerationError("");
+    setGenerationNotice("");
+    const saved = await saveInvoiceMetadata(record, "pending_evidence");
+    if (saved) {
+      setGenerationNotice("Invoice saved as pending evidence. It will appear on the dashboard until the missing proof is marked received.");
     }
   }
 
@@ -600,6 +634,7 @@ export default function BillingPage() {
                   onDraftFieldChange={updateDraftField}
                   onEvidenceUploaded={markEvidenceUploaded}
                   onGenerate={generateBillingDocument}
+                  onSavePending={savePendingInvoice}
                 />
               </>
             ) : (
@@ -718,6 +753,7 @@ function DraftPanel({
   onDraftFieldChange,
   onEvidenceUploaded,
   onGenerate,
+  onSavePending,
 }: {
   record: BillingRecord;
   generationError: string;
@@ -726,9 +762,11 @@ function DraftPanel({
   onDraftFieldChange: (recordId: string, field: EditableBillingDraftField, value: string | number) => void;
   onEvidenceUploaded: (recordId: string, evidenceType: string) => void;
   onGenerate: (record: BillingRecord) => void;
+  onSavePending: (record: BillingRecord) => void;
 }) {
   const draft = record.draft;
   const totals = calculateBillingTotals(record);
+  const missingEvidence = record.evidence.filter((requirement) => !requirement.uploaded);
 
   return (
     <>
@@ -825,7 +863,7 @@ function DraftPanel({
                     className="rounded-md border border-amber-200 bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-900 transition hover:bg-amber-100"
                     onClick={() => onEvidenceUploaded(record.id, requirement.type)}
                   >
-                    Mark received
+                    Upload / mark received
                   </button>
                 )}
               </div>
@@ -851,12 +889,26 @@ function DraftPanel({
         <p className="mt-2 text-sm font-medium text-slate-700">Template path: {record.templatePath}</p>
         <button
           type="button"
-          disabled={isGenerating}
+          disabled={isGenerating || Boolean(missingEvidence.length)}
           className="mt-5 inline-flex h-10 items-center justify-center rounded-md bg-sky-600 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-sky-700 disabled:cursor-not-allowed disabled:bg-slate-300"
           onClick={() => onGenerate(record)}
         >
           {isGenerating ? "Generating..." : `Generate reviewed Form ${record.formType}`}
         </button>
+        {missingEvidence.length ? (
+          <button
+            type="button"
+            className="ml-0 mt-3 inline-flex h-10 items-center justify-center rounded-md border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-800 shadow-sm transition hover:bg-slate-50 sm:ml-3"
+            onClick={() => onSavePending(record)}
+          >
+            Save pending invoice
+          </button>
+        ) : null}
+        {missingEvidence.length ? (
+          <p className="mt-3 text-sm font-medium text-amber-700">
+            Generation is paused until received: {missingEvidence.map((item) => item.label).join(", ")}.
+          </p>
+        ) : null}
         {generationError ? <p className="mt-3 text-sm font-medium text-red-700">{generationError}</p> : null}
         {generationNotice ? <p className="mt-3 text-sm font-medium text-emerald-700">{generationNotice}</p> : null}
       </section>

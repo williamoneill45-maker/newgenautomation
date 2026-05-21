@@ -14,6 +14,12 @@ import {
 } from "../lib/matter";
 import { calculateAge } from "../lib/document-automation";
 import { legalAidMatterStorageKey, recentMattersStorageKey } from "../lib/legal-aid";
+import {
+  billingClientsStorageKey,
+  createBillingClientId,
+  normalizeClientName,
+  type BillingClientProfile,
+} from "../lib/billing-storage";
 
 type FieldProps = {
   label: string;
@@ -147,6 +153,16 @@ function readRecentMatters(): MatterFile[] {
     return raw ? (JSON.parse(raw) as MatterFile[]) : [];
   } catch {
     window.localStorage.removeItem(recentMattersStorageKey);
+    return [];
+  }
+}
+
+function readBillingClients(): BillingClientProfile[] {
+  try {
+    const raw = window.localStorage.getItem(billingClientsStorageKey);
+    return raw ? (JSON.parse(raw) as BillingClientProfile[]) : [];
+  } catch {
+    window.localStorage.removeItem(billingClientsStorageKey);
     return [];
   }
 }
@@ -314,6 +330,36 @@ export default function IntakeForm() {
       recentMattersStorageKey,
       JSON.stringify([matter, ...existing.filter((item) => item.id !== matter.id)].slice(0, 25)),
     );
+
+    const clientName = normalizeClientName(matter.intake.applicant.fullName || matter.clientName);
+    if (clientName) {
+      const now = new Date().toISOString();
+      const clients = readBillingClients();
+      const existingClient = clients.find((client) =>
+        client.clientName.toLowerCase() === clientName.toLowerCase(),
+      );
+      const profile: BillingClientProfile = existingClient
+        ? {
+            ...existingClient,
+            clientName,
+            updatedAt: now,
+          }
+        : {
+            id: createBillingClientId(`${clientName}-${matter.id}`),
+            clientName,
+            legalAidNumber: "",
+            famNumber: "",
+            createdAt: now,
+            updatedAt: now,
+          };
+
+      window.localStorage.setItem(
+        billingClientsStorageKey,
+        JSON.stringify(existingClient
+          ? clients.map((client) => (client.id === existingClient.id ? profile : client))
+          : [profile, ...clients]),
+      );
+    }
   };
 
   useEffect(() => {

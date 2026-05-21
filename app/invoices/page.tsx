@@ -5,13 +5,14 @@ import { useEffect, useMemo, useState } from "react";
 
 import {
   billingInvoicesStorageKey,
+  isInvoiceWithinRetention,
   type StoredBillingInvoice,
 } from "../../lib/billing-storage";
 
 function readInvoices(): StoredBillingInvoice[] {
   try {
     const raw = window.localStorage.getItem(billingInvoicesStorageKey);
-    return raw ? (JSON.parse(raw) as StoredBillingInvoice[]) : [];
+    return raw ? (JSON.parse(raw) as StoredBillingInvoice[]).filter(isInvoiceWithinRetention) : [];
   } catch {
     window.localStorage.removeItem(billingInvoicesStorageKey);
     return [];
@@ -38,7 +39,7 @@ export default function InvoicesPage() {
       })
       .then((payload) => {
         if (payload.status === "loaded") {
-          setInvoices(payload.invoices);
+          setInvoices(payload.invoices.filter(isInvoiceWithinRetention));
           setSource("Supabase");
           return;
         }
@@ -84,7 +85,7 @@ export default function InvoicesPage() {
           <p className="text-sm font-semibold uppercase tracking-wide text-sky-700">Billing register</p>
           <h1 className="mt-2 text-3xl font-semibold tracking-normal text-slate-950">Invoices</h1>
           <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-600">
-            Track generated invoices, totals, status, and OneDrive storage references.
+            Track generated and pending invoices for the current 3 month billing window.
           </p>
           <p className="mt-2 text-sm font-medium text-slate-700">Data source: {source}</p>
           {loadError ? <p className="mt-2 text-sm font-medium text-amber-700">{loadError}</p> : null}
@@ -117,6 +118,7 @@ export default function InvoicesPage() {
                   <th className="px-4 py-3">Form</th>
                   <th className="px-4 py-3">Total</th>
                   <th className="px-4 py-3">Status</th>
+                  <th className="px-4 py-3">Evidence</th>
                   <th className="px-4 py-3">OneDrive</th>
                 </tr>
               </thead>
@@ -137,6 +139,11 @@ export default function InvoicesPage() {
                       </span>
                     </td>
                     <td className="px-4 py-3 text-slate-700">
+                      {(invoice.missingEvidence ?? []).length
+                        ? invoice.missingEvidence?.join(", ")
+                        : "Complete"}
+                    </td>
+                    <td className="px-4 py-3 text-slate-700">
                       {invoice.oneDriveUrl ? (
                         <a className="font-medium text-sky-700 hover:text-sky-900" href={invoice.oneDriveUrl}>
                           Open
@@ -149,7 +156,7 @@ export default function InvoicesPage() {
                 ))}
                 {!filteredInvoices.length ? (
                   <tr>
-                    <td colSpan={7} className="px-4 py-10 text-center text-slate-500">
+                    <td colSpan={8} className="px-4 py-10 text-center text-slate-500">
                       No invoices have been generated yet.
                     </td>
                   </tr>

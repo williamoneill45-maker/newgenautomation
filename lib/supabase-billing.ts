@@ -49,13 +49,14 @@ export async function saveBillingInvoiceToSupabase(
     body: JSON.stringify({
       id: invoice.id,
       client_name: invoice.clientName,
-      legal_aid_number: invoice.legalAidNumber,
+      legal_aid_number: invoice.legalAidNumber ?? "",
       invoice_number: invoice.invoiceNumber,
       invoice_total: invoice.invoiceTotal,
       client_id: invoice.clientId,
       fam_number: "",
       form_type: invoice.formType,
       status: invoice.status,
+      evidence_json: invoice.missingEvidence ?? [],
       onedrive_url: invoice.oneDriveUrl,
       onedrive_path: invoice.oneDrivePath,
       generated_file_name: invoice.generatedFileName,
@@ -109,6 +110,7 @@ export async function listBillingInvoicesFromSupabase(): Promise<
     invoice_total: number | string;
     form_type?: StoredBillingInvoice["formType"];
     status?: StoredBillingInvoice["status"];
+    evidence_json?: string[];
     onedrive_url?: string;
     onedrive_path?: string;
     generated_file_name?: string;
@@ -127,6 +129,7 @@ export async function listBillingInvoicesFromSupabase(): Promise<
       invoiceTotal: Number(row.invoice_total) || 0,
       formType: row.form_type ?? "32B",
       status: row.status ?? "generated",
+      missingEvidence: Array.isArray(row.evidence_json) ? row.evidence_json : [],
       oneDriveUrl: row.onedrive_url ?? "",
       oneDrivePath: row.onedrive_path ?? "",
       generatedFileName: row.generated_file_name ?? "",

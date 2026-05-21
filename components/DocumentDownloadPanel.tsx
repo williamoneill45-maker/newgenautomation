@@ -2,9 +2,10 @@
 
 import { useState } from "react";
 import type { MatterFile } from "../lib/matter";
+import { legalAidMatterStorageKey, recentMattersStorageKey } from "../lib/legal-aid";
 
 function getSavedMatter(): MatterFile | null {
-  const raw = window.localStorage.getItem("newgenautomation:draftMatter");
+  const raw = window.localStorage.getItem(legalAidMatterStorageKey);
 
   if (!raw) {
     return null;
@@ -55,6 +56,18 @@ export default function DocumentDownloadPanel() {
       anchor.click();
       anchor.remove();
       window.URL.revokeObjectURL(url);
+      const generatedMatter: MatterFile = {
+        ...matter,
+        status: "documents_generated",
+        updatedAt: new Date().toISOString(),
+      };
+      const existingRaw = window.localStorage.getItem(recentMattersStorageKey);
+      const existing = existingRaw ? (JSON.parse(existingRaw) as MatterFile[]) : [];
+      window.localStorage.setItem(legalAidMatterStorageKey, JSON.stringify(generatedMatter));
+      window.localStorage.setItem(
+        recentMattersStorageKey,
+        JSON.stringify([generatedMatter, ...existing.filter((item) => item.id !== matter.id)].slice(0, 25)),
+      );
       setStatus("Documents downloaded.");
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Documents could not be generated.");

@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { BillingClientNotifications } from "../components/BillingClientNotifications";
+import { BillingEvidenceNotifications } from "../components/BillingEvidenceNotifications";
 import { LegalAidNotifications } from "../components/LegalAidNotifications";
 
 const notifications = [
@@ -118,6 +119,7 @@ export default function Dashboard() {
             <h2 className="text-lg font-semibold text-slate-950">Notifications</h2>
             <div className="mt-5 space-y-3">
               <LegalAidNotifications />
+              <BillingEvidenceNotifications />
               <BillingClientNotifications />
               {notifications.map((notification) => (
                 <div

@@ -19,6 +19,7 @@ export type StoredBillingInvoice = {
   invoiceTotal: number;
   formType: BillingFormType;
   status: BillingStatus | "generated" | "onedrive_pending" | "onedrive_uploaded";
+  missingEvidence?: string[];
   oneDriveUrl: string;
   oneDrivePath: string;
   generatedFileName: string;
@@ -27,6 +28,7 @@ export type StoredBillingInvoice = {
 
 export const billingClientsStorageKey = "newgenautomation:billingClients";
 export const billingInvoicesStorageKey = "newgenautomation:billingInvoices";
+export const billingRetentionDays = 90;
 
 export function createBillingClientId(clientName: string): string {
   const slug = clientName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
@@ -46,4 +48,13 @@ export function formatInvoiceNumber(date: string, formType: BillingFormType, cli
   const datePart = date.replace(/-/g, "") || new Date().toISOString().slice(0, 10).replace(/-/g, "");
   const surname = getClientLastName(clientName).replace(/[^A-Za-z0-9]/g, "").toUpperCase() || "CLIENT";
   return `${datePart}.${formType}.${surname}`;
+}
+
+export function getBillingRetentionCutoff(): number {
+  return Date.now() - billingRetentionDays * 24 * 60 * 60 * 1000;
+}
+
+export function isInvoiceWithinRetention(invoice: StoredBillingInvoice): boolean {
+  const generatedAt = new Date(invoice.generatedAt).getTime();
+  return Number.isNaN(generatedAt) || generatedAt >= getBillingRetentionCutoff();
 }

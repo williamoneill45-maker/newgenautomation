@@ -39,6 +39,7 @@ create table if not exists public.billing_invoices (
   fam_number text,
   form_type text check (form_type in ('32B', '33A')),
   status text,
+  evidence_json jsonb not null default '[]'::jsonb,
   onedrive_url text,
   onedrive_path text,
   generated_file_name text,
