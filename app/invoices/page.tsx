@@ -19,6 +19,31 @@ function readInvoices(): StoredBillingInvoice[] {
   }
 }
 
+function getInvoiceTimestamp(invoice: StoredBillingInvoice): number {
+  const timestamp = new Date(invoice.generatedAt).getTime();
+  return Number.isNaN(timestamp) ? 0 : timestamp;
+}
+
+function mergeInvoices(
+  localInvoices: StoredBillingInvoice[],
+  supabaseInvoices: StoredBillingInvoice[],
+): StoredBillingInvoice[] {
+  const merged = new Map<string, StoredBillingInvoice>();
+
+  for (const invoice of localInvoices.filter(isInvoiceWithinRetention)) {
+    merged.set(invoice.id, invoice);
+  }
+
+  for (const invoice of supabaseInvoices.filter(isInvoiceWithinRetention)) {
+    const existing = merged.get(invoice.id);
+    if (!existing || getInvoiceTimestamp(invoice) >= getInvoiceTimestamp(existing)) {
+      merged.set(invoice.id, invoice);
+    }
+  }
+
+  return [...merged.values()].sort((a, b) => getInvoiceTimestamp(b) - getInvoiceTimestamp(a));
+}
+
 export default function InvoicesPage() {
   const [invoices, setInvoices] = useState<StoredBillingInvoice[]>([]);
   const [query, setQuery] = useState("");
@@ -39,8 +64,10 @@ export default function InvoicesPage() {
       })
       .then((payload) => {
         if (payload.status === "loaded") {
-          setInvoices(payload.invoices.filter(isInvoiceWithinRetention));
-          setSource("Supabase");
+          const mergedInvoices = mergeInvoices(localInvoices, payload.invoices);
+          setInvoices(mergedInvoices);
+          window.localStorage.setItem(billingInvoicesStorageKey, JSON.stringify(mergedInvoices));
+          setSource("Browser storage + Supabase");
           return;
         }
 
