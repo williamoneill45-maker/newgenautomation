@@ -6,6 +6,7 @@ import {
   travelReferences,
   type BillingCategory,
   type BillingDraft,
+  type EvidenceRequirement,
   type BillingFormType,
   type BillingRecord,
   type BillingStatus,
@@ -34,6 +35,11 @@ import {
 
 const examplePrompt =
   "Pre-hearing conference and memorandum of consent from 11:00am-11:30am at Waitakere Court, parking $12.";
+
+const optionalEvidenceRequirements: EvidenceRequirement[] = [
+  { type: "parking", label: "Parking proof", uploaded: false },
+  { type: "notice", label: "Notice of fixture", uploaded: false },
+];
 
 const categoryPrimaryRuleMap: Record<string, string> = {
   judicial_conference: "judicial-conference",
@@ -348,7 +354,17 @@ export default function BillingPage() {
         throw new Error(payload.error ?? "Unable to create billing draft.");
       }
 
-      const nextRecord = applyFormSettings(payload.record as BillingRecord);
+      const parsedRecord = payload.record as BillingRecord;
+      const nextRecord = applyFormSettings({
+        ...parsedRecord,
+        status: "ready_to_review",
+        evidence: [],
+        draft: {
+          ...parsedRecord.draft,
+          status: "ready_to_review",
+          evidenceRequirements: [],
+        },
+      });
       setSelectedRecord(nextRecord);
     } catch (caughtError) {
       setError(caughtError instanceof Error ? caughtError.message : "Unable to create billing draft.");
@@ -381,6 +397,32 @@ export default function BillingPage() {
       };
 
       return updatedRecord;
+    });
+  }
+
+  function toggleEvidenceRequirement(recordId: string, evidenceType: string, checked: boolean) {
+    updateBillingRecord(recordId, (record) => {
+      const option = optionalEvidenceRequirements.find((item) => item.type === evidenceType);
+      if (!option) return record;
+
+      const evidence = checked
+        ? [...record.evidence.filter((requirement) => requirement.type !== evidenceType), option]
+        : record.evidence.filter((requirement) => requirement.type !== evidenceType);
+      const status: BillingStatus = evidence.some((requirement) => !requirement.uploaded)
+        ? "pending_evidence"
+        : "ready_to_review";
+
+      return {
+        ...record,
+        status,
+        evidence,
+        draft: {
+          ...record.draft,
+          status,
+          evidenceRequirements: evidence,
+        },
+        updatedAt: new Date().toISOString(),
+      };
     });
   }
 
@@ -446,12 +488,6 @@ export default function BillingPage() {
     setGenerationNotice("");
 
     try {
-      const missingEvidence = record.evidence.filter((requirement) => !requirement.uploaded);
-      if (missingEvidence.length) {
-        await saveInvoiceMetadata(record, "pending_evidence");
-        throw new Error(`Upload or mark received before generation: ${missingEvidence.map((item) => item.label).join(", ")}.`);
-      }
-
       const response = await fetch("/api/generate-billing-document", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -482,12 +518,18 @@ export default function BillingPage() {
           ...record,
           draft: record.draft,
         },
-        oneDriveStatus === "uploaded" ? "onedrive_uploaded" : "onedrive_pending",
+        record.evidence.some((requirement) => !requirement.uploaded)
+          ? "pending_evidence"
+          : oneDriveStatus === "uploaded"
+            ? "onedrive_uploaded"
+            : "onedrive_pending",
         fileName,
       );
 
       setGenerationNotice(
-        oneDriveStatus === "uploaded"
+        record.evidence.some((requirement) => !requirement.uploaded)
+          ? "Generated and recorded. Evidence follow-up will stay on the dashboard until marked received."
+          : oneDriveStatus === "uploaded"
           ? "Generated, uploaded to OneDrive, and recorded in the invoice register."
           : "Generated and recorded locally. OneDrive upload will activate once Microsoft Graph credentials are configured.",
       );
@@ -640,6 +682,7 @@ export default function BillingPage() {
                   isGenerating={isGenerating}
                   onDraftFieldChange={updateDraftField}
                   onEvidenceUploaded={markEvidenceUploaded}
+                  onEvidenceRequirementChange={toggleEvidenceRequirement}
                   onGenerate={generateBillingDocument}
                   onSavePending={savePendingInvoice}
                 />
@@ -759,6 +802,7 @@ function DraftPanel({
   isGenerating,
   onDraftFieldChange,
   onEvidenceUploaded,
+  onEvidenceRequirementChange,
   onGenerate,
   onSavePending,
 }: {
@@ -768,6 +812,7 @@ function DraftPanel({
   isGenerating: boolean;
   onDraftFieldChange: (recordId: string, field: EditableBillingDraftField, value: string | number) => void;
   onEvidenceUploaded: (recordId: string, evidenceType: string) => void;
+  onEvidenceRequirementChange: (recordId: string, evidenceType: string, checked: boolean) => void;
   onGenerate: (record: BillingRecord) => void;
   onSavePending: (record: BillingRecord) => void;
 }) {
@@ -857,6 +902,29 @@ function DraftPanel({
 
       <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-form">
         <h2 className="text-lg font-semibold text-slate-950">Evidence checklist</h2>
+        <p className="mt-2 text-sm leading-6 text-slate-600">
+          Evidence is optional tracking. Tick only the proof that will be collected later; the form can still be generated now.
+        </p>
+        <div className="mt-4 grid gap-2 sm:grid-cols-2">
+          {optionalEvidenceRequirements.map((requirement) => {
+            const selected = record.evidence.some((item) => item.type === requirement.type);
+
+            return (
+              <label
+                key={requirement.type}
+                className="flex items-center gap-2 rounded-md border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700"
+              >
+                <input
+                  type="checkbox"
+                  className="h-4 w-4 rounded border-slate-300 text-sky-600 focus:ring-sky-500"
+                  checked={selected}
+                  onChange={(event) => onEvidenceRequirementChange(record.id, requirement.type, event.target.checked)}
+                />
+                {requirement.label} needed
+              </label>
+            );
+          })}
+        </div>
         {draft.evidenceRequirements.length ? (
           <div className="mt-4 space-y-2">
             {draft.evidenceRequirements.map((requirement) => (
@@ -877,7 +945,7 @@ function DraftPanel({
             ))}
           </div>
         ) : (
-          <p className="mt-3 text-sm text-slate-600">No supporting evidence was inferred from this prompt.</p>
+          <p className="mt-3 text-sm text-slate-600">No supporting evidence has been selected for follow-up.</p>
         )}
 
         {draft.warnings.length ? (
@@ -896,7 +964,7 @@ function DraftPanel({
         <p className="mt-2 text-sm font-medium text-slate-700">Template path: {record.templatePath}</p>
         <button
           type="button"
-          disabled={isGenerating || Boolean(missingEvidence.length)}
+          disabled={isGenerating}
           className="mt-5 inline-flex h-10 items-center justify-center rounded-md bg-sky-600 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-sky-700 disabled:cursor-not-allowed disabled:bg-slate-300"
           onClick={() => onGenerate(record)}
         >
@@ -913,7 +981,7 @@ function DraftPanel({
         ) : null}
         {missingEvidence.length ? (
           <p className="mt-3 text-sm font-medium text-amber-700">
-            Generation is paused until received: {missingEvidence.map((item) => item.label).join(", ")}.
+            Generation will continue. Dashboard follow-up will remain for: {missingEvidence.map((item) => item.label).join(", ")}.
           </p>
         ) : null}
         {generationError ? <p className="mt-3 text-sm font-medium text-red-700">{generationError}</p> : null}
