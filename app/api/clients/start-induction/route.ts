@@ -98,7 +98,8 @@ export async function POST(request: Request) {
       requestedAt: now,
     };
     const requestFileName = `${now.slice(0, 10)}-${Date.now()}-${safeFilePart(clientName)}-induction.json`;
-    const requestUpload = await uploadJsonToOneDrive(requestFileName, requestPayload);
+    const triggerFolderPath = process.env.ONEDRIVE_INDUCTION_TRIGGER_FOLDER ?? "NewGenAutomation";
+    const requestUpload = await uploadJsonToOneDrive(requestFileName, requestPayload, triggerFolderPath);
 
     if (requestUpload.status === "not_configured") {
       return NextResponse.json(
