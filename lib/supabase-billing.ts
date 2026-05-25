@@ -87,6 +87,32 @@ export async function saveBillingClientToSupabase(
     return { status: "not_configured", missing };
   }
 
+  const payload: Record<string, unknown> = {
+    id: client.id,
+    client_name: client.clientName,
+    legal_aid_number: client.legalAidNumber ?? "",
+    updated_at: client.updatedAt || new Date().toISOString(),
+  };
+  const optionalColumns: Array<[string, unknown]> = [
+    ["client_email", client.clientEmail],
+    ["application_type", client.applicationType],
+    ["onedrive_client_folder_path", client.oneDriveClientFolderPath],
+    ["onedrive_forms_folder_path", client.oneDriveFormsFolderPath],
+    ["onedrive_billing_folder_path", client.oneDriveBillingFolderPath],
+    ["onedrive_client_folder_url", client.oneDriveClientFolderUrl],
+    ["induction_request_path", client.inductionRequestPath],
+    ["engagement_status", client.engagementStatus],
+    ["msd_request_status", client.msdRequestStatus],
+    ["legal_aid_application_status", client.legalAidApplicationStatus],
+    ["signed_forms_path", client.signedFormsPath],
+    ["msd_response_path", client.msdResponsePath],
+    ["induction_requested_at", client.inductionRequestedAt || null],
+  ];
+
+  for (const [key, value] of optionalColumns) {
+    if (value !== undefined) payload[key] = value;
+  }
+
   const response = await fetch(`${supabaseUrl.replace(/\/$/, "")}/rest/v1/billing_clients?on_conflict=id`, {
     method: "POST",
     headers: {
@@ -95,12 +121,7 @@ export async function saveBillingClientToSupabase(
       "Content-Type": "application/json",
       Prefer: "resolution=merge-duplicates",
     },
-    body: JSON.stringify({
-      id: client.id,
-      client_name: client.clientName,
-      legal_aid_number: client.legalAidNumber ?? "",
-      updated_at: client.updatedAt || new Date().toISOString(),
-    }),
+    body: JSON.stringify(payload),
   });
 
   if (!response.ok) {
@@ -108,6 +129,15 @@ export async function saveBillingClientToSupabase(
   }
 
   return { status: "saved" };
+}
+
+export async function updateBillingClientInductionInSupabase(
+  client: BillingClientProfile,
+): Promise<SupabaseSaveResult> {
+  return saveBillingClientToSupabase({
+    ...client,
+    updatedAt: new Date().toISOString(),
+  });
 }
 
 
@@ -216,6 +246,19 @@ export async function listBillingClientsFromSupabase(): Promise<
     id: string;
     client_name: string;
     legal_aid_number?: string;
+    client_email?: string;
+    application_type?: BillingClientProfile["applicationType"];
+    onedrive_client_folder_path?: string;
+    onedrive_forms_folder_path?: string;
+    onedrive_billing_folder_path?: string;
+    onedrive_client_folder_url?: string;
+    induction_request_path?: string;
+    engagement_status?: BillingClientProfile["engagementStatus"];
+    msd_request_status?: BillingClientProfile["msdRequestStatus"];
+    legal_aid_application_status?: BillingClientProfile["legalAidApplicationStatus"];
+    signed_forms_path?: string;
+    msd_response_path?: string;
+    induction_requested_at?: string;
     created_at?: string;
     updated_at?: string;
   }>;
@@ -227,6 +270,19 @@ export async function listBillingClientsFromSupabase(): Promise<
       clientName: row.client_name,
       legalAidNumber: row.legal_aid_number ?? "",
       famNumber: "",
+      clientEmail: row.client_email ?? "",
+      applicationType: row.application_type ?? "",
+      oneDriveClientFolderPath: row.onedrive_client_folder_path ?? "",
+      oneDriveFormsFolderPath: row.onedrive_forms_folder_path ?? "",
+      oneDriveBillingFolderPath: row.onedrive_billing_folder_path ?? "",
+      oneDriveClientFolderUrl: row.onedrive_client_folder_url ?? "",
+      inductionRequestPath: row.induction_request_path ?? "",
+      engagementStatus: row.engagement_status ?? "not_started",
+      msdRequestStatus: row.msd_request_status ?? "not_started",
+      legalAidApplicationStatus: row.legal_aid_application_status ?? "not_started",
+      signedFormsPath: row.signed_forms_path ?? "",
+      msdResponsePath: row.msd_response_path ?? "",
+      inductionRequestedAt: row.induction_requested_at ?? "",
       createdAt: row.created_at ?? "",
       updatedAt: row.updated_at ?? "",
     })),

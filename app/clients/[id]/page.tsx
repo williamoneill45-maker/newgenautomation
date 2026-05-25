@@ -40,6 +40,11 @@ export default function ClientDetailPage() {
   const [invoices, setInvoices] = useState<StoredBillingInvoice[]>([]);
   const [matters, setMatters] = useState<MatterFile[]>([]);
   const [legalAidRecords, setLegalAidRecords] = useState<LegalAidRecord[]>([]);
+  const [clientEmail, setClientEmail] = useState("");
+  const [applicationType, setApplicationType] = useState<BillingClientProfile["applicationType"]>("");
+  const [isStartingInduction, setIsStartingInduction] = useState(false);
+  const [inductionNotice, setInductionNotice] = useState("");
+  const [inductionError, setInductionError] = useState("");
 
   useEffect(() => {
     const localClients = readJsonArray<BillingClientProfile>(billingClientsStorageKey);
@@ -95,6 +100,59 @@ export default function ClientDetailPage() {
   [legalAidRecords, normalizedName]);
   const totalBilled = clientInvoices.reduce((sum, invoice) => sum + invoice.invoiceTotal, 0);
 
+  useEffect(() => {
+    if (!client) return;
+    setClientEmail(client.clientEmail ?? "");
+    setApplicationType(client.applicationType ?? "");
+  }, [client]);
+
+  function updateStoredClient(updatedClient: BillingClientProfile) {
+    setClients((currentClients) => {
+      const nextClients = currentClients.map((item) =>
+        item.id === updatedClient.id ? { ...item, ...updatedClient } : item,
+      );
+      window.localStorage.setItem(billingClientsStorageKey, JSON.stringify(nextClients));
+      return nextClients;
+    });
+  }
+
+  async function startInduction() {
+    if (!client) return;
+
+    setIsStartingInduction(true);
+    setInductionNotice("");
+    setInductionError("");
+
+    try {
+      const response = await fetch("/api/clients/start-induction", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          client,
+          clientEmail,
+          applicationType,
+        }),
+      });
+      const payload = await response.json() as {
+        status?: string;
+        error?: string;
+        client?: BillingClientProfile;
+        request?: { path?: string; webUrl?: string };
+      };
+
+      if (!response.ok) {
+        throw new Error(payload.error ?? "Unable to start induction.");
+      }
+
+      if (payload.client) updateStoredClient(payload.client);
+      setInductionNotice(`Induction request created: ${payload.request?.path ?? "automation request file"}.`);
+    } catch (error) {
+      setInductionError(error instanceof Error ? error.message : "Unable to start induction.");
+    } finally {
+      setIsStartingInduction(false);
+    }
+  }
+
   if (!client) {
     return (
       <main className="min-h-screen bg-slate-50">
@@ -128,6 +186,58 @@ export default function ClientDetailPage() {
           <Metric label="Bills" value={String(clientInvoices.length)} />
           <Metric label="Total billed" value={`$${totalBilled.toFixed(2)}`} />
         </section>
+
+        <Panel title="Client induction" className="mt-6">
+          <div className="grid gap-4 md:grid-cols-3">
+            <label className="block text-sm font-medium text-slate-700" htmlFor="client-email">
+              Client email
+              <input
+                id="client-email"
+                type="email"
+                value={clientEmail}
+                onChange={(event) => setClientEmail(event.target.value)}
+                className="mt-2 h-10 w-full rounded-md border border-slate-300 px-3 text-sm text-slate-950 shadow-sm outline-none transition placeholder:text-slate-400 focus:border-sky-500 focus:ring-2 focus:ring-sky-100"
+                placeholder="client@example.co.nz"
+              />
+            </label>
+            <label className="block text-sm font-medium text-slate-700" htmlFor="application-type">
+              Application type
+              <select
+                id="application-type"
+                value={applicationType}
+                onChange={(event) => setApplicationType(event.target.value as BillingClientProfile["applicationType"])}
+                className="mt-2 h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-950 shadow-sm outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-100"
+              >
+                <option value="">Choose type</option>
+                <option value="parenting">Parenting only</option>
+                <option value="protection">Protection only</option>
+                <option value="both">Protection and parenting</option>
+              </select>
+            </label>
+            <div className="flex items-end">
+              <button
+                type="button"
+                disabled={isStartingInduction}
+                onClick={startInduction}
+                className="inline-flex h-10 w-full items-center justify-center rounded-md bg-slate-950 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
+              >
+                {isStartingInduction ? "Starting..." : "Start induction"}
+              </button>
+            </div>
+          </div>
+          <div className="mt-4 grid gap-3 text-sm text-slate-700 md:grid-cols-3">
+            <StatusLine label="Engagement" value={client.engagementStatus ?? "not_started"} />
+            <StatusLine label="MSD request" value={client.msdRequestStatus ?? "not_started"} />
+            <StatusLine label="Legal Aid" value={client.legalAidApplicationStatus ?? "not_started"} />
+          </div>
+          {client.oneDriveClientFolderPath ? (
+            <p className="mt-3 text-sm text-slate-600">
+              OneDrive folder: {client.oneDriveClientFolderPath}
+            </p>
+          ) : null}
+          {inductionNotice ? <p className="mt-3 text-sm font-medium text-emerald-700">{inductionNotice}</p> : null}
+          {inductionError ? <p className="mt-3 text-sm font-medium text-red-700">{inductionError}</p> : null}
+        </Panel>
 
         <section className="mt-6 grid gap-6 lg:grid-cols-2">
           <Panel title="Proceedings status">
@@ -209,6 +319,15 @@ function Metric({ label, value }: { label: string; value: string }) {
     <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-form">
       <p className="text-sm font-medium text-slate-500">{label}</p>
       <p className="mt-2 text-xl font-semibold capitalize text-slate-950">{value}</p>
+    </div>
+  );
+}
+
+function StatusLine({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2">
+      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</p>
+      <p className="mt-1 font-medium capitalize text-slate-950">{value.replace(/_/g, " ")}</p>
     </div>
   );
 }

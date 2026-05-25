@@ -18,6 +18,7 @@ type OneDriveEnv = {
   clientSecret: string;
   driveId: string;
   rootPath: string;
+  automationRequestsPath: string;
   missing: string[];
 };
 
@@ -27,8 +28,9 @@ function getRequiredEnv(): OneDriveEnv {
     tenantId: process.env.MICROSOFT_TENANT_ID ?? "",
     clientId: process.env.MICROSOFT_CLIENT_ID ?? "",
     clientSecret: process.env.MICROSOFT_CLIENT_SECRET ?? "",
-    driveId: process.env.MICROSOFT_GRAPH_DRIVE_ID ?? "",
+    driveId: process.env.MICROSOFT_GRAPH_DRIVE_ID ?? process.env.ONEDRIVE_DRIVE_ID ?? "",
     rootPath: process.env.ONEDRIVE_BILLING_ROOT_PATH ?? "NewGenAutomation/Billing",
+    automationRequestsPath: process.env.ONEDRIVE_AUTOMATION_REQUESTS_FOLDER ?? "NewGenAutomation/Automation Requests",
   };
   const canUseClientCredentials = Boolean(values.tenantId && values.clientId && values.clientSecret);
   const missing = [
@@ -39,6 +41,14 @@ function getRequiredEnv(): OneDriveEnv {
   ].filter(Boolean);
 
   return { ...values, missing };
+}
+
+function cleanPath(value: string): string {
+  return value.split("/").map((part) => part.trim()).filter(Boolean).join("/");
+}
+
+function encodePath(value: string): string {
+  return cleanPath(value).split("/").map(encodeURIComponent).join("/");
 }
 
 async function getGraphAccessToken(env: OneDriveEnv): Promise<string> {
@@ -104,6 +114,147 @@ export async function uploadBillingDocumentToOneDrive(
   if (!response.ok) {
     const details = await response.text();
     throw new Error(`OneDrive upload failed with status ${response.status}: ${details}`);
+  }
+
+  const data = (await response.json()) as { webUrl?: string };
+  return {
+    status: "uploaded",
+    webUrl: data.webUrl ?? "",
+    path: oneDrivePath,
+  };
+}
+
+async function graphRequest(
+  accessToken: string,
+  url: string,
+  init: RequestInit = {},
+): Promise<Response> {
+  const headers = new Headers(init.headers);
+  headers.set("Authorization", `Bearer ${accessToken}`);
+
+  return fetch(url, {
+    ...init,
+    headers,
+  });
+}
+
+async function getDriveItem(accessToken: string, driveId: string, path: string): Promise<{ exists: boolean; webUrl: string }> {
+  const clean = cleanPath(path);
+  const url = clean
+    ? `https://graph.microsoft.com/v1.0/drives/${encodeURIComponent(driveId)}/root:/${encodePath(clean)}`
+    : `https://graph.microsoft.com/v1.0/drives/${encodeURIComponent(driveId)}/root`;
+  const response = await graphRequest(accessToken, url);
+
+  if (response.status === 404) return { exists: false, webUrl: "" };
+  if (!response.ok) {
+    const details = await response.text();
+    throw new Error(`OneDrive folder lookup failed with status ${response.status}: ${details}`);
+  }
+
+  const data = (await response.json()) as { webUrl?: string };
+  return { exists: true, webUrl: data.webUrl ?? "" };
+}
+
+async function createFolder(accessToken: string, driveId: string, parentPath: string, folderName: string): Promise<{ webUrl: string }> {
+  const parent = cleanPath(parentPath);
+  const url = parent
+    ? `https://graph.microsoft.com/v1.0/drives/${encodeURIComponent(driveId)}/root:/${encodePath(parent)}:/children`
+    : `https://graph.microsoft.com/v1.0/drives/${encodeURIComponent(driveId)}/root/children`;
+  const response = await graphRequest(accessToken, url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      name: folderName,
+      folder: {},
+      "@microsoft.graph.conflictBehavior": "fail",
+    }),
+  });
+
+  if (response.status === 409) {
+    const existing = await getDriveItem(accessToken, driveId, cleanPath(`${parent}/${folderName}`));
+    return { webUrl: existing.webUrl };
+  }
+
+  if (!response.ok) {
+    const details = await response.text();
+    throw new Error(`OneDrive folder create failed with status ${response.status}: ${details}`);
+  }
+
+  const data = (await response.json()) as { webUrl?: string };
+  return { webUrl: data.webUrl ?? "" };
+}
+
+export async function ensureOneDriveFolder(path: string): Promise<OneDriveUploadResult> {
+  const env = getRequiredEnv();
+  const clean = cleanPath(path);
+
+  if (env.missing.length) {
+    return {
+      status: "not_configured",
+      webUrl: "",
+      path: clean,
+      missing: env.missing,
+    };
+  }
+
+  const accessToken = await getGraphAccessToken(env);
+  const parts = clean.split("/").filter(Boolean);
+  let currentPath = "";
+  let webUrl = "";
+
+  for (const part of parts) {
+    const nextPath = cleanPath(`${currentPath}/${part}`);
+    const existing = await getDriveItem(accessToken, env.driveId, nextPath);
+    if (existing.exists) {
+      webUrl = existing.webUrl;
+    } else {
+      const created = await createFolder(accessToken, env.driveId, currentPath, part);
+      webUrl = created.webUrl;
+    }
+    currentPath = nextPath;
+  }
+
+  return {
+    status: "uploaded",
+    webUrl,
+    path: clean,
+  };
+}
+
+export async function uploadJsonToOneDrive(
+  fileName: string,
+  payload: unknown,
+  folderPath = getRequiredEnv().automationRequestsPath,
+): Promise<OneDriveUploadResult> {
+  const env = getRequiredEnv();
+  const cleanFolder = cleanPath(folderPath);
+  const oneDrivePath = cleanPath(`${cleanFolder}/${fileName}`);
+
+  if (env.missing.length) {
+    return {
+      status: "not_configured",
+      webUrl: "",
+      path: oneDrivePath,
+      missing: env.missing,
+    };
+  }
+
+  const folder = await ensureOneDriveFolder(cleanFolder);
+  if (folder.status === "not_configured") return folder;
+
+  const accessToken = await getGraphAccessToken(env);
+  const uploadUrl =
+    `https://graph.microsoft.com/v1.0/drives/${encodeURIComponent(env.driveId)}` +
+    `/root:/${encodePath(oneDrivePath)}:/content`;
+  const response = await graphRequest(accessToken, uploadUrl, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload, null, 2),
+  });
+
+  if (!response.ok) {
+    const details = await response.text();
+    throw new Error(`OneDrive JSON upload failed with status ${response.status}: ${details}`);
   }
 
   const data = (await response.json()) as { webUrl?: string };

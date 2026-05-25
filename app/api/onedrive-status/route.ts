@@ -44,15 +44,17 @@ export async function GET(request: Request) {
   const shouldProbe = url.searchParams.get("probe") === "1";
   const checks = {
     MICROSOFT_GRAPH_DRIVE_ID: isConfigured(process.env.MICROSOFT_GRAPH_DRIVE_ID),
+    ONEDRIVE_DRIVE_ID: isConfigured(process.env.ONEDRIVE_DRIVE_ID),
     MICROSOFT_TENANT_ID: isConfigured(process.env.MICROSOFT_TENANT_ID),
     MICROSOFT_CLIENT_ID: isConfigured(process.env.MICROSOFT_CLIENT_ID),
     MICROSOFT_CLIENT_SECRET: isConfigured(process.env.MICROSOFT_CLIENT_SECRET),
     MICROSOFT_GRAPH_ACCESS_TOKEN: isConfigured(process.env.MICROSOFT_GRAPH_ACCESS_TOKEN),
     ONEDRIVE_BILLING_ROOT_PATH: isConfigured(process.env.ONEDRIVE_BILLING_ROOT_PATH),
+    ONEDRIVE_AUTOMATION_REQUESTS_FOLDER: isConfigured(process.env.ONEDRIVE_AUTOMATION_REQUESTS_FOLDER),
   };
   const hasClientCredentials = checks.MICROSOFT_TENANT_ID && checks.MICROSOFT_CLIENT_ID && checks.MICROSOFT_CLIENT_SECRET;
   const missing = [
-    checks.MICROSOFT_GRAPH_DRIVE_ID ? "" : "MICROSOFT_GRAPH_DRIVE_ID",
+    checks.MICROSOFT_GRAPH_DRIVE_ID || checks.ONEDRIVE_DRIVE_ID ? "" : "MICROSOFT_GRAPH_DRIVE_ID or ONEDRIVE_DRIVE_ID",
     checks.MICROSOFT_GRAPH_ACCESS_TOKEN || hasClientCredentials
       ? ""
       : "MICROSOFT_GRAPH_ACCESS_TOKEN or MICROSOFT_TENANT_ID/MICROSOFT_CLIENT_ID/MICROSOFT_CLIENT_SECRET",
@@ -68,7 +70,7 @@ export async function GET(request: Request) {
   if (shouldProbe && missing.length === 0) {
     try {
       const accessToken = await getGraphAccessToken();
-      const driveId = process.env.MICROSOFT_GRAPH_DRIVE_ID?.trim() ?? "";
+      const driveId = process.env.MICROSOFT_GRAPH_DRIVE_ID?.trim() || process.env.ONEDRIVE_DRIVE_ID?.trim() || "";
       const response = await fetch(`https://graph.microsoft.com/v1.0/drives/${encodeURIComponent(driveId)}`, {
         headers: { Authorization: `Bearer ${accessToken}` },
       });
