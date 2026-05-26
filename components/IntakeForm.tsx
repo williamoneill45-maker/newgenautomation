@@ -173,8 +173,9 @@ export default function IntakeForm() {
   const [isDraftingAffidavit, setIsDraftingAffidavit] = useState(false);
   const [affidavitDraftError, setAffidavitDraftError] = useState("");
   const [affidavitDraftSource, setAffidavitDraftSource] = useState("");
+  const [saveStatus, setSaveStatus] = useState("");
 
-  const setMatterValue = (field: "clientName", value: string) => {
+  const setMatterValue = (field: "clientName" | "legalAidNumber", value: string) => {
     setMatter((current) => ({ ...current, [field]: value, updatedAt: new Date().toISOString() }));
   };
 
@@ -236,16 +237,27 @@ export default function IntakeForm() {
           signal: controller.signal,
         });
 
+        const data = (await response.json().catch(() => null)) as {
+          draft?: string;
+          source?: string;
+          diagnostics?: Array<{ level: string; message: string }>;
+          error?: string;
+        } | null;
+        const diagnosticMessage = data?.diagnostics
+          ?.filter((diagnostic) => diagnostic.level === "error" || diagnostic.level === "warning")
+          .map((diagnostic) => diagnostic.message)
+          .join(" ");
+
         if (!response.ok) {
-          throw new Error("Drafting request failed");
+          throw new Error(data?.error || diagnosticMessage || "Drafting request failed.");
         }
 
-        const data = (await response.json()) as { draft?: string; source?: string };
-        setAffidavitDraft(data.draft ?? "");
-        setAffidavitDraftSource(data.source ?? "");
+        setAffidavitDraft(data?.draft ?? "");
+        setAffidavitDraftSource(data?.source ?? "");
+        setAffidavitDraftError(diagnosticMessage ?? "");
       } catch (error) {
         if (!controller.signal.aborted) {
-          setAffidavitDraftError("Draft could not be updated.");
+          setAffidavitDraftError(error instanceof Error ? error.message : "Draft could not be updated.");
         }
       } finally {
         if (!controller.signal.aborted) {
@@ -324,7 +336,19 @@ export default function IntakeForm() {
     }));
   };
 
-  const saveDraft = () => {
+  function inferApplicationType(): BillingClientProfile["applicationType"] {
+    const selectedApplications = matter.intake.selectedApplications.join(" ").toLowerCase();
+    const hasParenting = selectedApplications.includes("parenting");
+    const hasProtection = selectedApplications.includes("protection");
+
+    if (hasParenting && hasProtection) return "both";
+    if (hasParenting) return "parenting";
+    if (hasProtection) return "protection";
+    return "";
+  }
+
+  const saveDraft = async (options: { quiet?: boolean } = {}): Promise<BillingClientProfile | null> => {
+    if (!options.quiet) setSaveStatus("");
     window.localStorage.setItem(legalAidMatterStorageKey, JSON.stringify(matter));
     const existing = readRecentMatters();
     window.localStorage.setItem(
@@ -333,6 +357,11 @@ export default function IntakeForm() {
     );
 
     const clientName = normalizeClientName(matter.intake.applicant.fullName || matter.clientName);
+    if (!clientName) {
+      if (!options.quiet) setSaveStatus("Add the client or applicant name before saving.");
+      return null;
+    }
+
     if (clientName) {
       const now = new Date().toISOString();
       const clients = readBillingClients();
@@ -343,30 +372,84 @@ export default function IntakeForm() {
         ? {
             ...existingClient,
             clientName,
+            legalAidNumber: matter.legalAidNumber,
+            famNumber: matter.intake.famNumber,
+            clientEmail: matter.intake.applicant.emailAddress,
+            applicationType: existingClient.applicationType || inferApplicationType(),
             updatedAt: now,
           }
         : {
             id: createBillingClientId(`${clientName}-${matter.id}`),
             clientName,
-            legalAidNumber: "",
-            famNumber: "",
+            legalAidNumber: matter.legalAidNumber,
+            famNumber: matter.intake.famNumber,
+            clientEmail: matter.intake.applicant.emailAddress,
+            applicationType: inferApplicationType(),
             createdAt: now,
             updatedAt: now,
           };
+      const nextClients = existingClient
+        ? clients.map((client) => (client.id === existingClient.id ? profile : client))
+        : [profile, ...clients];
 
       window.localStorage.setItem(
         billingClientsStorageKey,
-        JSON.stringify(existingClient
-          ? clients.map((client) => (client.id === existingClient.id ? profile : client))
-          : [profile, ...clients]),
+        JSON.stringify(nextClients),
       );
 
-      fetch("/api/billing-clients", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(profile),
-      }).catch(() => undefined);
+      try {
+        await fetch("/api/billing-clients", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(profile),
+        });
+
+        if (profile.legalAidNumber.trim()) {
+          const folderResponse = await fetch("/api/clients/create-folders", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ client: profile }),
+          });
+          const folderPayload = (await folderResponse.json().catch(() => null)) as {
+            error?: string;
+            client?: BillingClientProfile;
+          } | null;
+
+          if (!folderResponse.ok) {
+            throw new Error(folderPayload?.error ?? "Unable to create the OneDrive client folder.");
+          }
+
+          if (folderPayload?.client) {
+            window.localStorage.setItem(
+              billingClientsStorageKey,
+              JSON.stringify(nextClients.map((client) =>
+                client.id === folderPayload.client?.id ? folderPayload.client : client,
+              )),
+            );
+            if (!options.quiet) {
+              setSaveStatus(`Intake saved and OneDrive folder created: ${folderPayload.client.oneDriveClientFolderPath}.`);
+            }
+            return folderPayload.client;
+          } else {
+            if (!options.quiet) setSaveStatus("Intake saved.");
+            return profile;
+          }
+        } else {
+          if (!options.quiet) {
+            setSaveStatus("Intake saved. Add the Legal Aid Number before creating the Power Automate client folder.");
+          }
+          return profile;
+        }
+      } catch (error) {
+        if (!options.quiet) {
+          setSaveStatus(error instanceof Error ? error.message : "Intake saved locally, but remote setup failed.");
+        }
+        if (options.quiet) throw error;
+        return profile;
+      }
     }
+
+    return null;
   };
 
   useEffect(() => {
@@ -382,12 +465,13 @@ export default function IntakeForm() {
         </div>
         <button
           type="button"
-          onClick={saveDraft}
+          onClick={() => void saveDraft()}
           className="h-10 rounded-md bg-sky-600 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-sky-700"
         >
           Save intake
         </button>
       </header>
+      {saveStatus ? <p className="text-sm font-medium text-slate-700">{saveStatus}</p> : null}
 
       <Card title="Client Details">
         <div className="grid gap-5 md:grid-cols-2">
@@ -396,6 +480,12 @@ export default function IntakeForm() {
             value={matter.clientName}
             onChange={(value) => setMatterValue("clientName", value)}
             placeholder="Primary client name"
+          />
+          <Field
+            label="Legal Aid Number"
+            value={matter.legalAidNumber}
+            onChange={(value) => setMatterValue("legalAidNumber", value)}
+            placeholder="e.g. LA123456"
           />
         </div>
       </Card>

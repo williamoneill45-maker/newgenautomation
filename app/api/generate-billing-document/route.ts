@@ -101,7 +101,10 @@ export async function POST(request: Request) {
     let oneDrivePath = "";
 
     try {
-      const upload = await uploadBillingDocumentToOneDrive(fileName, uploadBuffer);
+      const upload = await uploadBillingDocumentToOneDrive(fileName, uploadBuffer, {
+        clientName: body.record.clientName,
+        legalAidNumber: body.record.legalAidNumber,
+      });
       oneDriveStatus = upload.status;
       oneDriveUrl = upload.webUrl;
       oneDrivePath = upload.path;

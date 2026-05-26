@@ -187,25 +187,31 @@ export default function AffidavitWorkbenchPage() {
           signal: controller.signal,
         });
 
-        if (!response.ok) {
-          throw new Error("Drafting failed");
-        }
-
-        const data = (await response.json()) as {
+        const data = (await response.json().catch(() => null)) as {
           draft?: string;
           source?: string;
           diagnostics?: AffidavitDiagnostic[];
-        };
-        setDraft(data.draft ?? "");
-        setDiagnostics(data.diagnostics ?? []);
-        setStatus(data.source === "openai" ? "AI draft" : "Structured preview");
-      } catch {
+          error?: string;
+        } | null;
+        const diagnosticMessage = data?.diagnostics
+          ?.filter((diagnostic) => diagnostic.level === "error" || diagnostic.level === "warning")
+          .map((diagnostic) => diagnostic.message)
+          .join(" ");
+
+        if (!response.ok) {
+          throw new Error(data?.error || diagnosticMessage || "Drafting failed.");
+        }
+
+        setDraft(data?.draft ?? "");
+        setDiagnostics(data?.diagnostics ?? []);
+        setStatus(data?.source === "openai" ? "AI draft" : "Structured preview");
+      } catch (error) {
         if (!controller.signal.aborted) {
-          setStatus("Draft could not be updated.");
+          setStatus(error instanceof Error ? error.message : "Draft could not be updated.");
           setDiagnostics([
             {
               level: "error",
-              message: "The affidavit draft endpoint could not be reached from the browser.",
+              message: error instanceof Error ? error.message : "The affidavit draft endpoint could not be reached from the browser.",
             },
           ]);
         }

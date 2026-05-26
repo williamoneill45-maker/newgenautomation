@@ -22,6 +22,16 @@ type OneDriveEnv = {
   missing: string[];
 };
 
+type ClientFolderInput = {
+  clientName: string;
+  legalAidNumber?: string;
+};
+
+type UploadFileOptions = {
+  folderPath: string;
+  contentType?: string;
+};
+
 function getRequiredEnv(): OneDriveEnv {
   const values = {
     accessToken: process.env.MICROSOFT_GRAPH_ACCESS_TOKEN ?? "",
@@ -49,6 +59,39 @@ function cleanPath(value: string): string {
 
 function encodePath(value: string): string {
   return cleanPath(value).split("/").map(encodeURIComponent).join("/");
+}
+
+function safePathPart(value: string): string {
+  return value
+    .replace(/[<>:"\\|?*]+/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+export function getOneDriveClientFolderName(clientName: string, legalAidNumber = ""): string {
+  const safeName = safePathPart(clientName) || "Unnamed Client";
+  const safeLegalAid = safePathPart(legalAidNumber);
+  return safeLegalAid ? `${safeName} - ${safeLegalAid}` : safeName;
+}
+
+export function getOneDriveClientFolderPaths(input: ClientFolderInput) {
+  const rootPath = (process.env.ONEDRIVE_CLIENTS_ROOT_PATH ?? "NewGenAutomation/Clients").replace(/\/$/, "");
+  const clientFolderPath = cleanPath(`${rootPath}/${getOneDriveClientFolderName(input.clientName, input.legalAidNumber)}`);
+
+  return {
+    clientFolderPath,
+    formsFolderPath: cleanPath(`${clientFolderPath}/Forms and Induction`),
+    billingFolderPath: cleanPath(`${clientFolderPath}/Billing`),
+  };
+}
+
+export function getAutomationClientFolderPath(input: ClientFolderInput): string {
+  const rootPath = (process.env.ONEDRIVE_AUTOMATION_CLIENT_FILES_PATH ?? "New Gen Automation/Client Files").replace(/\/$/, "");
+  const safeName = safePathPart(input.clientName) || "Unnamed Client";
+  const safeLegalAid = safePathPart(input.legalAidNumber ?? "");
+  const folderName = `${safeName}_${safeLegalAid || "NoLegalAidNumber"}`;
+
+  return cleanPath(`${rootPath}/${folderName}`);
 }
 
 async function getGraphAccessToken(env: OneDriveEnv): Promise<string> {
@@ -84,9 +127,13 @@ async function getGraphAccessToken(env: OneDriveEnv): Promise<string> {
 export async function uploadBillingDocumentToOneDrive(
   fileName: string,
   buffer: ArrayBuffer,
+  client?: ClientFolderInput,
 ): Promise<OneDriveUploadResult> {
   const env = getRequiredEnv();
-  const oneDrivePath = `${env.rootPath.replace(/\/$/, "")}/${fileName}`;
+  const folderPath = client?.clientName?.trim()
+    ? getOneDriveClientFolderPaths(client).billingFolderPath
+    : env.rootPath.replace(/\/$/, "");
+  const oneDrivePath = cleanPath(`${folderPath}/${fileName}`);
 
   if (env.missing.length) {
     return {
@@ -97,10 +144,13 @@ export async function uploadBillingDocumentToOneDrive(
     };
   }
 
+  const folder = await ensureOneDriveFolder(folderPath);
+  if (folder.status === "not_configured") return folder;
+
   const accessToken = await getGraphAccessToken(env);
   const uploadUrl =
     `https://graph.microsoft.com/v1.0/drives/${encodeURIComponent(env.driveId)}` +
-    `/root:/${oneDrivePath.split("/").map(encodeURIComponent).join("/")}:/content`;
+    `/root:/${encodePath(oneDrivePath)}:/content`;
 
   const response = await fetch(uploadUrl, {
     method: "PUT",
@@ -114,6 +164,50 @@ export async function uploadBillingDocumentToOneDrive(
   if (!response.ok) {
     const details = await response.text();
     throw new Error(`OneDrive upload failed with status ${response.status}: ${details}`);
+  }
+
+  const data = (await response.json()) as { webUrl?: string };
+  return {
+    status: "uploaded",
+    webUrl: data.webUrl ?? "",
+    path: oneDrivePath,
+  };
+}
+
+export async function uploadFileToOneDrive(
+  fileName: string,
+  buffer: ArrayBuffer,
+  options: UploadFileOptions,
+): Promise<OneDriveUploadResult> {
+  const env = getRequiredEnv();
+  const cleanFolder = cleanPath(options.folderPath);
+  const oneDrivePath = cleanPath(`${cleanFolder}/${fileName}`);
+
+  if (env.missing.length) {
+    return {
+      status: "not_configured",
+      webUrl: "",
+      path: oneDrivePath,
+      missing: env.missing,
+    };
+  }
+
+  const folder = await ensureOneDriveFolder(cleanFolder);
+  if (folder.status === "not_configured") return folder;
+
+  const accessToken = await getGraphAccessToken(env);
+  const uploadUrl =
+    `https://graph.microsoft.com/v1.0/drives/${encodeURIComponent(env.driveId)}` +
+    `/root:/${encodePath(oneDrivePath)}:/content`;
+  const response = await graphRequest(accessToken, uploadUrl, {
+    method: "PUT",
+    headers: { "Content-Type": options.contentType ?? "application/octet-stream" },
+    body: buffer,
+  });
+
+  if (!response.ok) {
+    const details = await response.text();
+    throw new Error(`OneDrive file upload failed with status ${response.status}: ${details}`);
   }
 
   const data = (await response.json()) as { webUrl?: string };

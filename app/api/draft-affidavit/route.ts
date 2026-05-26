@@ -196,7 +196,27 @@ function buildFallbackDraft({
 }
 
 export async function POST(request: Request) {
-  const body = (await request.json()) as DraftAffidavitRequest;
+  let body: DraftAffidavitRequest;
+
+  try {
+    body = (await request.json()) as DraftAffidavitRequest;
+  } catch (error) {
+    console.error("Affidavit draft request JSON parse failed", error);
+    return NextResponse.json(
+      {
+        error: "The affidavit draft request was not valid JSON.",
+        draft: "",
+        source: "fallback",
+        diagnostics: [
+          {
+            level: "error",
+            message: "The affidavit draft request could not be read. Refresh the page and try again.",
+          },
+        ] satisfies AffidavitDiagnostic[],
+      },
+      { status: 400 },
+    );
+  }
   const applicantName = cleanText(body.applicantName) || "the applicant";
   const respondentName = cleanText(body.respondentName) || "the respondent";
   const selectedOrders = Array.isArray(body.selectedOrders)
@@ -363,13 +383,18 @@ export async function POST(request: Request) {
     });
 
     if (!response.ok) {
+      const details = await response.text();
+      console.error("OpenAI affidavit drafting failed", {
+        status: response.status,
+        details,
+      });
       return NextResponse.json({
         draft: fallbackDraft,
         source: "fallback",
         diagnostics: [
           {
             level: "error",
-            message: `OpenAI affidavit drafting failed with status ${response.status}. Check the API key, model, and Vercel environment variables.`,
+            message: `OpenAI affidavit drafting failed with status ${response.status}. ${details.slice(0, 240) || "Check the API key, model, and Vercel environment variables."}`,
           },
         ] satisfies AffidavitDiagnostic[],
       });
@@ -394,7 +419,8 @@ export async function POST(request: Request) {
             },
           ],
     });
-  } catch {
+  } catch (error) {
+    console.error("OpenAI affidavit drafting request failed", error);
     return NextResponse.json({
       draft: fallbackDraft,
       source: "fallback",

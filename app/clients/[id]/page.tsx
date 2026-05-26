@@ -138,6 +138,8 @@ export default function ClientDetailPage() {
         error?: string;
         client?: BillingClientProfile;
         request?: { path?: string; webUrl?: string };
+        instructions?: { path?: string; webUrl?: string };
+        signing?: { status?: string; message?: string };
       };
 
       if (!response.ok) {
@@ -145,7 +147,11 @@ export default function ClientDetailPage() {
       }
 
       if (payload.client) updateStoredClient(payload.client);
-      setInductionNotice(`Induction request created: ${payload.request?.path ?? "automation request file"}.`);
+      setInductionNotice([
+        `Induction request created: ${payload.request?.path ?? "automation request file"}.`,
+        payload.instructions?.path ? `Instructions file created: ${payload.instructions.path}.` : "",
+        payload.signing?.message ?? "",
+      ].filter(Boolean).join(" "));
     } catch (error) {
       setInductionError(error instanceof Error ? error.message : "Unable to start induction.");
     } finally {

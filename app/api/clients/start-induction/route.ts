@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import type { BillingClientProfile } from "../../../../lib/billing-storage";
 import {
   ensureOneDriveFolder,
+  getAutomationClientFolderPath,
   uploadJsonToOneDrive,
 } from "../../../../lib/onedrive";
 import { updateBillingClientInductionInSupabase } from "../../../../lib/supabase-billing";
@@ -15,21 +16,13 @@ type StartInductionRequest = {
   applicationType?: BillingClientProfile["applicationType"];
 };
 
-function safePathPart(value: string): string {
+function safeFilePart(value: string): string {
   return value
     .replace(/[<>:"\\|?*]+/g, "")
     .replace(/\s+/g, " ")
-    .trim();
-}
-
-function safeFilePart(value: string): string {
-  return safePathPart(value).replace(/[^A-Za-z0-9 ._-]+/g, "").trim() || "client";
-}
-
-function clientFolderName(clientName: string, legalAidNumber: string): string {
-  const safeName = safePathPart(clientName) || "Unnamed Client";
-  const safeLegalAid = safePathPart(legalAidNumber);
-  return safeLegalAid ? `${safeName} - ${safeLegalAid}` : safeName;
+    .trim()
+    .replace(/[^A-Za-z0-9 ._-]+/g, "")
+    .trim() || "client";
 }
 
 export async function POST(request: Request) {
@@ -50,7 +43,7 @@ export async function POST(request: Request) {
 
     if (!clientEmail) {
       return NextResponse.json(
-        { error: "Client email is required before Adobe Sign induction can be requested." },
+        { error: "Client email is required before induction and signing automation can be requested." },
         { status: 400 },
       );
     }
@@ -62,10 +55,16 @@ export async function POST(request: Request) {
       );
     }
 
-    const rootPath = (process.env.ONEDRIVE_CLIENTS_ROOT_PATH ?? "NewGenAutomation/Clients").replace(/\/$/, "");
-    const baseFolderPath = `${rootPath}/${clientFolderName(clientName, legalAidNumber)}`;
-    const formsFolderPath = `${baseFolderPath}/Forms and Induction`;
-    const billingFolderPath = `${baseFolderPath}/Billing`;
+    if (!legalAidNumber) {
+      return NextResponse.json(
+        { error: "Legal Aid Number is required before induction automation can be requested." },
+        { status: 400 },
+      );
+    }
+
+    const baseFolderPath = getAutomationClientFolderPath({ clientName, legalAidNumber });
+    const formsFolderPath = baseFolderPath;
+    const billingFolderPath = baseFolderPath;
     const createdClientFolder = await ensureOneDriveFolder(baseFolderPath);
 
     if (createdClientFolder.status === "not_configured") {
@@ -75,16 +74,46 @@ export async function POST(request: Request) {
       );
     }
 
-    const formsFolder = await ensureOneDriveFolder(formsFolderPath);
-    const billingFolder = await ensureOneDriveFolder(billingFolderPath);
-    if (formsFolder.status === "not_configured" || billingFolder.status === "not_configured") {
+    const now = new Date().toISOString();
+    const instructionsPayload = {
+      type: "instructions",
+      clientId: client.id,
+      clientName,
+      clientEmail,
+      legalAidNumber,
+      applicationType,
+      fileCreatedTimestamp: now,
+      clientFolderPath: baseFolderPath,
+      documentsGenerated: false,
+      adobeSign: {
+        sendForSignature: true,
+        recipientName: clientName,
+        recipientEmail: clientEmail,
+        packetName: "Induction / Letter of Engagement",
+      },
+      msdRequest: {
+        autoPopulate: true,
+        fileName: "05 MSD Request.docx",
+        sendByAutomation: true,
+      },
+      supportingDocuments: {
+        expectedFolderPath: baseFolderPath,
+        includeGeneratedDocuments: true,
+      },
+    };
+    const instructionsUpload = await uploadJsonToOneDrive(
+      "instructions",
+      instructionsPayload,
+      baseFolderPath,
+    );
+
+    if (instructionsUpload.status === "not_configured") {
       return NextResponse.json(
-        { error: "OneDrive is not configured for induction subfolders." },
+        { error: "OneDrive is not configured for the induction instructions file.", missing: instructionsUpload.missing },
         { status: 503 },
       );
     }
 
-    const now = new Date().toISOString();
     const requestPayload = {
       type: "client_induction",
       clientId: client.id,
@@ -95,6 +124,7 @@ export async function POST(request: Request) {
       clientFolderPath: baseFolderPath,
       formsFolderPath,
       billingFolderPath,
+      instructionsPath: instructionsUpload.path,
       requestedAt: now,
     };
     const requestFileName = `${now.slice(0, 10)}-${Date.now()}-${safeFilePart(clientName)}-induction.json`;
@@ -117,8 +147,8 @@ export async function POST(request: Request) {
       oneDriveBillingFolderPath: billingFolderPath,
       oneDriveClientFolderUrl: createdClientFolder.webUrl,
       inductionRequestPath: requestUpload.path,
-      engagementStatus: "sent",
-      msdRequestStatus: "sent",
+      engagementStatus: "not_started",
+      msdRequestStatus: "not_started",
       legalAidApplicationStatus: "pending_signed_forms_and_msd",
       inductionRequestedAt: now,
       updatedAt: now,
@@ -132,6 +162,14 @@ export async function POST(request: Request) {
       request: {
         path: requestUpload.path,
         webUrl: requestUpload.webUrl,
+      },
+      instructions: {
+        path: instructionsUpload.path,
+        webUrl: instructionsUpload.webUrl,
+      },
+      signing: {
+        status: "not_configured",
+        message: "The instructions file was created for the Adobe/Power Automate signing flow. No direct Adobe API call was made by this app.",
       },
     });
   } catch (error) {
