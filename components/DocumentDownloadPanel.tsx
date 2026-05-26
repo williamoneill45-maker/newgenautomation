@@ -182,6 +182,11 @@ export default function DocumentDownloadPanel() {
       return;
     }
 
+    if (!matter.intake.proceedingsType) {
+      setStatus("Select the proceedings type before starting induction.");
+      return;
+    }
+
     setIsUploading(true);
     setStatus("");
 

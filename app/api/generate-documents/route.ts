@@ -87,10 +87,12 @@ export async function POST(request: Request) {
   const legalAidNumber = body.matter.legalAidNumber.trim();
   const clientEmail = body.matter.intake.applicant.emailAddress.trim();
   const clientPhone = body.matter.intake.applicant.mobilePhone.trim();
+  const proceedingsType = body.matter.intake.proceedingsType || "other";
   const applicationType = getApplicationType(body.matter);
   const clientFolderPaths = getOneDriveClientFolderPaths({ clientName, legalAidNumber });
   const generatedAt = new Date().toISOString();
   const workflowId = body.workflowId?.trim() || `${body.matter.id}-standard-induction`;
+  const adobeAgreementName = `Information to Client - ${clientName}`;
   const validationReport: DocumentValidationReport = {
     generatedAt,
     matterId: body.matter.id,
@@ -269,6 +271,8 @@ export async function POST(request: Request) {
         clientPhone,
         clientFolderPath: clientFolderPaths.clientFolderPath,
         packageType: "standard_induction",
+        proceedingsType,
+        adobeAgreementName,
       };
       uploads.push(await uploadFileToOneDrive(
         "Instruction.json",

@@ -7,6 +7,7 @@ import {
   createEmptyChild,
   createEmptyMatter,
   ethnicities,
+  proceedingsTypes,
   type ApplicationType,
   type Child,
   type MatterFile,
@@ -491,6 +492,15 @@ export default function IntakeForm() {
       </Card>
 
       <Card title="Applications Being Filed">
+        <div className="mb-5 grid gap-5 md:grid-cols-2">
+          <SelectField
+            label="Proceedings Type"
+            value={matter.intake.proceedingsType ?? ""}
+            onChange={(value) => setIntakeValue("proceedingsType", value as MatterFile["intake"]["proceedingsType"])}
+            placeholder="Select proceedings type"
+            options={proceedingsTypes}
+          />
+        </div>
         <div className="grid gap-3 md:grid-cols-2">
           {applicationTypes.map((application) => (
             <label key={application} className="flex min-h-10 items-center gap-3 rounded-md border border-slate-200 px-3 py-2 text-sm text-slate-950">

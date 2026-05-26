@@ -16,6 +16,16 @@ export const courts = [
 
 export type CourtLocation = (typeof courts)[number] | "";
 
+export const proceedingsTypes = [
+  "care_of_children",
+  "family_violence",
+  "relationship_property",
+  "guardianship",
+  "other",
+] as const;
+
+export type ProceedingsType = (typeof proceedingsTypes)[number] | "";
+
 export const ethnicities = [
   "New Zealand European",
   "Maori",
@@ -83,6 +93,7 @@ export type DomesticViolenceNotes = {
 
 export type IntakeData = {
   selectedApplications: ApplicationType[];
+  proceedingsType: ProceedingsType;
   otherApplicationDetails: string;
   courtLocation: CourtLocation;
   famNumber: string;
@@ -266,6 +277,7 @@ export function createEmptyMatter(): MatterFile {
     updatedAt: now,
     intake: {
       selectedApplications: [],
+      proceedingsType: "",
       otherApplicationDetails: "",
       courtLocation: "",
       famNumber: "",
