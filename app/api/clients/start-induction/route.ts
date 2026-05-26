@@ -106,7 +106,7 @@ export async function POST(request: Request) {
       },
       signing: {
         status: "not_configured",
-        message: "Instruction.json is uploaded after generated documents are in Forms and Induction. No Outlook signature email is sent by this app.",
+        message: "The proceedings-specific instruction JSON is uploaded after generated documents are in Forms and Induction. No Outlook signature email is sent by this app.",
       },
     });
   } catch (error) {

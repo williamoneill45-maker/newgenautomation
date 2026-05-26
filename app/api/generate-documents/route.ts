@@ -64,6 +64,14 @@ function safeFileName(value: string): string {
   return value.replace(/[^A-Za-z0-9 ._-]/g, "").trim().replace(/\s+/g, "_") || "Client";
 }
 
+function safeOneDriveFilePart(value: string, fallback: string): string {
+  return value
+    .replace(/[<>:"\\|?*]+/g, "")
+    .replace(/[\r\n]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim() || fallback;
+}
+
 function getApplicationType(matter: MatterFile): string {
   return matter.intake.selectedApplications.join(", ");
 }
@@ -93,6 +101,8 @@ export async function POST(request: Request) {
   const generatedAt = new Date().toISOString();
   const workflowId = body.workflowId?.trim() || `${body.matter.id}-standard-induction`;
   const adobeAgreementName = `Information to Client - ${clientName}`;
+  const instructionFileName =
+    `Instruction - ${safeOneDriveFilePart(proceedingsType, "other")} - ${safeOneDriveFilePart(clientName, "Client")}.json`;
   const validationReport: DocumentValidationReport = {
     generatedAt,
     matterId: body.matter.id,
@@ -275,7 +285,7 @@ export async function POST(request: Request) {
         adobeAgreementName,
       };
       uploads.push(await uploadFileToOneDrive(
-        "Instruction.json",
+        instructionFileName,
         new TextEncoder().encode(JSON.stringify(instructionPayload, null, 2)).buffer,
         {
           folderPath: clientFolderPaths.formsFolderPath,
@@ -284,7 +294,7 @@ export async function POST(request: Request) {
       ));
       oneDriveStatus = uploads.every((upload) => upload.status === "uploaded") ? "uploaded" : "not_configured";
       if (oneDriveStatus === "uploaded") {
-        console.info(`Instruction handoff uploaded: ${clientFolderPaths.formsFolderPath}/Instruction.json`);
+        console.info(`Instruction handoff uploaded: ${clientFolderPaths.formsFolderPath}/${instructionFileName}`);
       }
     } catch (error) {
       console.error("Generated intake OneDrive upload failed", error);
@@ -315,8 +325,8 @@ export async function POST(request: Request) {
         path: oneDrivePath ? `${oneDrivePath}/${inductionInstructionsFileName}` : "",
       },
       instructionFile: {
-        fileName: "Instruction.json",
-        path: oneDrivePath ? `${oneDrivePath}/Instruction.json` : "",
+        fileName: instructionFileName,
+        path: oneDrivePath ? `${oneDrivePath}/${instructionFileName}` : "",
       },
     });
   }
