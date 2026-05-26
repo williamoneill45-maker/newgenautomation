@@ -73,6 +73,7 @@ export async function POST(request: Request) {
     matter?: MatterFile;
     uploadToOneDrive?: boolean;
     responseMode?: "zip" | "json";
+    workflowId?: string;
   };
 
   if (!body.matter) {
@@ -85,9 +86,11 @@ export async function POST(request: Request) {
   const clientName = body.matter.clientName || body.matter.intake.applicant.fullName;
   const legalAidNumber = body.matter.legalAidNumber.trim();
   const clientEmail = body.matter.intake.applicant.emailAddress.trim();
+  const clientPhone = body.matter.intake.applicant.mobilePhone.trim();
   const applicationType = getApplicationType(body.matter);
   const clientFolderPaths = getOneDriveClientFolderPaths({ clientName, legalAidNumber });
   const generatedAt = new Date().toISOString();
+  const workflowId = body.workflowId?.trim() || `${body.matter.id}-standard-induction`;
   const validationReport: DocumentValidationReport = {
     generatedAt,
     matterId: body.matter.id,
@@ -258,21 +261,27 @@ export async function POST(request: Request) {
           });
         }
       }
-      const triggerPayload = {
+      const instructionPayload = {
+        workflowId,
         clientName,
         legalAidNumber,
-        fileCreatedTimestamp: new Date().toISOString(),
-        documentsGenerated: true,
+        clientEmail,
+        clientPhone,
+        clientFolderPath: clientFolderPaths.clientFolderPath,
+        packageType: "standard_induction",
       };
       uploads.push(await uploadFileToOneDrive(
-        "automation_trigger.json",
-        new TextEncoder().encode(JSON.stringify(triggerPayload, null, 2)).buffer,
+        "Instruction.json",
+        new TextEncoder().encode(JSON.stringify(instructionPayload, null, 2)).buffer,
         {
           folderPath: clientFolderPaths.formsFolderPath,
           contentType: "application/json; charset=utf-8",
         },
       ));
       oneDriveStatus = uploads.every((upload) => upload.status === "uploaded") ? "uploaded" : "not_configured";
+      if (oneDriveStatus === "uploaded") {
+        console.info(`Instruction handoff uploaded: ${clientFolderPaths.formsFolderPath}/Instruction.json`);
+      }
     } catch (error) {
       console.error("Generated intake OneDrive upload failed", error);
       oneDriveStatus = "failed";
@@ -301,7 +310,10 @@ export async function POST(request: Request) {
         fileName: inductionInstructionsFileName,
         path: oneDrivePath ? `${oneDrivePath}/${inductionInstructionsFileName}` : "",
       },
-      automationTriggerPath: oneDrivePath ? `${oneDrivePath}/automation_trigger.json` : "",
+      instructionFile: {
+        fileName: "Instruction.json",
+        path: oneDrivePath ? `${oneDrivePath}/Instruction.json` : "",
+      },
     });
   }
 

@@ -106,7 +106,7 @@ export async function POST(request: Request) {
       },
       signing: {
         status: "not_configured",
-        message: "The populated instructions.docx is generated and uploaded by the document bundle step. No Outlook signature email is sent by this app.",
+        message: "Instruction.json is uploaded after generated documents are in Forms and Induction. No Outlook signature email is sent by this app.",
       },
     });
   } catch (error) {

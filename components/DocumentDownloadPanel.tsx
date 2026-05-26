@@ -224,6 +224,7 @@ export default function DocumentDownloadPanel() {
           matter,
           uploadToOneDrive: true,
           responseMode: "json",
+          workflowId: `${matter.id}-standard-induction`,
         }),
       });
       const documentPayload = (await documentResponse.json().catch(() => null)) as {
@@ -231,7 +232,7 @@ export default function DocumentDownloadPanel() {
         oneDrivePath?: string;
         uploadedDocuments?: Array<{ fileName: string }>;
         inductionDocument?: { fileName?: string; path?: string };
-        automationTriggerPath?: string;
+        instructionFile?: { fileName?: string; path?: string };
       } | null;
 
       if (!documentResponse.ok) {
@@ -243,7 +244,7 @@ export default function DocumentDownloadPanel() {
         `Forms and Induction folder ready: ${documentPayload?.oneDrivePath ?? "OneDrive client folder"}.`,
         `${documentPayload?.uploadedDocuments?.length ?? 0} generated files uploaded.`,
         documentPayload?.inductionDocument?.path ? `Induction DOCX: ${documentPayload.inductionDocument.path}.` : "",
-        documentPayload?.automationTriggerPath ? `Automation trigger: ${documentPayload.automationTriggerPath}.` : "",
+        documentPayload?.instructionFile?.path ? `Instruction handoff: ${documentPayload.instructionFile.path}.` : "",
       ].filter(Boolean).join(" "));
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "OneDrive upload and induction could not be completed.");
