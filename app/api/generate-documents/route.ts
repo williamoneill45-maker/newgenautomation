@@ -95,6 +95,8 @@ export async function POST(request: Request) {
   const legalAidNumber = body.matter.legalAidNumber.trim();
   const clientEmail = body.matter.intake.applicant.emailAddress.trim();
   const clientPhone = body.matter.intake.applicant.mobilePhone.trim();
+  const clientDateOfBirth = body.matter.intake.applicant.dateOfBirth.trim();
+  const clientAddress = body.matter.intake.applicant.homeAddress.trim();
   const proceedingsType = body.matter.intake.proceedingsType || "other";
   const applicationType = getApplicationType(body.matter);
   const clientFolderPaths = getOneDriveClientFolderPaths({ clientName, legalAidNumber });
@@ -279,6 +281,8 @@ export async function POST(request: Request) {
         legalAidNumber,
         clientEmail,
         clientPhone,
+        clientDateOfBirth,
+        clientAddress,
         clientFolderPath: clientFolderPaths.clientFolderPath,
         packageType: "standard_induction",
         proceedingsType,
