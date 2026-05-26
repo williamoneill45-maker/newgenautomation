@@ -233,11 +233,6 @@ export async function POST(request: Request) {
 
   const validationReportText = JSON.stringify(validationReport, null, 2);
   bundle.file("template-validation-report.json", validationReportText);
-  generatedFiles.push({
-    fileName: "template-validation-report.json",
-    buffer: new TextEncoder().encode(validationReportText).buffer,
-    contentType: "application/json; charset=utf-8",
-  });
 
   let oneDriveStatus = "not_configured";
   let oneDrivePath = "";
