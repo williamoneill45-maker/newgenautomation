@@ -186,7 +186,7 @@ export default function BillingPage() {
       evidenceFiles: [],
       billingRecord: record,
       oneDriveUrl: "",
-      oneDrivePath: fileName ? `NewGenAutomation/Billing/${fileName}` : "",
+      oneDrivePath: fileName ? `NewGenAutomation/Clients/${record.clientName} - ${record.legalAidNumber}/Billing/${fileName}` : "",
       generatedFileName: fileName,
       generatedAt: new Date().toISOString(),
     };

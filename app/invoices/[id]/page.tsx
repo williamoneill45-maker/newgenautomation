@@ -152,7 +152,7 @@ export default function InvoiceDetailPage() {
         ...invoice,
         status: "onedrive_pending",
         generatedFileName: fileName,
-        oneDrivePath: `NewGenAutomation/Billing/${fileName}`,
+        oneDrivePath: `NewGenAutomation/Clients/${invoice.clientName} - ${invoice.legalAidNumber}/Billing/${fileName}`,
         generatedAt: new Date().toISOString(),
       };
       const nextInvoices = [

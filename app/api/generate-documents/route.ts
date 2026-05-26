@@ -7,8 +7,9 @@ import { NextResponse } from "next/server";
 import { draftDomesticViolenceAffidavit } from "../../../lib/affidavit-drafting";
 import { buildMatterMergeFields } from "../../../lib/document-automation";
 import { mergeDocxTemplate, type DocxMergeReport } from "../../../lib/docx-template";
+import { buildInductionInstructionsDocx, inductionInstructionsFileName } from "../../../lib/induction-instructions-docx";
 import type { MatterFile } from "../../../lib/matter";
-import { getAutomationClientFolderPath, uploadFileToOneDrive, type OneDriveUploadResult } from "../../../lib/onedrive";
+import { getOneDriveClientFolderPaths, uploadFileToOneDrive, type OneDriveUploadResult } from "../../../lib/onedrive";
 import { standardDocxTemplates } from "../../../lib/template-catalog";
 
 export const runtime = "nodejs";
@@ -63,6 +64,10 @@ function safeFileName(value: string): string {
   return value.replace(/[^A-Za-z0-9 ._-]/g, "").trim().replace(/\s+/g, "_") || "Client";
 }
 
+function getApplicationType(matter: MatterFile): string {
+  return matter.intake.selectedApplications.join(", ");
+}
+
 export async function POST(request: Request) {
   const body = (await request.json()) as {
     matter?: MatterFile;
@@ -77,8 +82,14 @@ export async function POST(request: Request) {
   const bundle = new JSZip();
   const generatedFiles: GeneratedFile[] = [];
   const fields = buildMatterMergeFields(body.matter);
+  const clientName = body.matter.clientName || body.matter.intake.applicant.fullName;
+  const legalAidNumber = body.matter.legalAidNumber.trim();
+  const clientEmail = body.matter.intake.applicant.emailAddress.trim();
+  const applicationType = getApplicationType(body.matter);
+  const clientFolderPaths = getOneDriveClientFolderPaths({ clientName, legalAidNumber });
+  const generatedAt = new Date().toISOString();
   const validationReport: DocumentValidationReport = {
-    generatedAt: new Date().toISOString(),
+    generatedAt,
     matterId: body.matter.id,
     rules: [
       "Source DOCX templates are read from /templates.",
@@ -90,6 +101,25 @@ export async function POST(request: Request) {
     skippedDocuments: [],
     documents: [],
   };
+
+  const instructionsDocx = await buildInductionInstructionsDocx({
+    clientName,
+    clientEmail,
+    legalAidNumber,
+    applicationType,
+    fileCreatedTimestamp: generatedAt,
+    clientFolderPath: clientFolderPaths.clientFolderPath,
+    formsFolderPath: clientFolderPaths.formsFolderPath,
+    billingFolderPath: clientFolderPaths.billingFolderPath,
+    documentsGenerated: true,
+    msdRequestFileName: "05 MSD Request.docx",
+  });
+  bundle.file(inductionInstructionsFileName, instructionsDocx);
+  generatedFiles.push({
+    fileName: inductionInstructionsFileName,
+    buffer: instructionsDocx,
+    contentType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  });
 
   for (const templateDefinition of standardDocxTemplates) {
     if (!(await templateExists(templateDefinition.sourceFileName))) {
@@ -196,21 +226,27 @@ export async function POST(request: Request) {
   let oneDrivePath = "";
   let oneDriveError = "";
   const uploadedDocuments: Array<{ fileName: string; path: string; webUrl: string }> = [];
-  const clientName = body.matter.clientName || body.matter.intake.applicant.fullName;
-  const legalAidNumber = body.matter.legalAidNumber.trim();
 
-  if (body.uploadToOneDrive && clientName.trim() && legalAidNumber) {
-    const clientFolderPath = getAutomationClientFolderPath({
-      clientName,
-      legalAidNumber,
-    });
-    oneDrivePath = clientFolderPath;
+  if (body.uploadToOneDrive && !clientName.trim()) {
+    oneDriveStatus = "failed";
+    oneDriveError = "Client name is required before generated forms can be uploaded to OneDrive.";
+  } else if (body.uploadToOneDrive && !legalAidNumber) {
+    oneDriveStatus = "failed";
+    oneDriveError = "Legal Aid Number is required before generated forms can be uploaded to Forms and Induction.";
+  } else if (body.uploadToOneDrive && !clientEmail) {
+    oneDriveStatus = "failed";
+    oneDriveError = "Applicant email is required before instructions.docx can be uploaded for induction.";
+  } else if (body.uploadToOneDrive && !applicationType) {
+    oneDriveStatus = "failed";
+    oneDriveError = "At least one application type is required before instructions.docx can be uploaded for induction.";
+  } else if (body.uploadToOneDrive) {
+    oneDrivePath = clientFolderPaths.formsFolderPath;
 
     try {
       const uploads: OneDriveUploadResult[] = [];
       for (const file of generatedFiles) {
         const upload = await uploadFileToOneDrive(file.fileName, file.buffer, {
-          folderPath: clientFolderPath,
+          folderPath: clientFolderPaths.formsFolderPath,
           contentType: file.contentType,
         });
         uploads.push(upload);
@@ -232,7 +268,7 @@ export async function POST(request: Request) {
         "automation_trigger.json",
         new TextEncoder().encode(JSON.stringify(triggerPayload, null, 2)).buffer,
         {
-          folderPath: clientFolderPath,
+          folderPath: clientFolderPaths.formsFolderPath,
           contentType: "application/json; charset=utf-8",
         },
       ));
@@ -242,10 +278,6 @@ export async function POST(request: Request) {
       oneDriveStatus = "failed";
       oneDriveError = error instanceof Error ? error.message : "Generated documents could not be uploaded to OneDrive.";
     }
-  } else if (body.uploadToOneDrive && !legalAidNumber) {
-    oneDriveError = "Legal Aid Number is required before generated forms can be uploaded to the Power Automate client folder.";
-  } else if (body.uploadToOneDrive) {
-    oneDriveError = "Client name is required before generated forms can be uploaded to OneDrive.";
   }
 
   if (body.responseMode === "json") {
@@ -265,6 +297,10 @@ export async function POST(request: Request) {
       oneDriveStatus,
       oneDrivePath,
       uploadedDocuments,
+      inductionDocument: {
+        fileName: inductionInstructionsFileName,
+        path: oneDrivePath ? `${oneDrivePath}/${inductionInstructionsFileName}` : "",
+      },
       automationTriggerPath: oneDrivePath ? `${oneDrivePath}/automation_trigger.json` : "",
     });
   }

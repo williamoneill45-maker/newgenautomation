@@ -17,8 +17,6 @@ type OneDriveEnv = {
   clientId: string;
   clientSecret: string;
   driveId: string;
-  rootPath: string;
-  automationRequestsPath: string;
   missing: string[];
 };
 
@@ -39,8 +37,6 @@ function getRequiredEnv(): OneDriveEnv {
     clientId: process.env.MICROSOFT_CLIENT_ID ?? "",
     clientSecret: process.env.MICROSOFT_CLIENT_SECRET ?? "",
     driveId: process.env.MICROSOFT_GRAPH_DRIVE_ID ?? process.env.ONEDRIVE_DRIVE_ID ?? "",
-    rootPath: process.env.ONEDRIVE_BILLING_ROOT_PATH ?? "NewGenAutomation/Billing",
-    automationRequestsPath: process.env.ONEDRIVE_AUTOMATION_REQUESTS_FOLDER ?? "NewGenAutomation/Automation Requests",
   };
   const canUseClientCredentials = Boolean(values.tenantId && values.clientId && values.clientSecret);
   const missing = [
@@ -52,6 +48,8 @@ function getRequiredEnv(): OneDriveEnv {
 
   return { ...values, missing };
 }
+
+const CLIENTS_ROOT_PATH = "NewGenAutomation/Clients";
 
 function cleanPath(value: string): string {
   return value.split("/").map((part) => part.trim()).filter(Boolean).join("/");
@@ -75,8 +73,7 @@ export function getOneDriveClientFolderName(clientName: string, legalAidNumber =
 }
 
 export function getOneDriveClientFolderPaths(input: ClientFolderInput) {
-  const rootPath = (process.env.ONEDRIVE_CLIENTS_ROOT_PATH ?? "NewGenAutomation/Clients").replace(/\/$/, "");
-  const clientFolderPath = cleanPath(`${rootPath}/${getOneDriveClientFolderName(input.clientName, input.legalAidNumber)}`);
+  const clientFolderPath = cleanPath(`${CLIENTS_ROOT_PATH}/${getOneDriveClientFolderName(input.clientName, input.legalAidNumber)}`);
 
   return {
     clientFolderPath,
@@ -86,12 +83,12 @@ export function getOneDriveClientFolderPaths(input: ClientFolderInput) {
 }
 
 export function getAutomationClientFolderPath(input: ClientFolderInput): string {
-  const rootPath = (process.env.ONEDRIVE_AUTOMATION_CLIENT_FILES_PATH ?? "New Gen Automation/Client Files").replace(/\/$/, "");
-  const safeName = safePathPart(input.clientName) || "Unnamed Client";
-  const safeLegalAid = safePathPart(input.legalAidNumber ?? "");
-  const folderName = `${safeName}_${safeLegalAid || "NoLegalAidNumber"}`;
+  return getOneDriveClientFolderPaths(input).clientFolderPath;
+}
 
-  return cleanPath(`${rootPath}/${folderName}`);
+function isAllowedClientPath(path: string): boolean {
+  const clean = cleanPath(path);
+  return clean === CLIENTS_ROOT_PATH || clean.startsWith(`${CLIENTS_ROOT_PATH}/`);
 }
 
 async function getGraphAccessToken(env: OneDriveEnv): Promise<string> {
@@ -130,10 +127,20 @@ export async function uploadBillingDocumentToOneDrive(
   client?: ClientFolderInput,
 ): Promise<OneDriveUploadResult> {
   const env = getRequiredEnv();
-  const folderPath = client?.clientName?.trim()
-    ? getOneDriveClientFolderPaths(client).billingFolderPath
-    : env.rootPath.replace(/\/$/, "");
+  const hasClientFolder = Boolean(client?.clientName?.trim() && client?.legalAidNumber?.trim());
+  const folderPath = hasClientFolder
+    ? getOneDriveClientFolderPaths(client as ClientFolderInput).billingFolderPath
+    : cleanPath(`${CLIENTS_ROOT_PATH}/Missing Client - Missing Legal Aid Number/Billing`);
   const oneDrivePath = cleanPath(`${folderPath}/${fileName}`);
+
+  if (!hasClientFolder) {
+    return {
+      status: "not_configured",
+      webUrl: "",
+      path: oneDrivePath,
+      missing: ["clientName and legalAidNumber"],
+    };
+  }
 
   if (env.missing.length) {
     return {
@@ -182,6 +189,10 @@ export async function uploadFileToOneDrive(
   const env = getRequiredEnv();
   const cleanFolder = cleanPath(options.folderPath);
   const oneDrivePath = cleanPath(`${cleanFolder}/${fileName}`);
+
+  if (!isAllowedClientPath(cleanFolder)) {
+    throw new Error(`OneDrive uploads are restricted to ${CLIENTS_ROOT_PATH}. Refused path: ${cleanFolder}`);
+  }
 
   if (env.missing.length) {
     return {
@@ -282,6 +293,10 @@ export async function ensureOneDriveFolder(path: string): Promise<OneDriveUpload
   const env = getRequiredEnv();
   const clean = cleanPath(path);
 
+  if (!isAllowedClientPath(clean)) {
+    throw new Error(`OneDrive folders are restricted to ${CLIENTS_ROOT_PATH}. Refused path: ${clean}`);
+  }
+
   if (env.missing.length) {
     return {
       status: "not_configured",
@@ -312,49 +327,5 @@ export async function ensureOneDriveFolder(path: string): Promise<OneDriveUpload
     status: "uploaded",
     webUrl,
     path: clean,
-  };
-}
-
-export async function uploadJsonToOneDrive(
-  fileName: string,
-  payload: unknown,
-  folderPath = getRequiredEnv().automationRequestsPath,
-): Promise<OneDriveUploadResult> {
-  const env = getRequiredEnv();
-  const cleanFolder = cleanPath(folderPath);
-  const oneDrivePath = cleanPath(`${cleanFolder}/${fileName}`);
-
-  if (env.missing.length) {
-    return {
-      status: "not_configured",
-      webUrl: "",
-      path: oneDrivePath,
-      missing: env.missing,
-    };
-  }
-
-  const folder = await ensureOneDriveFolder(cleanFolder);
-  if (folder.status === "not_configured") return folder;
-
-  const accessToken = await getGraphAccessToken(env);
-  const uploadUrl =
-    `https://graph.microsoft.com/v1.0/drives/${encodeURIComponent(env.driveId)}` +
-    `/root:/${encodePath(oneDrivePath)}:/content`;
-  const response = await graphRequest(accessToken, uploadUrl, {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload, null, 2),
-  });
-
-  if (!response.ok) {
-    const details = await response.text();
-    throw new Error(`OneDrive JSON upload failed with status ${response.status}: ${details}`);
-  }
-
-  const data = (await response.json()) as { webUrl?: string };
-  return {
-    status: "uploaded",
-    webUrl: data.webUrl ?? "",
-    path: oneDrivePath,
   };
 }

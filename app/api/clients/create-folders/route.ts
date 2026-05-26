@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import type { BillingClientProfile } from "../../../../lib/billing-storage";
 import {
   ensureOneDriveFolder,
-  getAutomationClientFolderPath,
+  getOneDriveClientFolderPaths,
 } from "../../../../lib/onedrive";
 import { updateBillingClientInductionInSupabase } from "../../../../lib/supabase-billing";
 
@@ -34,21 +34,35 @@ export async function POST(request: Request) {
       );
     }
 
-    const clientFolderPath = getAutomationClientFolderPath({ clientName, legalAidNumber });
+    const folderPaths = getOneDriveClientFolderPaths({ clientName, legalAidNumber });
 
-    const clientFolder = await ensureOneDriveFolder(clientFolderPath);
+    const formsFolder = await ensureOneDriveFolder(folderPaths.formsFolderPath);
+    const billingFolder = await ensureOneDriveFolder(folderPaths.billingFolderPath);
+    const clientFolder = await ensureOneDriveFolder(folderPaths.clientFolderPath);
     if (clientFolder.status === "not_configured") {
       return NextResponse.json(
         { error: "OneDrive is not configured for client folders.", missing: clientFolder.missing },
         { status: 503 },
       );
     }
+    if (formsFolder.status === "not_configured") {
+      return NextResponse.json(
+        { error: "OneDrive is not configured for the Forms and Induction folder.", missing: formsFolder.missing },
+        { status: 503 },
+      );
+    }
+    if (billingFolder.status === "not_configured") {
+      return NextResponse.json(
+        { error: "OneDrive is not configured for the Billing folder.", missing: billingFolder.missing },
+        { status: 503 },
+      );
+    }
 
     const updatedClient: BillingClientProfile = {
       ...client,
-      oneDriveClientFolderPath: clientFolderPath,
-      oneDriveFormsFolderPath: clientFolderPath,
-      oneDriveBillingFolderPath: clientFolderPath,
+      oneDriveClientFolderPath: folderPaths.clientFolderPath,
+      oneDriveFormsFolderPath: folderPaths.formsFolderPath,
+      oneDriveBillingFolderPath: folderPaths.billingFolderPath,
       oneDriveClientFolderUrl: clientFolder.webUrl,
       updatedAt: new Date().toISOString(),
     };

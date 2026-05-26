@@ -3,8 +3,7 @@ import { NextResponse } from "next/server";
 import type { BillingClientProfile } from "../../../../lib/billing-storage";
 import {
   ensureOneDriveFolder,
-  getAutomationClientFolderPath,
-  uploadJsonToOneDrive,
+  getOneDriveClientFolderPaths,
 } from "../../../../lib/onedrive";
 import { updateBillingClientInductionInSupabase } from "../../../../lib/supabase-billing";
 
@@ -15,15 +14,6 @@ type StartInductionRequest = {
   clientEmail?: string;
   applicationType?: BillingClientProfile["applicationType"];
 };
-
-function safeFilePart(value: string): string {
-  return value
-    .replace(/[<>:"\\|?*]+/g, "")
-    .replace(/\s+/g, " ")
-    .trim()
-    .replace(/[^A-Za-z0-9 ._-]+/g, "")
-    .trim() || "client";
-}
 
 export async function POST(request: Request) {
   try {
@@ -62,10 +52,8 @@ export async function POST(request: Request) {
       );
     }
 
-    const baseFolderPath = getAutomationClientFolderPath({ clientName, legalAidNumber });
-    const formsFolderPath = baseFolderPath;
-    const billingFolderPath = baseFolderPath;
-    const createdClientFolder = await ensureOneDriveFolder(baseFolderPath);
+    const folderPaths = getOneDriveClientFolderPaths({ clientName, legalAidNumber });
+    const createdClientFolder = await ensureOneDriveFolder(folderPaths.clientFolderPath);
 
     if (createdClientFolder.status === "not_configured") {
       return NextResponse.json(
@@ -74,79 +62,31 @@ export async function POST(request: Request) {
       );
     }
 
+    const formsFolder = await ensureOneDriveFolder(folderPaths.formsFolderPath);
+    const billingFolder = await ensureOneDriveFolder(folderPaths.billingFolderPath);
+
+    if (formsFolder.status === "not_configured") {
+      return NextResponse.json(
+        { error: "OneDrive is not configured for the Forms and Induction folder.", missing: formsFolder.missing },
+        { status: 503 },
+      );
+    }
+    if (billingFolder.status === "not_configured") {
+      return NextResponse.json(
+        { error: "OneDrive is not configured for the Billing folder.", missing: billingFolder.missing },
+        { status: 503 },
+      );
+    }
+
     const now = new Date().toISOString();
-    const instructionsPayload = {
-      type: "instructions",
-      clientId: client.id,
-      clientName,
-      clientEmail,
-      legalAidNumber,
-      applicationType,
-      fileCreatedTimestamp: now,
-      clientFolderPath: baseFolderPath,
-      documentsGenerated: false,
-      adobeSign: {
-        sendForSignature: true,
-        recipientName: clientName,
-        recipientEmail: clientEmail,
-        packetName: "Induction / Letter of Engagement",
-      },
-      msdRequest: {
-        autoPopulate: true,
-        fileName: "05 MSD Request.docx",
-        sendByAutomation: true,
-      },
-      supportingDocuments: {
-        expectedFolderPath: baseFolderPath,
-        includeGeneratedDocuments: true,
-      },
-    };
-    const instructionsUpload = await uploadJsonToOneDrive(
-      "instructions",
-      instructionsPayload,
-      baseFolderPath,
-    );
-
-    if (instructionsUpload.status === "not_configured") {
-      return NextResponse.json(
-        { error: "OneDrive is not configured for the induction instructions file.", missing: instructionsUpload.missing },
-        { status: 503 },
-      );
-    }
-
-    const requestPayload = {
-      type: "client_induction",
-      clientId: client.id,
-      clientName,
-      legalAidNumber,
-      applicationType,
-      clientEmail,
-      clientFolderPath: baseFolderPath,
-      formsFolderPath,
-      billingFolderPath,
-      instructionsPath: instructionsUpload.path,
-      requestedAt: now,
-    };
-    const requestFileName = `${now.slice(0, 10)}-${Date.now()}-${safeFilePart(clientName)}-induction.json`;
-    const triggerFolderPath = process.env.ONEDRIVE_INDUCTION_TRIGGER_FOLDER ?? "NewGenAutomation";
-    const requestUpload = await uploadJsonToOneDrive(requestFileName, requestPayload, triggerFolderPath);
-
-    if (requestUpload.status === "not_configured") {
-      return NextResponse.json(
-        { error: "OneDrive automation request folder is not configured.", missing: requestUpload.missing },
-        { status: 503 },
-      );
-    }
-
     const updatedClient: BillingClientProfile = {
       ...client,
       clientEmail,
       applicationType,
-      oneDriveClientFolderPath: baseFolderPath,
-      oneDriveFormsFolderPath: formsFolderPath,
-      oneDriveBillingFolderPath: billingFolderPath,
+      oneDriveClientFolderPath: folderPaths.clientFolderPath,
+      oneDriveFormsFolderPath: folderPaths.formsFolderPath,
+      oneDriveBillingFolderPath: folderPaths.billingFolderPath,
       oneDriveClientFolderUrl: createdClientFolder.webUrl,
-      inductionRequestPath: requestUpload.path,
       engagementStatus: "not_started",
       msdRequestStatus: "not_started",
       legalAidApplicationStatus: "pending_signed_forms_and_msd",
@@ -159,17 +99,14 @@ export async function POST(request: Request) {
     return NextResponse.json({
       status: "started",
       client: updatedClient,
-      request: {
-        path: requestUpload.path,
-        webUrl: requestUpload.webUrl,
-      },
-      instructions: {
-        path: instructionsUpload.path,
-        webUrl: instructionsUpload.webUrl,
+      folders: {
+        clientFolderPath: folderPaths.clientFolderPath,
+        formsFolderPath: folderPaths.formsFolderPath,
+        billingFolderPath: folderPaths.billingFolderPath,
       },
       signing: {
         status: "not_configured",
-        message: "The instructions file was created for the Adobe/Power Automate signing flow. No direct Adobe API call was made by this app.",
+        message: "The populated instructions.docx is generated and uploaded by the document bundle step. No Outlook signature email is sent by this app.",
       },
     });
   } catch (error) {

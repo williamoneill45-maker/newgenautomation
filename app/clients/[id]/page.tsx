@@ -137,8 +137,7 @@ export default function ClientDetailPage() {
         status?: string;
         error?: string;
         client?: BillingClientProfile;
-        request?: { path?: string; webUrl?: string };
-        instructions?: { path?: string; webUrl?: string };
+        folders?: { clientFolderPath?: string; formsFolderPath?: string; billingFolderPath?: string };
         signing?: { status?: string; message?: string };
       };
 
@@ -148,8 +147,7 @@ export default function ClientDetailPage() {
 
       if (payload.client) updateStoredClient(payload.client);
       setInductionNotice([
-        `Induction request created: ${payload.request?.path ?? "automation request file"}.`,
-        payload.instructions?.path ? `Instructions file created: ${payload.instructions.path}.` : "",
+        `Induction folders ready: ${payload.folders?.formsFolderPath ?? payload.client?.oneDriveFormsFolderPath ?? "Forms and Induction"}.`,
         payload.signing?.message ?? "",
       ].filter(Boolean).join(" "));
     } catch (error) {

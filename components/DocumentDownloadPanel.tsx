@@ -203,7 +203,6 @@ export default function DocumentDownloadPanel() {
       const inductionPayload = (await inductionResponse.json().catch(() => null)) as {
         error?: string;
         client?: BillingClientProfile;
-        instructions?: { path?: string };
       } | null;
 
       if (!inductionResponse.ok) {
@@ -231,6 +230,7 @@ export default function DocumentDownloadPanel() {
         error?: string;
         oneDrivePath?: string;
         uploadedDocuments?: Array<{ fileName: string }>;
+        inductionDocument?: { fileName?: string; path?: string };
         automationTriggerPath?: string;
       } | null;
 
@@ -240,9 +240,9 @@ export default function DocumentDownloadPanel() {
 
       markMatterDocumentsGenerated(matter);
       setStatus([
-        `Client folder ready: ${documentPayload?.oneDrivePath ?? "OneDrive client folder"}.`,
+        `Forms and Induction folder ready: ${documentPayload?.oneDrivePath ?? "OneDrive client folder"}.`,
         `${documentPayload?.uploadedDocuments?.length ?? 0} generated files uploaded.`,
-        inductionPayload?.instructions?.path ? `Instructions file: ${inductionPayload.instructions.path}.` : "",
+        documentPayload?.inductionDocument?.path ? `Induction DOCX: ${documentPayload.inductionDocument.path}.` : "",
         documentPayload?.automationTriggerPath ? `Automation trigger: ${documentPayload.automationTriggerPath}.` : "",
       ].filter(Boolean).join(" "));
     } catch (error) {
