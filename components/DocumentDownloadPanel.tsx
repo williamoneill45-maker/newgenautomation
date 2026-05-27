@@ -35,6 +35,10 @@ function readBillingClients(): BillingClientProfile[] {
 }
 
 function inferApplicationType(matter: MatterFile): BillingClientProfile["applicationType"] {
+  if (matter.intake.proceedingsType === "Both") return "both";
+  if (matter.intake.proceedingsType === "Parenting Order") return "parenting";
+  if (matter.intake.proceedingsType === "Protection Order") return "protection";
+
   const selectedApplications = matter.intake.selectedApplications.join(" ").toLowerCase();
   const hasParenting = selectedApplications.includes("parenting");
   const hasProtection = selectedApplications.includes("protection");
@@ -167,11 +171,6 @@ export default function DocumentDownloadPanel() {
     const clientEmail = matter.intake.applicant.emailAddress.trim();
     const applicationType = inferApplicationType(matter);
 
-    if (!matter.legalAidNumber.trim()) {
-      setStatus("Add the Legal Aid Number before uploading to OneDrive.");
-      return;
-    }
-
     if (!clientEmail) {
       setStatus("Add the applicant email address before starting induction.");
       return;
@@ -229,15 +228,12 @@ export default function DocumentDownloadPanel() {
           matter,
           uploadToOneDrive: true,
           responseMode: "json",
-          workflowId: `${matter.id}-standard-induction`,
         }),
       });
       const documentPayload = (await documentResponse.json().catch(() => null)) as {
         error?: string;
         oneDrivePath?: string;
         uploadedDocuments?: Array<{ fileName: string }>;
-        inductionDocument?: { fileName?: string; path?: string };
-        instructionFile?: { fileName?: string; path?: string };
       } | null;
 
       if (!documentResponse.ok) {
@@ -248,8 +244,6 @@ export default function DocumentDownloadPanel() {
       setStatus([
         `Forms and Induction folder ready: ${documentPayload?.oneDrivePath ?? "OneDrive client folder"}.`,
         `${documentPayload?.uploadedDocuments?.length ?? 0} generated files uploaded.`,
-        documentPayload?.inductionDocument?.path ? `Induction DOCX: ${documentPayload.inductionDocument.path}.` : "",
-        documentPayload?.instructionFile?.path ? `Instruction handoff: ${documentPayload.instructionFile.path}.` : "",
       ].filter(Boolean).join(" "));
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "OneDrive upload and induction could not be completed.");
@@ -264,7 +258,7 @@ export default function DocumentDownloadPanel() {
         <div>
           <h2 className="text-base font-semibold text-slate-950">Document Bundle</h2>
           <p className="mt-1 text-sm text-slate-600">
-            Save intake first. Download keeps files local; OneDrive upload also starts induction automation.
+            Save intake first. Download keeps files local; OneDrive upload creates the client folder and sends induction.
           </p>
         </div>
         <div className="flex flex-col gap-3 sm:flex-row">
@@ -282,7 +276,7 @@ export default function DocumentDownloadPanel() {
             disabled={isGenerating || isUploading}
             className="h-10 rounded-md bg-slate-950 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400"
           >
-            {isUploading ? "Uploading..." : "Upload to OneDrive + induction"}
+            {isUploading ? "Uploading..." : "Download to OneDrive"}
           </button>
         </div>
       </div>

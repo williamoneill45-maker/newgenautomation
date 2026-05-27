@@ -102,6 +102,13 @@ export async function saveBillingClientToSupabase(
     ["onedrive_client_folder_url", client.oneDriveClientFolderUrl],
     ["induction_request_path", client.inductionRequestPath],
     ["engagement_status", client.engagementStatus],
+    ["adobe_agreement_id", client.adobeAgreementId],
+    ["adobe_agreement_status", client.adobeAgreementStatus],
+    ["adobe_agreement_sent_at", client.adobeAgreementSentAt || null],
+    ["adobe_agreement_name", client.adobeAgreementName],
+    ["adobe_agreement_error", client.adobeAgreementError],
+    ["required_document_one_uploaded", client.requiredDocumentOneUploaded],
+    ["required_document_two_uploaded", client.requiredDocumentTwoUploaded],
     ["msd_request_status", client.msdRequestStatus],
     ["legal_aid_application_status", client.legalAidApplicationStatus],
     ["signed_forms_path", client.signedFormsPath],
@@ -126,6 +133,38 @@ export async function saveBillingClientToSupabase(
 
   if (!response.ok) {
     throw new Error(`Supabase billing client save failed with status ${response.status}.`);
+  }
+
+  return { status: "saved" };
+}
+
+export async function deleteBillingClientFromSupabase(
+  clientId: string,
+): Promise<SupabaseSaveResult> {
+  const supabaseUrl = process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY ?? "";
+  const missing = [
+    supabaseUrl ? "" : "SUPABASE_URL",
+    serviceKey ? "" : "SUPABASE_SERVICE_ROLE_KEY",
+  ].filter(Boolean);
+
+  if (missing.length) {
+    return { status: "not_configured", missing };
+  }
+
+  const response = await fetch(
+    `${supabaseUrl.replace(/\/$/, "")}/rest/v1/billing_clients?id=eq.${encodeURIComponent(clientId)}`,
+    {
+      method: "DELETE",
+      headers: {
+        apikey: serviceKey,
+        Authorization: `Bearer ${serviceKey}`,
+      },
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(`Supabase billing client delete failed with status ${response.status}.`);
   }
 
   return { status: "saved" };
@@ -254,6 +293,13 @@ export async function listBillingClientsFromSupabase(): Promise<
     onedrive_client_folder_url?: string;
     induction_request_path?: string;
     engagement_status?: BillingClientProfile["engagementStatus"];
+    adobe_agreement_id?: string;
+    adobe_agreement_status?: BillingClientProfile["adobeAgreementStatus"];
+    adobe_agreement_sent_at?: string;
+    adobe_agreement_name?: string;
+    adobe_agreement_error?: string;
+    required_document_one_uploaded?: boolean;
+    required_document_two_uploaded?: boolean;
     msd_request_status?: BillingClientProfile["msdRequestStatus"];
     legal_aid_application_status?: BillingClientProfile["legalAidApplicationStatus"];
     signed_forms_path?: string;
@@ -278,6 +324,13 @@ export async function listBillingClientsFromSupabase(): Promise<
       oneDriveClientFolderUrl: row.onedrive_client_folder_url ?? "",
       inductionRequestPath: row.induction_request_path ?? "",
       engagementStatus: row.engagement_status ?? "not_started",
+      adobeAgreementId: row.adobe_agreement_id ?? "",
+      adobeAgreementStatus: row.adobe_agreement_status ?? "not_sent",
+      adobeAgreementSentAt: row.adobe_agreement_sent_at ?? "",
+      adobeAgreementName: row.adobe_agreement_name ?? "",
+      adobeAgreementError: row.adobe_agreement_error ?? "",
+      requiredDocumentOneUploaded: row.required_document_one_uploaded ?? false,
+      requiredDocumentTwoUploaded: row.required_document_two_uploaded ?? false,
       msdRequestStatus: row.msd_request_status ?? "not_started",
       legalAidApplicationStatus: row.legal_aid_application_status ?? "not_started",
       signedFormsPath: row.signed_forms_path ?? "",

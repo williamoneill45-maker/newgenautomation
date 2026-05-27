@@ -191,6 +191,30 @@ export default function IntakeForm() {
     }));
   };
 
+  const setProceedingsType = (value: MatterFile["intake"]["proceedingsType"]) => {
+    const selectedApplications: ApplicationType[] =
+      value === "Both"
+        ? [
+            "Without Notice Application for Protection Order",
+            "Without Notice Application for Parenting Order",
+          ]
+        : value === "Protection Order"
+          ? ["Without Notice Application for Protection Order"]
+          : value === "Parenting Order"
+            ? ["Without Notice Application for Parenting Order"]
+            : [];
+
+    setMatter((current) => ({
+      ...current,
+      updatedAt: new Date().toISOString(),
+      intake: {
+        ...current.intake,
+        proceedingsType: value,
+        selectedApplications,
+      },
+    }));
+  };
+
   const setPartyValue = (
     role: "applicant" | "respondent",
     field: keyof Party,
@@ -338,6 +362,10 @@ export default function IntakeForm() {
   };
 
   function inferApplicationType(): BillingClientProfile["applicationType"] {
+    if (matter.intake.proceedingsType === "Both") return "both";
+    if (matter.intake.proceedingsType === "Parenting Order") return "parenting";
+    if (matter.intake.proceedingsType === "Protection Order") return "protection";
+
     const selectedApplications = matter.intake.selectedApplications.join(" ").toLowerCase();
     const hasParenting = selectedApplications.includes("parenting");
     const hasProtection = selectedApplications.includes("protection");
@@ -405,42 +433,39 @@ export default function IntakeForm() {
           body: JSON.stringify(profile),
         });
 
-        if (profile.legalAidNumber.trim()) {
-          const folderResponse = await fetch("/api/clients/create-folders", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ client: profile }),
-          });
-          const folderPayload = (await folderResponse.json().catch(() => null)) as {
-            error?: string;
-            client?: BillingClientProfile;
-          } | null;
+        const folderResponse = await fetch("/api/clients/create-folders", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ client: profile }),
+        });
+        const folderPayload = (await folderResponse.json().catch(() => null)) as {
+          error?: string;
+          client?: BillingClientProfile;
+          signing?: { status?: string; message?: string };
+        } | null;
 
-          if (!folderResponse.ok) {
-            throw new Error(folderPayload?.error ?? "Unable to create the OneDrive client folder.");
-          }
-
-          if (folderPayload?.client) {
-            window.localStorage.setItem(
-              billingClientsStorageKey,
-              JSON.stringify(nextClients.map((client) =>
-                client.id === folderPayload.client?.id ? folderPayload.client : client,
-              )),
-            );
-            if (!options.quiet) {
-              setSaveStatus(`Intake saved and OneDrive folder created: ${folderPayload.client.oneDriveClientFolderPath}.`);
-            }
-            return folderPayload.client;
-          } else {
-            if (!options.quiet) setSaveStatus("Intake saved.");
-            return profile;
-          }
-        } else {
-          if (!options.quiet) {
-            setSaveStatus("Intake saved. Add the Legal Aid Number before creating the Power Automate client folder.");
-          }
-          return profile;
+        if (!folderResponse.ok) {
+          throw new Error(folderPayload?.error ?? "Unable to create the OneDrive client folder.");
         }
+
+        if (folderPayload?.client) {
+          window.localStorage.setItem(
+            billingClientsStorageKey,
+            JSON.stringify(nextClients.map((client) =>
+              client.id === folderPayload.client?.id ? folderPayload.client : client,
+            )),
+          );
+          if (!options.quiet) {
+            setSaveStatus([
+              `Intake saved and OneDrive folder created: ${folderPayload.client.oneDriveClientFolderPath}.`,
+              folderPayload.signing?.message ?? "",
+            ].filter(Boolean).join(" "));
+          }
+          return folderPayload.client;
+        }
+
+        if (!options.quiet) setSaveStatus("Intake saved.");
+        return profile;
       } catch (error) {
         if (!options.quiet) {
           setSaveStatus(error instanceof Error ? error.message : "Intake saved locally, but remote setup failed.");
@@ -482,12 +507,6 @@ export default function IntakeForm() {
             onChange={(value) => setMatterValue("clientName", value)}
             placeholder="Primary client name"
           />
-          <Field
-            label="Legal Aid Number"
-            value={matter.legalAidNumber}
-            onChange={(value) => setMatterValue("legalAidNumber", value)}
-            placeholder="e.g. LA123456"
-          />
         </div>
       </Card>
 
@@ -496,7 +515,7 @@ export default function IntakeForm() {
           <SelectField
             label="Proceedings Type"
             value={matter.intake.proceedingsType ?? ""}
-            onChange={(value) => setIntakeValue("proceedingsType", value as MatterFile["intake"]["proceedingsType"])}
+            onChange={(value) => setProceedingsType(value as MatterFile["intake"]["proceedingsType"])}
             placeholder="Select proceedings type"
             options={proceedingsTypes}
           />

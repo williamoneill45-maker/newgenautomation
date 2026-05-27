@@ -11,6 +11,17 @@ export type OneDriveUploadResult =
       missing: string[];
     };
 
+export type OneDriveDeleteResult =
+  | {
+      status: "deleted" | "not_found";
+      path: string;
+    }
+  | {
+      status: "not_configured";
+      path: string;
+      missing: string[];
+    };
+
 type OneDriveEnv = {
   accessToken: string;
   tenantId: string;
@@ -328,4 +339,35 @@ export async function ensureOneDriveFolder(path: string): Promise<OneDriveUpload
     webUrl,
     path: clean,
   };
+}
+
+export async function deleteOneDrivePath(path: string): Promise<OneDriveDeleteResult> {
+  const env = getRequiredEnv();
+  const clean = cleanPath(path);
+
+  if (!clean || clean === CLIENTS_ROOT_PATH || !isAllowedClientPath(clean)) {
+    throw new Error(`OneDrive deletes are restricted to client folders under ${CLIENTS_ROOT_PATH}. Refused path: ${clean}`);
+  }
+
+  if (env.missing.length) {
+    return {
+      status: "not_configured",
+      path: clean,
+      missing: env.missing,
+    };
+  }
+
+  const accessToken = await getGraphAccessToken(env);
+  const url =
+    `https://graph.microsoft.com/v1.0/drives/${encodeURIComponent(env.driveId)}` +
+    `/root:/${encodePath(clean)}`;
+  const response = await graphRequest(accessToken, url, { method: "DELETE" });
+
+  if (response.status === 404) return { status: "not_found", path: clean };
+  if (!response.ok) {
+    const details = await response.text();
+    throw new Error(`OneDrive delete failed with status ${response.status}: ${details}`);
+  }
+
+  return { status: "deleted", path: clean };
 }

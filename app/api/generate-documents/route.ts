@@ -4,10 +4,8 @@ import path from "node:path";
 import JSZip from "jszip";
 import { NextResponse } from "next/server";
 
-import { draftDomesticViolenceAffidavit } from "../../../lib/affidavit-drafting";
 import { buildMatterMergeFields } from "../../../lib/document-automation";
 import { mergeDocxTemplate, type DocxMergeReport } from "../../../lib/docx-template";
-import { buildInductionInstructionsDocx, inductionInstructionsFileName } from "../../../lib/induction-instructions-docx";
 import type { MatterFile } from "../../../lib/matter";
 import { getOneDriveClientFolderPaths, uploadFileToOneDrive, type OneDriveUploadResult } from "../../../lib/onedrive";
 import { standardDocxTemplates } from "../../../lib/template-catalog";
@@ -29,11 +27,6 @@ type DocumentValidationReport = {
     title: string;
     report: DocxMergeReport;
   }>;
-  affidavitDraft?: {
-    output: string;
-    source: string;
-    diagnostic: string;
-  };
 };
 
 type GeneratedFile = {
@@ -64,14 +57,6 @@ function safeFileName(value: string): string {
   return value.replace(/[^A-Za-z0-9 ._-]/g, "").trim().replace(/\s+/g, "_") || "Client";
 }
 
-function safeOneDriveFilePart(value: string, fallback: string): string {
-  return value
-    .replace(/[<>:"\\|?*]+/g, "")
-    .replace(/[\r\n]+/g, " ")
-    .replace(/\s+/g, " ")
-    .trim() || fallback;
-}
-
 function getApplicationType(matter: MatterFile): string {
   return matter.intake.selectedApplications.join(", ");
 }
@@ -94,17 +79,9 @@ export async function POST(request: Request) {
   const clientName = body.matter.clientName || body.matter.intake.applicant.fullName;
   const legalAidNumber = body.matter.legalAidNumber.trim();
   const clientEmail = body.matter.intake.applicant.emailAddress.trim();
-  const clientPhone = body.matter.intake.applicant.mobilePhone.trim();
-  const clientDateOfBirth = body.matter.intake.applicant.dateOfBirth.trim();
-  const clientAddress = body.matter.intake.applicant.homeAddress.trim();
-  const proceedingsType = body.matter.intake.proceedingsType || "other";
   const applicationType = getApplicationType(body.matter);
   const clientFolderPaths = getOneDriveClientFolderPaths({ clientName, legalAidNumber });
   const generatedAt = new Date().toISOString();
-  const workflowId = body.workflowId?.trim() || `${body.matter.id}-standard-induction`;
-  const adobeAgreementName = `Information to Client - ${clientName}`;
-  const instructionFileName =
-    `Instruction - ${safeOneDriveFilePart(proceedingsType, "other")} - ${safeOneDriveFilePart(clientName, "Client")}.json`;
   const validationReport: DocumentValidationReport = {
     generatedAt,
     matterId: body.matter.id,
@@ -118,25 +95,6 @@ export async function POST(request: Request) {
     skippedDocuments: [],
     documents: [],
   };
-
-  const instructionsDocx = await buildInductionInstructionsDocx({
-    clientName,
-    clientEmail,
-    legalAidNumber,
-    applicationType,
-    fileCreatedTimestamp: generatedAt,
-    clientFolderPath: clientFolderPaths.clientFolderPath,
-    formsFolderPath: clientFolderPaths.formsFolderPath,
-    billingFolderPath: clientFolderPaths.billingFolderPath,
-    documentsGenerated: true,
-    msdRequestFileName: "05 MSD Request.docx",
-  });
-  bundle.file(inductionInstructionsFileName, instructionsDocx);
-  generatedFiles.push({
-    fileName: inductionInstructionsFileName,
-    buffer: instructionsDocx,
-    contentType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-  });
 
   for (const templateDefinition of standardDocxTemplates) {
     if (!(await templateExists(templateDefinition.sourceFileName))) {
@@ -201,26 +159,6 @@ export async function POST(request: Request) {
     });
   }
 
-  const hasAffidavitNotes =
-    body.matter.intake.domesticViolenceNotes.history.trim() ||
-    body.matter.intake.domesticViolenceNotes.recentEvents.trim();
-
-  if (hasAffidavitNotes) {
-    const affidavit = await draftDomesticViolenceAffidavit(body.matter);
-    const outputName = "07 Domestic Violence Affidavit Draft.txt";
-    bundle.file(outputName, affidavit.draft);
-    generatedFiles.push({
-      fileName: outputName,
-      buffer: new TextEncoder().encode(affidavit.draft).buffer,
-      contentType: "text/plain; charset=utf-8",
-    });
-    validationReport.affidavitDraft = {
-      output: outputName,
-      source: affidavit.source,
-      diagnostic: affidavit.diagnostic,
-    };
-  }
-
   if (validationReport.documents.length === 0) {
     return NextResponse.json(
       {
@@ -231,9 +169,6 @@ export async function POST(request: Request) {
     );
   }
 
-  const validationReportText = JSON.stringify(validationReport, null, 2);
-  bundle.file("template-validation-report.json", validationReportText);
-
   let oneDriveStatus = "not_configured";
   let oneDrivePath = "";
   let oneDriveError = "";
@@ -242,15 +177,12 @@ export async function POST(request: Request) {
   if (body.uploadToOneDrive && !clientName.trim()) {
     oneDriveStatus = "failed";
     oneDriveError = "Client name is required before generated forms can be uploaded to OneDrive.";
-  } else if (body.uploadToOneDrive && !legalAidNumber) {
-    oneDriveStatus = "failed";
-    oneDriveError = "Legal Aid Number is required before generated forms can be uploaded to Forms and Induction.";
   } else if (body.uploadToOneDrive && !clientEmail) {
     oneDriveStatus = "failed";
-    oneDriveError = "Applicant email is required before instructions.docx can be uploaded for induction.";
+    oneDriveError = "Applicant email is required before forms can be uploaded for induction.";
   } else if (body.uploadToOneDrive && !applicationType) {
     oneDriveStatus = "failed";
-    oneDriveError = "At least one application type is required before instructions.docx can be uploaded for induction.";
+    oneDriveError = "At least one application type is required before forms can be uploaded for induction.";
   } else if (body.uploadToOneDrive) {
     oneDrivePath = clientFolderPaths.formsFolderPath;
 
@@ -270,30 +202,9 @@ export async function POST(request: Request) {
           });
         }
       }
-      const instructionPayload = {
-        workflowId,
-        clientName,
-        legalAidNumber,
-        clientEmail,
-        clientPhone,
-        clientDateOfBirth,
-        clientAddress,
-        clientFolderPath: clientFolderPaths.clientFolderPath,
-        packageType: "standard_induction",
-        proceedingsType,
-        adobeAgreementName,
-      };
-      uploads.push(await uploadFileToOneDrive(
-        instructionFileName,
-        new TextEncoder().encode(JSON.stringify(instructionPayload, null, 2)).buffer,
-        {
-          folderPath: clientFolderPaths.formsFolderPath,
-          contentType: "application/json; charset=utf-8",
-        },
-      ));
       oneDriveStatus = uploads.every((upload) => upload.status === "uploaded") ? "uploaded" : "not_configured";
       if (oneDriveStatus === "uploaded") {
-        console.info(`Instruction handoff uploaded: ${clientFolderPaths.formsFolderPath}/${instructionFileName}`);
+        console.info(`Generated intake documents uploaded: ${clientFolderPaths.formsFolderPath}`);
       }
     } catch (error) {
       console.error("Generated intake OneDrive upload failed", error);
@@ -319,14 +230,6 @@ export async function POST(request: Request) {
       oneDriveStatus,
       oneDrivePath,
       uploadedDocuments,
-      inductionDocument: {
-        fileName: inductionInstructionsFileName,
-        path: oneDrivePath ? `${oneDrivePath}/${inductionInstructionsFileName}` : "",
-      },
-      instructionFile: {
-        fileName: instructionFileName,
-        path: oneDrivePath ? `${oneDrivePath}/${instructionFileName}` : "",
-      },
     });
   }
 

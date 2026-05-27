@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import type { BillingClientProfile } from "../../../../lib/billing-storage";
+import { sendClientInductionAgreement } from "../../../../lib/adobeSign";
 import {
   ensureOneDriveFolder,
   getOneDriveClientFolderPaths,
@@ -23,13 +24,6 @@ export async function POST(request: Request) {
     if (!client?.id || !clientName) {
       return NextResponse.json(
         { error: "Client id and name are required before OneDrive folders can be created." },
-        { status: 400 },
-      );
-    }
-
-    if (!legalAidNumber) {
-      return NextResponse.json(
-        { error: "Legal Aid Number is required before the Power Automate client folder can be created." },
         { status: 400 },
       );
     }
@@ -58,20 +52,74 @@ export async function POST(request: Request) {
       );
     }
 
+    const now = new Date().toISOString();
+    let adobeUpdates: Partial<BillingClientProfile> = {
+      adobeAgreementStatus: client.adobeAgreementStatus ?? "not_sent",
+    };
+
+    if (!client.adobeAgreementId) {
+      try {
+        const agreement = await sendClientInductionAgreement({
+          clientName,
+          clientEmail: client.clientEmail,
+          applicationType: client.applicationType,
+        });
+        adobeUpdates = {
+          adobeAgreementId: agreement.agreementId,
+          adobeAgreementStatus: agreement.status,
+          adobeAgreementSentAt: agreement.sentAt,
+          adobeAgreementName: agreement.agreementName,
+          adobeAgreementError: "",
+          engagementStatus: "sent",
+        };
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Adobe induction agreement could not be sent.";
+        console.error("Adobe induction agreement send failed after folder creation", {
+          clientId: client.id,
+          clientName,
+          reason: message,
+        });
+        adobeUpdates = {
+          adobeAgreementStatus: "error",
+          adobeAgreementName: `Information to Client - ${clientName}`,
+          adobeAgreementError: message,
+          engagementStatus: "failed",
+        };
+      }
+    }
+
     const updatedClient: BillingClientProfile = {
       ...client,
       oneDriveClientFolderPath: folderPaths.clientFolderPath,
       oneDriveFormsFolderPath: folderPaths.formsFolderPath,
       oneDriveBillingFolderPath: folderPaths.billingFolderPath,
       oneDriveClientFolderUrl: clientFolder.webUrl,
-      updatedAt: new Date().toISOString(),
+      legalAidApplicationStatus: client.legalAidApplicationStatus ?? "pending_signed_forms_and_msd",
+      requiredDocumentOneUploaded: client.requiredDocumentOneUploaded ?? false,
+      requiredDocumentTwoUploaded: client.requiredDocumentTwoUploaded ?? false,
+      ...adobeUpdates,
+      updatedAt: now,
     };
 
-    await updateBillingClientInductionInSupabase(updatedClient);
+    try {
+      await updateBillingClientInductionInSupabase(updatedClient);
+    } catch (error) {
+      console.error("Client folder metadata save failed after OneDrive/Adobe setup", {
+        clientId: updatedClient.id,
+        reason: error instanceof Error ? error.message : "Unknown Supabase save error",
+      });
+    }
 
     return NextResponse.json({
       status: "created",
       client: updatedClient,
+      signing: {
+        status: updatedClient.adobeAgreementStatus,
+        agreementId: updatedClient.adobeAgreementId,
+        message: updatedClient.adobeAgreementStatus === "sent"
+          ? "Adobe induction agreement sent to the client."
+          : updatedClient.adobeAgreementError || "Adobe induction agreement was not sent.",
+      },
     });
   } catch (error) {
     console.error("Client OneDrive folder creation failed", error);

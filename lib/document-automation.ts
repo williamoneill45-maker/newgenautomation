@@ -1,4 +1,5 @@
 import type {
+  Child,
   DocumentType,
   MatterFile,
   PlaceholderKey,
@@ -153,12 +154,62 @@ function getEthnicity(ethnicity: string, otherEthnicity?: string): string {
   return ethnicity === "Other" && otherEthnicity?.trim() ? otherEthnicity.trim() : ethnicity;
 }
 
+function normalizeEthnicity(value: string): string {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
 function isEthnicity(value: string, expected: string): string {
-  return value === expected ? "☒" : "☐";
+  const normalizedValue = normalizeEthnicity(value);
+  const expectedAliases: Record<string, string[]> = {
+    "New Zealand European": ["new zealand european", "nz european", "european"],
+    Maori: ["maori"],
+    "Pacific Peoples": ["pacific peoples", "pacific", "pasifika"],
+    Asian: ["asian"],
+    "Middle Eastern / Latin American / African": [
+      "middle eastern latin american african",
+      "middle eastern latin american or african",
+      "melaa",
+    ],
+    Other: ["other"],
+  };
+
+  return expectedAliases[expected]?.includes(normalizedValue) ? "☒" : "☐";
 }
 
 function joinPresent(values: Array<string | undefined>): string {
   return values.filter((value) => value?.trim()).join("\n");
+}
+
+function buildChildMergeFields(child: Child | undefined, index: 1 | 2 | 3 | 4): RawMergeFields {
+  const prefix = `child_${index}`;
+  const childAge = child?.age || calculateAge(child?.dateOfBirth ?? "");
+  const childEthnicity = child ? getEthnicity(child.ethnicity, child.otherEthnicity) : "";
+  const childName = child?.fullName ?? "";
+  const nickname = getQuotedFirstName(childName);
+
+  return {
+    [`${prefix}_age`]: childAge,
+    [`${prefix}_dob`]: formatInputDateForForms(child?.dateOfBirth ?? ""),
+    [`${prefix}_ethnicity`]: childEthnicity,
+    [`${prefix}_ethnicity_nz_european`]: isEthnicity(child?.ethnicity ?? "", "New Zealand European"),
+    [`${prefix}_ethnicity_maori`]: isEthnicity(child?.ethnicity ?? "", "Maori"),
+    [`${prefix}_ethnicity_pacific`]: isEthnicity(child?.ethnicity ?? "", "Pacific Peoples"),
+    [`${prefix}_ethnicity_asian`]: isEthnicity(child?.ethnicity ?? "", "Asian"),
+    [`${prefix}_ethnicity_melaa`]: isEthnicity(child?.ethnicity ?? "", "Middle Eastern / Latin American / African"),
+    [`${prefix}_ethnicity_other`]: isEthnicity(child?.ethnicity ?? "", "Other"),
+    [`${prefix}_gender`]: child?.gender,
+    [`${prefix}_living_with`]: child?.livingWithName,
+    [`${prefix}_name`]: childName,
+    [`${prefix}_nickname`]: nickname,
+    [`(“${prefix}_nickname”)`]: nickname,
+    [`${prefix}_relationship_to_applicant`]: child?.applicantRelationshipToChild,
+    [`${prefix}_relationship_to_respondent`]: child?.respondentRelationshipToChild,
+  };
 }
 
 export function buildMatterMergeFields(matter: MatterFile): MergeFields {
@@ -166,15 +217,12 @@ export function buildMatterMergeFields(matter: MatterFile): MergeFields {
   const firstChild = intake.children[0];
   const secondChild = intake.children[1];
   const thirdChild = intake.children[2];
+  const fourthChild = intake.children[3];
   const today = formatDateForForms();
   const applicantAddress = intake.applicant.isAddressConfidential
     ? "Confidential Address"
     : intake.applicant.homeAddress;
   const childAge = firstChild?.age || calculateAge(firstChild?.dateOfBirth ?? "");
-  const secondChildAge =
-    secondChild?.age || calculateAge(secondChild?.dateOfBirth ?? "");
-  const thirdChildAge =
-    thirdChild?.age || calculateAge(thirdChild?.dateOfBirth ?? "");
   const applicantAge = calculateAge(intake.applicant.dateOfBirth);
   const respondentAge = calculateAge(intake.respondent.dateOfBirth);
   const otherApplicationDetails = intake.otherApplicationDetails?.trim() ?? "";
@@ -185,9 +233,6 @@ export function buildMatterMergeFields(matter: MatterFile): MergeFields {
   );
   const applicantEthnicity = getEthnicity(intake.applicant.ethnicity, intake.applicant.otherEthnicity);
   const respondentEthnicity = getEthnicity(intake.respondent.ethnicity, intake.respondent.otherEthnicity);
-  const child1Ethnicity = firstChild ? getEthnicity(firstChild.ethnicity, firstChild.otherEthnicity) : "";
-  const child2Ethnicity = secondChild ? getEthnicity(secondChild.ethnicity, secondChild.otherEthnicity) : "";
-  const child3Ethnicity = thirdChild ? getEthnicity(thirdChild.ethnicity, thirdChild.otherEthnicity) : "";
 
   return normalizeMergeFields({
     APPLICANT_NAME: intake.applicant.fullName,
@@ -220,65 +265,10 @@ export function buildMatterMergeFields(matter: MatterFile): MergeFields {
     application_type_1: selectedApplications[0],
     application_type_2: selectedApplications[1],
     application_type_3: selectedApplications[2],
-    child_1_age: childAge,
-    child_1_dob: formatInputDateForForms(firstChild?.dateOfBirth ?? ""),
-    child_1_ethnicity: child1Ethnicity,
-    child_1_ethnicity_nz_european: isEthnicity(firstChild?.ethnicity ?? "", "New Zealand European"),
-    child_1_ethnicity_maori: isEthnicity(firstChild?.ethnicity ?? "", "Maori"),
-    child_1_ethnicity_pacific: isEthnicity(firstChild?.ethnicity ?? "", "Pacific Peoples"),
-    child_1_ethnicity_asian: isEthnicity(firstChild?.ethnicity ?? "", "Asian"),
-    child_1_ethnicity_melaa: isEthnicity(firstChild?.ethnicity ?? "", "Middle Eastern / Latin American / African"),
-    child_1_ethnicity_other: isEthnicity(firstChild?.ethnicity ?? "", "Other"),
-    child_1_gender: firstChild?.gender,
-    child_1_living_with: firstChild?.livingWithName,
-    child_1_name: firstChild?.fullName,
-    child_1_nickname: getQuotedFirstName(firstChild?.fullName ?? ""),
-    "(“child_1_nickname”)": getQuotedFirstName(firstChild?.fullName ?? ""),
-    child_1_relationship_to_applicant: firstChild?.applicantRelationshipToChild,
-    child_1_relationship_to_respondent: firstChild?.respondentRelationshipToChild,
-    child_2_age: joinPresent([secondChildAge, thirdChildAge]),
-    child_2_dob: joinPresent([
-      formatInputDateForForms(secondChild?.dateOfBirth ?? ""),
-      formatInputDateForForms(thirdChild?.dateOfBirth ?? ""),
-    ]),
-    child_2_ethnicity: joinPresent([child2Ethnicity, child3Ethnicity]),
-    child_2_ethnicity_nz_european: isEthnicity(secondChild?.ethnicity ?? "", "New Zealand European"),
-    child_2_ethnicity_maori: isEthnicity(secondChild?.ethnicity ?? "", "Maori"),
-    child_2_ethnicity_pacific: isEthnicity(secondChild?.ethnicity ?? "", "Pacific Peoples"),
-    child_2_ethnicity_asian: isEthnicity(secondChild?.ethnicity ?? "", "Asian"),
-    child_2_ethnicity_melaa: isEthnicity(secondChild?.ethnicity ?? "", "Middle Eastern / Latin American / African"),
-    child_2_ethnicity_other: isEthnicity(secondChild?.ethnicity ?? "", "Other"),
-    child_2_gender: joinPresent([secondChild?.gender, thirdChild?.gender]),
-    child_2_living_with: joinPresent([secondChild?.livingWithName, thirdChild?.livingWithName]),
-    child_2_name: joinPresent([secondChild?.fullName, thirdChild?.fullName]),
-    child_2_nickname: joinPresent([
-      getQuotedFirstName(secondChild?.fullName ?? ""),
-      getQuotedFirstName(thirdChild?.fullName ?? ""),
-    ]),
-    "(“child_2_nickname”)": joinPresent([
-      getQuotedFirstName(secondChild?.fullName ?? ""),
-      getQuotedFirstName(thirdChild?.fullName ?? ""),
-    ]),
-    child_2_relationship_to_applicant:
-      joinPresent([secondChild?.applicantRelationshipToChild, thirdChild?.applicantRelationshipToChild]),
-    child_2_relationship_to_respondent:
-      joinPresent([secondChild?.respondentRelationshipToChild, thirdChild?.respondentRelationshipToChild]),
-    child_3_age: thirdChildAge,
-    child_3_dob: formatInputDateForForms(thirdChild?.dateOfBirth ?? ""),
-    child_3_ethnicity: child3Ethnicity,
-    child_3_ethnicity_nz_european: isEthnicity(thirdChild?.ethnicity ?? "", "New Zealand European"),
-    child_3_ethnicity_maori: isEthnicity(thirdChild?.ethnicity ?? "", "Maori"),
-    child_3_ethnicity_pacific: isEthnicity(thirdChild?.ethnicity ?? "", "Pacific Peoples"),
-    child_3_ethnicity_asian: isEthnicity(thirdChild?.ethnicity ?? "", "Asian"),
-    child_3_ethnicity_melaa: isEthnicity(thirdChild?.ethnicity ?? "", "Middle Eastern / Latin American / African"),
-    child_3_ethnicity_other: isEthnicity(thirdChild?.ethnicity ?? "", "Other"),
-    child_3_gender: thirdChild?.gender,
-    child_3_living_with: thirdChild?.livingWithName,
-    child_3_name: thirdChild?.fullName,
-    child_3_nickname: getQuotedFirstName(thirdChild?.fullName ?? ""),
-    "(“child_3_nickname”)": getQuotedFirstName(thirdChild?.fullName ?? ""),
-    child_3_relationship_to_applicant: thirdChild?.applicantRelationshipToChild,
-    child_3_relationship_to_respondent: thirdChild?.respondentRelationshipToChild,
+    ...buildChildMergeFields(firstChild, 1),
+    ...buildChildMergeFields(secondChild, 2),
+    ...buildChildMergeFields(thirdChild, 3),
+    ...buildChildMergeFields(fourthChild, 4),
     court_location: intake.courtLocation,
     date_today: today,
     "date_today ": today,
@@ -309,7 +299,7 @@ export function buildMatterMergeFields(matter: MatterFile): MergeFields {
       intake.respondent.relationshipToApplicant,
     respondent_work_address: intake.respondent.workAddress,
     respondents_relationship_to_children:
-      firstChild?.respondentRelationshipToChild ?? "",
+      joinPresent(intake.children.slice(0, 4).map((child) => child.respondentRelationshipToChild)),
   });
 }
 

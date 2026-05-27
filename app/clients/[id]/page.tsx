@@ -34,6 +34,13 @@ function mergeById<T extends { id: string }>(localItems: T[], remoteItems: T[]):
   return [...merged.values()];
 }
 
+function getAdobeStatusLabel(client: BillingClientProfile): string {
+  if (client.adobeAgreementStatus === "signed" || client.engagementStatus === "completed") return "Signed";
+  if (client.adobeAgreementStatus === "sent" || client.engagementStatus === "sent") return "Sent";
+  if (client.adobeAgreementStatus === "error" || client.engagementStatus === "failed") return "Error";
+  return "Not sent";
+}
+
 export default function ClientDetailPage() {
   const params = useParams<{ id: string }>();
   const [clients, setClients] = useState<BillingClientProfile[]>([]);
@@ -99,6 +106,7 @@ export default function ClientDetailPage() {
     legalAidRecords.filter((record) => record.clientName.toLowerCase() === normalizedName),
   [legalAidRecords, normalizedName]);
   const totalBilled = clientInvoices.reduce((sum, invoice) => sum + invoice.invoiceTotal, 0);
+  const hasRequiredUploads = Boolean(client?.requiredDocumentOneUploaded && client?.requiredDocumentTwoUploaded);
 
   useEffect(() => {
     if (!client) return;
@@ -230,10 +238,19 @@ export default function ClientDetailPage() {
             </div>
           </div>
           <div className="mt-4 grid gap-3 text-sm text-slate-700 md:grid-cols-3">
-            <StatusLine label="Engagement" value={client.engagementStatus ?? "not_started"} />
+            <StatusLine label="Adobe form" value={getAdobeStatusLabel(client)} />
             <StatusLine label="MSD request" value={client.msdRequestStatus ?? "not_started"} />
             <StatusLine label="Legal Aid" value={client.legalAidApplicationStatus ?? "not_started"} />
           </div>
+          {client.adobeAgreementStatus === "sent" || client.engagementStatus === "sent" ? (
+            <p className="mt-3 text-sm font-medium text-sky-800">Waiting for client to complete induction form.</p>
+          ) : null}
+          {client.adobeAgreementStatus === "error" && client.adobeAgreementError ? (
+            <p className="mt-3 text-sm font-medium text-red-700">Adobe sending error: {client.adobeAgreementError}</p>
+          ) : null}
+          {client.adobeAgreementId ? (
+            <p className="mt-3 text-xs text-slate-500">Adobe agreement ID: {client.adobeAgreementId}</p>
+          ) : null}
           {client.oneDriveClientFolderPath ? (
             <p className="mt-3 text-sm text-slate-600">
               OneDrive folder: {client.oneDriveClientFolderPath}
@@ -241,6 +258,29 @@ export default function ClientDetailPage() {
           ) : null}
           {inductionNotice ? <p className="mt-3 text-sm font-medium text-emerald-700">{inductionNotice}</p> : null}
           {inductionError ? <p className="mt-3 text-sm font-medium text-red-700">{inductionError}</p> : null}
+        </Panel>
+
+        <Panel title="Legal Aid affidavit readiness" className="mt-6">
+          <p className="text-sm font-medium text-amber-800">
+            To create the Legal Aid affidavit, the client must first upload the required supporting documents.
+          </p>
+          <div className="mt-4 grid gap-3 md:grid-cols-2">
+            <StatusLine
+              label="Required document one"
+              value={client.requiredDocumentOneUploaded ? "uploaded" : "required"}
+            />
+            <StatusLine
+              label="Required document two"
+              value={client.requiredDocumentTwoUploaded ? "uploaded" : "required"}
+            />
+          </div>
+          <button
+            type="button"
+            disabled={!hasRequiredUploads}
+            className="mt-4 inline-flex h-10 items-center justify-center rounded-md bg-slate-950 px-4 text-sm font-semibold text-white shadow-sm transition disabled:cursor-not-allowed disabled:bg-slate-300"
+          >
+            {hasRequiredUploads ? "Legal Aid affidavit available" : "Legal Aid affidavit unavailable"}
+          </button>
         </Panel>
 
         <section className="mt-6 grid gap-6 lg:grid-cols-2">

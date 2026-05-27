@@ -13,6 +13,13 @@ export type BillingClientProfile = {
   oneDriveClientFolderUrl?: string;
   inductionRequestPath?: string;
   engagementStatus?: "not_started" | "sent" | "completed" | "failed";
+  adobeAgreementId?: string;
+  adobeAgreementStatus?: "not_sent" | "sent" | "signed" | "error";
+  adobeAgreementSentAt?: string;
+  adobeAgreementName?: string;
+  adobeAgreementError?: string;
+  requiredDocumentOneUploaded?: boolean;
+  requiredDocumentTwoUploaded?: boolean;
   msdRequestStatus?: "not_started" | "sent" | "received" | "failed";
   legalAidApplicationStatus?: "not_started" | "pending_signed_forms_and_msd" | "ready_to_generate" | "generated";
   signedFormsPath?: string;

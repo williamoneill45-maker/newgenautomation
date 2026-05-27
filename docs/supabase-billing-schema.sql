@@ -16,6 +16,13 @@ create table if not exists public.billing_clients (
   onedrive_client_folder_url text not null default '',
   induction_request_path text not null default '',
   engagement_status text not null default 'not_started',
+  adobe_agreement_id text not null default '',
+  adobe_agreement_status text not null default 'not_sent',
+  adobe_agreement_sent_at timestamptz,
+  adobe_agreement_name text not null default '',
+  adobe_agreement_error text not null default '',
+  required_document_one_uploaded boolean not null default false,
+  required_document_two_uploaded boolean not null default false,
   msd_request_status text not null default 'not_started',
   legal_aid_application_status text not null default 'not_started',
   signed_forms_path text not null default '',
@@ -24,6 +31,14 @@ create table if not exists public.billing_clients (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+alter table public.billing_clients add column if not exists adobe_agreement_id text not null default '';
+alter table public.billing_clients add column if not exists adobe_agreement_status text not null default 'not_sent';
+alter table public.billing_clients add column if not exists adobe_agreement_sent_at timestamptz;
+alter table public.billing_clients add column if not exists adobe_agreement_name text not null default '';
+alter table public.billing_clients add column if not exists adobe_agreement_error text not null default '';
+alter table public.billing_clients add column if not exists required_document_one_uploaded boolean not null default false;
+alter table public.billing_clients add column if not exists required_document_two_uploaded boolean not null default false;
 
 alter table public.billing_clients enable row level security;
 
