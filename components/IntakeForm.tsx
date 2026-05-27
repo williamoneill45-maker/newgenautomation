@@ -7,6 +7,8 @@ import {
   createEmptyChild,
   createEmptyMatter,
   ethnicities,
+  normalizeProceedingsType,
+  proceedingsTypeLabels,
   proceedingsTypes,
   type ApplicationType,
   type Child,
@@ -118,12 +120,14 @@ function SelectField({
   onChange,
   placeholder,
   options,
+  optionLabels = {},
 }: {
   label: string;
   value: string;
   onChange: (value: string) => void;
   placeholder: string;
   options: readonly string[];
+  optionLabels?: Record<string, string>;
 }) {
   return (
     <label className="block">
@@ -140,7 +144,7 @@ function SelectField({
         </option>
         {options.map((option) => (
           <option key={option} value={option}>
-            {option}
+            {optionLabels[option] ?? option}
           </option>
         ))}
       </select>
@@ -192,15 +196,16 @@ export default function IntakeForm() {
   };
 
   const setProceedingsType = (value: MatterFile["intake"]["proceedingsType"]) => {
+    const proceedingsType = normalizeProceedingsType(value);
     const selectedApplications: ApplicationType[] =
-      value === "Both"
+      proceedingsType === "both"
         ? [
             "Without Notice Application for Protection Order",
             "Without Notice Application for Parenting Order",
           ]
-        : value === "Protection Order"
+        : proceedingsType === "protection_order"
           ? ["Without Notice Application for Protection Order"]
-          : value === "Parenting Order"
+          : proceedingsType === "care_of_children"
             ? ["Without Notice Application for Parenting Order"]
             : [];
 
@@ -209,7 +214,7 @@ export default function IntakeForm() {
       updatedAt: new Date().toISOString(),
       intake: {
         ...current.intake,
-        proceedingsType: value,
+        proceedingsType,
         selectedApplications,
       },
     }));
@@ -362,9 +367,10 @@ export default function IntakeForm() {
   };
 
   function inferApplicationType(): BillingClientProfile["applicationType"] {
-    if (matter.intake.proceedingsType === "Both") return "both";
-    if (matter.intake.proceedingsType === "Parenting Order") return "parenting";
-    if (matter.intake.proceedingsType === "Protection Order") return "protection";
+    const proceedingsType = normalizeProceedingsType(matter.intake.proceedingsType);
+    if (proceedingsType === "both") return "both";
+    if (proceedingsType === "care_of_children") return "parenting";
+    if (proceedingsType === "protection_order") return "protection";
 
     const selectedApplications = matter.intake.selectedApplications.join(" ").toLowerCase();
     const hasParenting = selectedApplications.includes("parenting");
@@ -514,10 +520,11 @@ export default function IntakeForm() {
         <div className="mb-5 grid gap-5 md:grid-cols-2">
           <SelectField
             label="Proceedings Type"
-            value={matter.intake.proceedingsType ?? ""}
+            value={normalizeProceedingsType(matter.intake.proceedingsType) ?? ""}
             onChange={(value) => setProceedingsType(value as MatterFile["intake"]["proceedingsType"])}
             placeholder="Select proceedings type"
             options={proceedingsTypes}
+            optionLabels={proceedingsTypeLabels}
           />
         </div>
         <div className="grid gap-3 md:grid-cols-2">

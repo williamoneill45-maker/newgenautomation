@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import type { MatterFile } from "../lib/matter";
+import { normalizeProceedingsType, type MatterFile } from "../lib/matter";
 import { legalAidMatterStorageKey, recentMattersStorageKey } from "../lib/legal-aid";
 import {
   billingClientsStorageKey,
@@ -35,9 +35,10 @@ function readBillingClients(): BillingClientProfile[] {
 }
 
 function inferApplicationType(matter: MatterFile): BillingClientProfile["applicationType"] {
-  if (matter.intake.proceedingsType === "Both") return "both";
-  if (matter.intake.proceedingsType === "Parenting Order") return "parenting";
-  if (matter.intake.proceedingsType === "Protection Order") return "protection";
+  const proceedingsType = normalizeProceedingsType(matter.intake.proceedingsType);
+  if (proceedingsType === "both") return "both";
+  if (proceedingsType === "care_of_children") return "parenting";
+  if (proceedingsType === "protection_order") return "protection";
 
   const selectedApplications = matter.intake.selectedApplications.join(" ").toLowerCase();
   const hasParenting = selectedApplications.includes("parenting");

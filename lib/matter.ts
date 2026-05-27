@@ -17,12 +17,30 @@ export const courts = [
 export type CourtLocation = (typeof courts)[number] | "";
 
 export const proceedingsTypes = [
-  "Protection Order",
-  "Parenting Order",
-  "Both",
+  "protection_order",
+  "care_of_children",
+  "both",
 ] as const;
 
 export type ProceedingsType = (typeof proceedingsTypes)[number] | "";
+
+export const proceedingsTypeLabels: Record<Exclude<ProceedingsType, "">, string> = {
+  protection_order: "Protection Order",
+  care_of_children: "Parenting Order",
+  both: "Both",
+};
+
+export function normalizeProceedingsType(value: string): ProceedingsType {
+  const normalized = value.trim().toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "");
+
+  if (normalized === "protection_order" || normalized === "protection") return "protection_order";
+  if (normalized === "care_of_children" || normalized === "parenting_order" || normalized === "parenting") {
+    return "care_of_children";
+  }
+  if (normalized === "both" || normalized === "protection_and_parenting") return "both";
+
+  return "";
+}
 
 export const ethnicities = [
   "New Zealand European",
