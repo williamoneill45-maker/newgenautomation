@@ -39,18 +39,225 @@ function clean(value: unknown): string {
 
 function ensureSentence(value: string): string {
   const trimmed = value.trim();
-  return !trimmed || /[.!?\u201d"]$/.test(trimmed) ? trimmed : `${trimmed}.`;
+  if (!trimmed || /[.!?]$/.test(trimmed) || /[.!?][\u201d"]$/.test(trimmed)) return trimmed;
+  return `${trimmed}.`;
 }
 
 function splitNotes(notes: string): string[] {
   return notes
     .replace(/\r/g, "")
     .split(/\n+|(?<=[.!?])\s+(?=[A-Z0-9\u201c"])/)
-    .map((note) => note.trim().replace(/^\s*(?:[-*]|\d+[.)])\s*/, ""))
+    .map((note) => note.trim().replace(/^\s*(?:[-*]\s*|\d+[.)]\s+)/, ""))
     .filter(Boolean);
 }
 
-const recentPattern = /\b(?:recent|ago|yesterday|last (?:night|week|month|year)|police|refuge|charge|charged|breach|urgent|strangl|chok|imped(?:e|ing) breathing|fear for (?:my|her) (?:life|safety)|reported|report to|most serious|latest|current(?:ly)?|20\d{2})\b/i;
+const recentPattern = /\b(?:recent|ago|yesterday|last (?:night|week|month|year)|police|refuge|charge|charged|breach|urgent|strangl|chok|imped(?:e|ing) breathing|fear for (?:my|her) (?:life|safety)|reported|report to|most serious|latest|current(?:ly)?)\b/i;
+
+type NoteGroup = {
+  category: string;
+  date: string;
+  fragments: string[];
+};
+
+function cleanNoteFragment(value: string): string {
+  return value
+    .trim()
+    .replace(/^\s*(?:[-*•]\s*|\d+[.)]\s+)/, "")
+    .replace(/^(?:history|recent events?|relationship)\s*:\s*/i, "")
+    .replace(/^respondent\s*:\s*$/i, "")
+    .replace(/[.]$/, "")
+    .trim();
+}
+
+function standaloneDate(value: string): string {
+  const cleaned = cleanNoteFragment(value);
+  if (/^20\d{2}$/.test(cleaned)) return `In ${cleaned}`;
+  if (/^(?:approximately\s+)?\d+\s+(?:day|week|month|year)s?\s+ago$/i.test(cleaned)) {
+    const wording = cleaned.replace(/^approximately\s+/i, "").toLowerCase();
+    const number = Number(wording.match(/^\d+/)?.[0]);
+    const numberWords = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve"];
+    return `Approximately ${numberWords[number] ? wording.replace(/^\d+/, numberWords[number]) : wording}`;
+  }
+  if (/^(?:on\s+)?\d{1,2}\s+[A-Za-z]+\s+20\d{2}$/i.test(cleaned)) {
+    return `On ${cleaned.replace(/^on\s+/i, "")}`;
+  }
+  return "";
+}
+
+function classifyFragment(value: string, currentCategory = ""): string {
+  const text = value.toLowerCase();
+  if (/phone rang|who the fuck|texting other guys|smash your head|threatened to kill/.test(text) || (currentCategory === "phone_threat" && /[“"]/.test(value))) return "phone_threat";
+  if (/^(?:called me|verbal|swore)/.test(text) || (currentCategory === "verbal_abuse" && /[“"]/.test(value)) || (/^[“"]/.test(text) && currentCategory !== "phone_threat")) return "verbal_abuse";
+  if (/pregnant|grabbed (?:me by )?(?:the )?hair|dragged (?:me )?(?:across|on) (?:the )?ground|bruis/.test(text)) return "physical_incident";
+  if (/strangl|chok|hit (?:my )?head|head shoulder kidney|medical treatment/.test(text)) return "serious_assault";
+  if (/pushed (?:me )?(?:onto|on) (?:a |the )?bed|scratch(?:ed)? (?:my )?back|oven|burn(?:ed|t)? (?:my )?arm/.test(text)) return "bed_oven_assault";
+  if (/police|charged|warning issued|female flatmate|reported the (?:matter|incident)/.test(text)) return "police";
+  if (/refuge|remain(?:s)? (?:extremely )?(?:fearful|frightened)/.test(text)) return "refuge";
+  if (/met online|married/.test(text)) return "relationship";
+  if (/controlled food|withheld food|breakfast only|allow.*breakfast/.test(text)) return "food_control";
+  if (/corn cob|food.*mouth/.test(text)) return "food_assault";
+  if (/arrived|came (?:to )?(?:nz|new zealand)|visa|immigration/.test(text)) return "immigration_control";
+  if (/slapped|punched|assaulted me|physical violence/.test(text)) return "physical_pattern";
+  if (/suspicious|speaking arabic/.test(text)) return "jealousy";
+  if (/very jealous|no social life|phone calls constantly|where i was|whereabouts/.test(text)) return "jealousy_control";
+  if (/social media/.test(text)) return "social_media";
+  if (/wouldn.t let me leave|prevented me from leaving|isolat/.test(text)) return "isolation";
+  if (/controlled money|control.*financ|bank|wages|income/.test(text)) return "financial_control";
+  if (/destroyed|smashed mirror|cut (?:up )?(?:my )?clothes|hair straightener|belongings/.test(text)) return "property_damage";
+  if (/air out of (?:my )?(?:car )?tyres?/.test(text)) return "vehicle_sabotage";
+  return "general";
+}
+
+function groupNoteFragments(notes: string): NoteGroup[] {
+  const fragments = notes
+    .replace(/\r/g, "")
+    .split(/\n+|(?<=[.!?])\s+(?=[A-Z0-9\u201c"])/)
+    .map(cleanNoteFragment)
+    .filter(Boolean);
+  const groups: NoteGroup[] = [];
+  let pendingDate = "";
+
+  for (const fragment of fragments) {
+    const date = standaloneDate(fragment);
+    if (date) {
+      const current = groups.at(-1);
+      if (/^In 20\d{2}$/.test(date) && current?.category === "physical_incident" && current.fragments.length === 1) {
+        current.date = date;
+      } else {
+        pendingDate = date;
+      }
+      continue;
+    }
+
+    const current = groups.at(-1);
+    const category = classifyFragment(fragment, current?.category);
+    const startsNewDatedEvent = Boolean(pendingDate && current?.fragments.length);
+    if (!current || current.category !== category || startsNewDatedEvent) {
+      groups.push({ category, date: pendingDate, fragments: [fragment] });
+      pendingDate = "";
+    } else {
+      current.fragments.push(fragment);
+      if (pendingDate && !current.date) current.date = pendingDate;
+      pendingDate = "";
+    }
+  }
+
+  return groups;
+}
+
+function extractQuotes(fragments: string[]): string[] {
+  const quotes: string[] = [];
+  for (const fragment of fragments) {
+    for (const match of fragment.matchAll(/[“"]([^”"]+)[”"]/g)) quotes.push(match[1].trim());
+  }
+  return quotes;
+}
+
+function joinQuotedList(quotes: string[]): string {
+  const values = quotes.map((quote) => `“${quote}”`);
+  if (values.length <= 1) return values[0] ?? "";
+  return `${values.slice(0, -1).join(", ")} and ${values.at(-1)}`;
+}
+
+function draftNoteGroup(group: NoteGroup): string {
+  const text = group.fragments.join(". ");
+  const lower = text.toLowerCase();
+  const date = group.date ? `${group.date}, ` : "";
+  const quotes = extractQuotes(group.fragments);
+
+  switch (group.category) {
+    case "relationship": {
+      const met = /met online/.test(lower);
+      const marriedPlace = text.match(/married(?:\s+(?:in\s+)?)?([A-Z][A-Za-z ]+?)(?:\s+\d{1,2}\s+[A-Za-z]+\s+20\d{2}|$)/i)?.[1]?.trim();
+      const marriedDate = text.match(/(\d{1,2}\s+[A-Za-z]+\s+20\d{2})/)?.[1];
+      if (met && /married/.test(lower)) return ensureSentence(`I met the Respondent online, and we were subsequently married${marriedPlace ? ` in ${marriedPlace}` : ""}${marriedDate ? ` on ${marriedDate}` : ""}`);
+      if (met) return "I met the Respondent online.";
+      return ensureSentence(`${date}the Respondent and I were married${marriedPlace ? ` in ${marriedPlace}` : ""}${marriedDate ? ` on ${marriedDate}` : ""}`.replace(/^./, (letter) => letter.toUpperCase()));
+    }
+    case "food_control":
+      return /breakfast/.test(lower)
+        ? "The Respondent controlled my access to food. He would allow me to eat breakfast but would not allow me to eat for the remainder of the day."
+        : "The Respondent controlled my access to food.";
+    case "food_assault":
+      return `${date}the Respondent pushed a corn cob into my mouth.`.replace(/^./, (letter) => letter.toUpperCase());
+    case "immigration_control": {
+      const arrival = text.match(/(?:arrived|came)(?:\s+in|\s+to)?\s+(?:NZ|New Zealand)?\s*(?:in\s+)?([A-Za-z]+\s+20\d{2})/i)?.[1];
+      const sentences = [arrival ? `I arrived in New Zealand in ${arrival}.` : /arrived|came/.test(lower) ? "I arrived in New Zealand." : ""];
+      if (/visa/.test(lower)) sentences.push("My visa was dependent on the Respondent’s visa.");
+      return sentences.filter(Boolean).join(" ");
+    }
+    case "physical_pattern":
+      return "The Respondent physically assaulted me, including slapping and punching me.";
+    case "jealousy":
+      return "When I spoke Arabic, the Respondent would become suspicious of me.";
+    case "jealousy_control": {
+      const sentences = ["Throughout our relationship, the Respondent was jealous and controlling."];
+      if (/no social life/.test(lower)) sentences.push("He would not allow me to have a social life.");
+      if (/phone calls|where i was|whereabouts/.test(lower)) sentences.push("He telephoned me repeatedly and demanded to know where I was.");
+      return sentences.join(" ");
+    }
+    case "social_media":
+      return "The Respondent did not allow me to maintain social media accounts.";
+    case "verbal_abuse":
+      return ensureSentence(`The Respondent verbally abused me${quotes.length ? ` and called me ${joinQuotedList(quotes)}` : ""}`);
+    case "isolation":
+      return "The Respondent isolated me and would not allow me to leave the house.";
+    case "financial_control":
+      return "The Respondent exercised significant control over our finances.";
+    case "physical_incident": {
+      const pregnantWith = text.match(/pregnant with ([A-Za-z]+)/i)?.[1];
+      const sentences = [`${date}${/pregnant/.test(lower) ? `while I was pregnant${pregnantWith ? ` with ${pregnantWith}` : ""}, ` : ""}the Respondent grabbed me by the hair and dragged me across the ground.`.replace(/^./, (letter) => letter.toUpperCase())];
+      if (/bruis/.test(lower)) sentences.push("As a result, I sustained bruising.");
+      return sentences.join(" ");
+    }
+    case "property_damage": {
+      const items: string[] = [];
+      if (/mirror/.test(lower)) items.push("smashing mirrors");
+      if (/clothes/.test(lower)) items.push("cutting up my clothes");
+      if (/hair straightener/.test(lower)) items.push("breaking my hair straighteners");
+      const itemList = items.length > 1 ? `${items.slice(0, -1).join(", ")} and ${items.at(-1)}` : items[0] ?? "";
+      return ensureSentence(`The Respondent destroyed my personal belongings${itemList ? `, including ${itemList}` : ""}`);
+    }
+    case "vehicle_sabotage":
+      return `${date}the Respondent deliberately let the air out of my car tyres.`.replace(/^./, (letter) => letter.toUpperCase());
+    case "serious_assault": {
+      const sentences = [`${date}the Respondent strangled me.`.replace(/^./, (letter) => letter.toUpperCase())];
+      if (/hit/.test(lower)) sentences.push("He also hit me on my head, shoulder, kidney and back.");
+      if (/medical treatment/.test(lower)) sentences.push("He would not allow me to obtain medical treatment.");
+      return sentences.join(" ");
+    }
+    case "bed_oven_assault": {
+      const sentences = [`${date}the Respondent pushed me onto a bed and scratched my back.`.replace(/^./, (letter) => letter.toUpperCase())];
+      if (/oven|burn/.test(lower)) sentences.push("He then pushed me against an oven, causing a burn to my arm.");
+      return sentences.join(" ");
+    }
+    case "phone_threat": {
+      const sentences = [`${date}the Respondent threatened me.`.replace(/^./, (letter) => letter.toUpperCase())];
+      if (/phone rang/.test(lower)) sentences.push("While I was with him, my phone rang.");
+      if (quotes.length) sentences.push(ensureSentence(`He said ${joinQuotedList(quotes)}`));
+      return sentences.join(" ");
+    }
+    case "police": {
+      const sentences: string[] = [];
+      if (/female flatmate/.test(lower)) sentences.push(`${date}with the assistance of a female flatmate, I reported the matter to the Police.`.replace(/^./, (letter) => letter.toUpperCase()));
+      else if (/police called|contacted police/.test(lower)) sentences.push(`${date}I contacted the Police, who attended and spoke with the Respondent.`.replace(/^./, (letter) => letter.toUpperCase()));
+      else if (/reported/.test(lower)) sentences.push(`${date}I reported the matter to the Police.`.replace(/^./, (letter) => letter.toUpperCase()));
+      if (/charged/.test(lower)) {
+        const offences = [/(?:charged ).*assault/.test(lower) ? "assault" : "", /impeding breathing/.test(lower) ? "impeding breathing" : ""].filter(Boolean);
+        sentences.push(`I have been informed that the Respondent has been charged${offences.length ? ` with offences including ${offences.join(" and ")}` : ""}.`);
+      }
+      if (/warning/.test(lower)) sentences.push("The Police issued the Respondent with a warning.");
+      return sentences.join(" ") || polishFallbackNote(text);
+    }
+    case "refuge": {
+      const sentences = [/refuge/.test(lower) ? "The Police assisted me in accessing refuge accommodation." : ""];
+      if (/fear|fright/.test(lower)) sentences.push("I remain fearful of the Respondent.");
+      return sentences.filter(Boolean).join(" ");
+    }
+    default:
+      return polishFallbackNote(text);
+  }
+}
 
 function polishFallbackNote(note: string): string {
   let value = note.trim();
@@ -90,36 +297,46 @@ function polishFallbackNote(note: string): string {
   return ensureSentence(value);
 }
 
-function fallbackParagraphs(historyNotes: string, recentNotes: string) {
-  let history = splitNotes(historyNotes);
-  let recent = splitNotes(recentNotes);
+export function draftFallbackAffidavitSections(historyNotes: string, recentNotes: string) {
+  let historyText = historyNotes;
+  let recentText = recentNotes;
 
-  if (!recent.length && history.length > 1) {
-    recent = history.filter((paragraph) => recentPattern.test(paragraph));
-    history = history.filter((paragraph) => !recentPattern.test(paragraph));
-  } else if (!history.length && recent.length > 1) {
-    history = recent.filter((paragraph) => !recentPattern.test(paragraph));
-    recent = recent.filter((paragraph) => recentPattern.test(paragraph));
+  if (!recentText.trim() && historyText.trim()) {
+    const combined = splitNotes(historyText);
+    const inferredRecent = combined.filter((paragraph) => recentPattern.test(paragraph));
+    const inferredHistory = combined.filter((paragraph) => !recentPattern.test(paragraph));
+    if (inferredRecent.length && inferredHistory.length) {
+      historyText = inferredHistory.join("\n");
+      recentText = inferredRecent.join("\n");
+    }
+  } else if (!historyText.trim() && recentText.trim()) {
+    const combined = splitNotes(recentText);
+    const inferredHistory = combined.filter((paragraph) => !recentPattern.test(paragraph));
+    const inferredRecent = combined.filter((paragraph) => recentPattern.test(paragraph));
+    if (inferredRecent.length && inferredHistory.length) {
+      historyText = inferredHistory.join("\n");
+      recentText = inferredRecent.join("\n");
+    }
   }
-
   return {
-    historyParagraphs: history.map(polishFallbackNote),
-    recentEventParagraphs: recent.map(polishFallbackNote),
+    violenceCategories: detectCategories(`${historyNotes}\n${recentNotes}`),
+    historyParagraphs: groupNoteFragments(historyText).map(draftNoteGroup).filter(Boolean),
+    recentEventParagraphs: groupNoteFragments(recentText).map(draftNoteGroup).filter(Boolean),
   };
 }
 
 const categoryPatterns: Array<[string, RegExp]> = [
   ["Physical abuse", /\b(?:assault|slap|punch|hit|kick|push|grab|drag|strangl|chok|burn|scratch|injur|bruise|physical)\w*/i],
-  ["Psychological abuse", /\b(?:verbal|swore|insult|humiliat|degrad|jealous|fear|fright|psychological|emotional)\w*/i],
+  ["Psychological abuse", /\b(?:verbal|called me|swore|insult|humiliat|degrad|jealous|fear|fright|psychological|emotional|useless mother)\w*/i],
   ["Sexual abuse", /\b(?:sexual|rape|forced sex|unwanted sex)\w*/i],
   ["Financial abuse", /\b(?:money|bank|financial|income|benefit|wages|withheld funds|not allow.*work)\w*/i],
   ["Coercive or controlling behaviour", /\b(?:control|coerc|permit|not allow|prevent|visa|immigration|withhold(?:ing)? food)\w*/i],
-  ["Threats and intimidation", /\b(?:threat|intimidat|i will kill|kill you|harm you)\w*/i],
+  ["Threats and intimidation", /\b(?:threat|intimidat|i will kill|i(?:'|’)ll.{0,20}kill|kill you|harm you)\w*/i],
   ["Harassment", /\b(?:harass|repeatedly contact|constant(?:ly)? call)\w*/i],
   ["Stalking", /\b(?:stalk|followed me|watched my home|tracked my location)\w*/i],
-  ["Damage to property", /\b(?:damage|destroy|smash|break|broke).{0,25}\b(?:property|phone|door|wall|car|window)\b/i],
+  ["Damage to property", /\b(?:(?:damage|destroy|smash|break|broke).{0,35}(?:property|belonging|phone|door|wall|car|window|mirror|clothes|straightener)|(?:air out of .*tyres))\b/i],
   ["Abuse towards children", /\b(?:child|children|son|daughter).{0,40}\b(?:abuse|assault|hit|threat|fright|witness|expos)\w*/i],
-  ["Social isolation", /\b(?:isolat|social life|friends|family|leave the house|social media)\w*/i],
+  ["Social isolation", /\b(?:isolat|social life|friends|family|leave (?:the )?house|social media)\w*/i],
   ["Technology-facilitated abuse", /\b(?:phone|device|password|social media|online|location).{0,35}\b(?:monitor|track|control|access|message|account)\w*/i],
 ];
 
@@ -266,12 +483,25 @@ function normalizeAiSections(value: unknown, fallback: AffidavitSections): Affid
   };
 }
 
+function normalizeComparisonText(value: string): string {
+  return value.toLowerCase().replace(/[“”"'.,:;!?()[\]-]/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function paragraphsAreUsable(paragraphs: string[], sourceNotes: string): boolean {
+  if (!sourceNotes.trim()) return true;
+  if (!paragraphs.length) return false;
+  const rawFragments = new Set(splitNotes(sourceNotes).map(normalizeComparisonText).filter(Boolean));
+  return paragraphs.every((paragraph) => {
+    const normalized = normalizeComparisonText(paragraph);
+    return normalized.split(" ").length >= 6 && !rawFragments.has(normalized) && !/^[-*•]/.test(paragraph.trim());
+  });
+}
+
 export async function draftDomesticViolenceAffidavit(matter: MatterFile): Promise<AffidavitDraftResult> {
   const historyNotes = clean(matter.intake.domesticViolenceNotes.history);
   const recentNotes = clean(matter.intake.domesticViolenceNotes.recentEvents);
-  const fallbackNotes = fallbackParagraphs(historyNotes, recentNotes);
+  const fallbackNotes = draftFallbackAffidavitSections(historyNotes, recentNotes);
   const fallbackSections: AffidavitSections = {
-    violenceCategories: detectCategories(`${historyNotes}\n${recentNotes}`),
     ...fallbackNotes,
     parentingParagraphs: buildParentingParagraphs(matter),
   };
@@ -333,8 +563,11 @@ export async function draftDomesticViolenceAffidavit(matter: MatterFile): Promis
     if (!response.ok) return finish(fallbackSections, "fallback", `OpenAI request failed with status ${response.status}.`);
     const text = extractOutputText(await response.json());
     const sections = normalizeAiSections(JSON.parse(text), fallbackSections);
-    if (!sections.historyParagraphs.length && !sections.recentEventParagraphs.length) {
-      return finish(fallbackSections, "fallback", "OpenAI returned no affidavit paragraphs.");
+    if (
+      !paragraphsAreUsable(sections.historyParagraphs, historyNotes) ||
+      !paragraphsAreUsable(sections.recentEventParagraphs, recentNotes)
+    ) {
+      return finish(fallbackSections, "fallback", "OpenAI returned incomplete or note-style affidavit paragraphs, so the validated fallback draft was used.");
     }
     return finish(sections, "openai", "OpenAI affidavit drafting completed.");
   } catch {

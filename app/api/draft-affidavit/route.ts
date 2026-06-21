@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { draftFallbackAffidavitSections } from "../../../lib/affidavit-drafting";
 
 export const runtime = "nodejs";
 
@@ -161,12 +162,13 @@ function buildFallbackDraft({
   historyNotes,
   recentEventsNotes,
 }: Required<DraftAffidavitRequest>): string {
-  const history = buildNumberedSection("History of Family Violence", historyNotes, 4);
-  const recentEvents = buildNumberedSection(
-    "Recent Events",
-    recentEventsNotes,
-    history.nextNumber,
-  );
+  const sections = draftFallbackAffidavitSections(historyNotes, recentEventsNotes);
+  let paragraphNumber = 4;
+  const renderSection = (title: string, paragraphs: string[]) => paragraphs.length
+    ? `${title}\n\n${paragraphs.map((paragraph) => `${paragraphNumber++}. ${paragraph}`).join("\n\n")}`
+    : "";
+  const history = renderSection("History of Family Violence", sections.historyParagraphs);
+  const recentEvents = renderSection("Recent Events", sections.recentEventParagraphs);
   const ordersText = ensureSentence(ordersSought || selectedOrders.join(", "));
 
   return [
@@ -188,8 +190,8 @@ function buildFallbackDraft({
       : "",
     `Applicant: ${applicantName}`,
     `Respondent: ${respondentName}`,
-    history.text,
-    recentEvents.text,
+    history,
+    recentEvents,
   ]
     .filter(Boolean)
     .join("\n\n");
