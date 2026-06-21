@@ -174,10 +174,6 @@ function readBillingClients(): BillingClientProfile[] {
 
 export default function IntakeForm() {
   const [matter, setMatter] = useState<MatterFile>(() => createEmptyMatter());
-  const [affidavitDraft, setAffidavitDraft] = useState("");
-  const [isDraftingAffidavit, setIsDraftingAffidavit] = useState(false);
-  const [affidavitDraftError, setAffidavitDraftError] = useState("");
-  const [affidavitDraftSource, setAffidavitDraftSource] = useState("");
   const [saveStatus, setSaveStatus] = useState("");
 
   const setMatterValue = (field: "clientName" | "legalAidNumber", value: string) => {
@@ -235,79 +231,6 @@ export default function IntakeForm() {
     }));
   };
 
-  useEffect(() => {
-    const historyNotes = matter.intake.domesticViolenceNotes.history.trim();
-    const recentEventsNotes = matter.intake.domesticViolenceNotes.recentEvents.trim();
-
-    if (!historyNotes && !recentEventsNotes) {
-      setAffidavitDraft("");
-      setAffidavitDraftError("");
-      setAffidavitDraftSource("");
-      setIsDraftingAffidavit(false);
-      return;
-    }
-
-    const controller = new AbortController();
-    const timeoutId = window.setTimeout(async () => {
-      setIsDraftingAffidavit(true);
-      setAffidavitDraftError("");
-
-      try {
-        const response = await fetch("/api/draft-affidavit", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            applicantName: matter.intake.applicant.fullName,
-            respondentName: matter.intake.respondent.fullName,
-            selectedOrders: matter.intake.selectedApplications,
-            historyNotes,
-            recentEventsNotes,
-            children: matter.intake.children,
-          }),
-          signal: controller.signal,
-        });
-
-        const data = (await response.json().catch(() => null)) as {
-          draft?: string;
-          source?: string;
-          diagnostics?: Array<{ level: string; message: string }>;
-          error?: string;
-        } | null;
-        const diagnosticMessage = data?.diagnostics
-          ?.filter((diagnostic) => diagnostic.level === "error" || diagnostic.level === "warning")
-          .map((diagnostic) => diagnostic.message)
-          .join(" ");
-
-        if (!response.ok) {
-          throw new Error(data?.error || diagnosticMessage || "Drafting request failed.");
-        }
-
-        setAffidavitDraft(data?.draft ?? "");
-        setAffidavitDraftSource(data?.source ?? "");
-        setAffidavitDraftError(diagnosticMessage ?? "");
-      } catch (error) {
-        if (!controller.signal.aborted) {
-          setAffidavitDraftError(error instanceof Error ? error.message : "Draft could not be updated.");
-        }
-      } finally {
-        if (!controller.signal.aborted) {
-          setIsDraftingAffidavit(false);
-        }
-      }
-    }, 1000);
-
-    return () => {
-      window.clearTimeout(timeoutId);
-      controller.abort();
-    };
-  }, [
-    matter.intake.applicant.fullName,
-    matter.intake.respondent.fullName,
-    matter.intake.selectedApplications,
-    matter.intake.domesticViolenceNotes.history,
-    matter.intake.domesticViolenceNotes.recentEvents,
-  ]);
-
   const toggleApplication = (application: ApplicationType) => {
     const selected = matter.intake.selectedApplications.includes(application)
       ? matter.intake.selectedApplications.filter((item) => item !== application)
@@ -317,20 +240,23 @@ export default function IntakeForm() {
   };
 
   const addChild = () => {
-    setMatter((current) => ({
-      ...current,
-      updatedAt: new Date().toISOString(),
-      intake: {
-        ...current.intake,
-        children: [
-          ...current.intake.children,
-          {
-            ...createEmptyChild(current.id, current.intake.children.length + 1),
-            livingWithName: current.intake.applicant.fullName || "Applicant",
-          },
-        ],
-      },
-    }));
+    setMatter((current) => {
+      if (current.intake.children.length >= 3) return current;
+      return {
+        ...current,
+        updatedAt: new Date().toISOString(),
+        intake: {
+          ...current.intake,
+          children: [
+            ...current.intake.children,
+            {
+              ...createEmptyChild(current.id, current.intake.children.length + 1),
+              livingWithName: current.intake.applicant.fullName || "Applicant",
+            },
+          ],
+        },
+      };
+    });
   };
 
   const updateChild = (childId: string, field: keyof Child, value: string) => {
@@ -618,8 +544,13 @@ export default function IntakeForm() {
 
       <Card title="Children Affected by the Application">
         <div className="mb-5 flex justify-end">
-          <button type="button" onClick={addChild} className="h-9 rounded-md border border-slate-300 bg-white px-4 text-sm font-medium text-slate-950 shadow-sm transition hover:bg-slate-50">
-            + Add Child
+          <button
+            type="button"
+            onClick={addChild}
+            disabled={matter.intake.children.length >= 3}
+            className="h-9 rounded-md border border-slate-300 bg-white px-4 text-sm font-medium text-slate-950 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
+          >
+            {matter.intake.children.length >= 3 ? "Maximum 3 children" : "+ Add Child"}
           </button>
         </div>
         {matter.intake.children.length === 0 ? (
@@ -661,24 +592,15 @@ export default function IntakeForm() {
       </Card>
 
       <Card title="Domestic Violence Affidavit">
-        <div className="grid gap-5 lg:grid-cols-2">
-          <div className="space-y-4">
-            <TextArea label="History Notes" value={matter.intake.domesticViolenceNotes.history} onChange={(value) => setIntakeValue("domesticViolenceNotes", { ...matter.intake.domesticViolenceNotes, history: value })} rows={10} placeholder="Type the history as the lawyer works through the intake." />
-            <TextArea label="Recent Events Notes" value={matter.intake.domesticViolenceNotes.recentEvents} onChange={(value) => setIntakeValue("domesticViolenceNotes", { ...matter.intake.domesticViolenceNotes, recentEvents: value })} rows={10} placeholder="Type the events leading to this application." />
-          </div>
-          <label className="block">
-            <span className="mb-1.5 flex items-center justify-between gap-3 text-sm font-medium text-slate-950">
-              <span>Affidavit Draft</span>
-              {isDraftingAffidavit ? <span className="text-xs font-medium text-sky-700">Drafting...</span> : null}
-            </span>
-            <textarea value={affidavitDraft} readOnly rows={22} className="w-full resize-y rounded-md border border-slate-300 bg-slate-50 px-3 py-2 text-sm leading-6 text-slate-950 shadow-sm outline-none" />
-            {affidavitDraftSource === "fallback" ? (
-              <span className="mt-2 block text-xs text-amber-700">
-                AI drafting is not active for this request. Showing structured fallback wording.
-              </span>
-            ) : null}
-            {affidavitDraftError ? <span className="mt-2 block text-xs text-red-600">{affidavitDraftError}</span> : null}
-          </label>
+        <div className="rounded-md border border-sky-200 bg-sky-50 px-4 py-4 text-sm leading-6 text-slate-700">
+          <p className="font-semibold text-slate-950">Standardized affidavit</p>
+          <p className="mt-1">Generated when a Protection Order is selected. History of Family Violence and Recent Events are deliberately left blank for completion in Word.</p>
+          <ul className="mt-3 list-disc space-y-1 pl-5">
+            <li>The children paragraph includes only the children entered above, up to three.</li>
+            <li>The without-notice protection section is included only for a Protection Order.</li>
+            <li>The day-to-day care and contact proposal is included when both Protection and Parenting Orders are selected and children are entered.</li>
+            <li>Paragraph numbering updates automatically when conditional sections are removed.</li>
+          </ul>
         </div>
       </Card>
     </div>

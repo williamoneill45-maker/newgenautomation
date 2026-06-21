@@ -132,7 +132,9 @@ function getPlaceholderValue(
 
 function readTextNodes(xml: string): TextNodeMatch[] {
   const matches: TextNodeMatch[] = [];
-  const textNodePattern = /(<w:t\b[^>]*>)([\s\S]*?)(<\/w:t>)/g;
+  // A self-closing <w:t/> is empty and must not be treated as an opening tag.
+  // Otherwise the match can consume intervening OOXML until a later </w:t>.
+  const textNodePattern = /(<w:t\b[^>]*?(?<!\/)>)([\s\S]*?)(<\/w:t>)/g;
   let match: RegExpExecArray | null;
   let textCursor = 0;
 

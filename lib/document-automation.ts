@@ -184,8 +184,8 @@ function formatOrdinalDay(day: number): string {
 
 const courtNames: Record<string, { english: string; maori: string }> = {
   auckland: { english: "Auckland", maori: "Tāmaki Makaurau" },
-  manukau: { english: "Manukau", maori: "Ōkahukura" },
-  "north shore": { english: "North Shore", maori: "Te Raki Paewhenua" },
+  manukau: { english: "Manukau", maori: "Manukau" },
+  "north shore": { english: "North Shore", maori: "Ōkahukura" },
 };
 
 function getCourtNames(value: string): { english: string; maori: string } {
@@ -364,6 +364,7 @@ function buildChildMergeFields(
           [`${shortPrefix}rta`]: child.applicantRelationshipToChild,
           [`${shortPrefix}rtr`]: child.respondentRelationshipToChild,
           [`${shortPrefix}e`]: childEthnicity,
+          ...(index === 2 ? { c2iving: livingWith } : {}),
         }
       : {}),
   };

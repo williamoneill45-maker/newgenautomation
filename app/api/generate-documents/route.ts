@@ -8,13 +8,13 @@ import {
   buildTemplateMergeFields,
   getInformationSheetEthnicityCheckboxes,
 } from "../../../lib/document-automation";
-import {
-  draftDomesticViolenceAffidavit,
-  type AffidavitDraftResult,
-} from "../../../lib/affidavit-drafting";
 import { mergeDocxTemplate, type DocxMergeReport } from "../../../lib/docx-template";
 import type { MatterFile } from "../../../lib/matter";
 import { getOneDriveClientFolderPaths, uploadFileToOneDrive, type OneDriveUploadResult } from "../../../lib/onedrive";
+import {
+  buildStandardAffidavitContent,
+  isProtectionOrderSought,
+} from "../../../lib/standard-affidavit";
 import { standardDocxTemplates } from "../../../lib/template-catalog";
 
 export const runtime = "nodejs";
@@ -64,11 +64,6 @@ function safeFileName(value: string): string {
   return value.replace(/[^A-Za-z0-9 ._-]/g, "").trim().replace(/\s+/g, "_") || "Client";
 }
 
-function ensurePeriod(value: string): string {
-  const trimmed = value.trim();
-  return !trimmed || /[.!?]$/.test(trimmed) ? trimmed : `${trimmed}.`;
-}
-
 function getApplicationType(matter: MatterFile): string {
   return matter.intake.selectedApplications.join(", ");
 }
@@ -101,33 +96,30 @@ export async function POST(request: Request) {
       "Double-curly placeholders are replaced deterministically.",
       "Information Sheet checkbox fields and unused Parenting Order child paragraphs are updated from intake data.",
       "Missing fields are left unchanged in the completed DOCX.",
-      "AI drafting is used only for affidavit evidence; all other form fields are merged deterministically.",
-      "Affidavit paragraph insertions retain the template's editable Word text and automatic numbering.",
+      "The Family Violence Affidavit uses standardized wording; History and Recent Events are intentionally left blank.",
+      "Conditional affidavit paragraphs retain the template's editable Word text and automatic numbering.",
       "Missing source templates are skipped and listed in this validation report.",
     ],
     skippedDocuments: [],
     documents: [],
   };
-  const hasAffidavitNotes = Boolean(
-    body.matter.intake.domesticViolenceNotes.history.trim() ||
-      body.matter.intake.domesticViolenceNotes.recentEvents.trim(),
-  );
-  let affidavitDraft: AffidavitDraftResult | null = null;
+  const hasProtectionOrder = isProtectionOrderSought(body.matter);
+  const affidavitContent = buildStandardAffidavitContent(body.matter);
 
   for (const templateDefinition of standardDocxTemplates) {
-    if (templateDefinition.id === "domestic_violence_affidavit" && !hasAffidavitNotes) {
+    if (templateDefinition.id === "domestic_violence_affidavit" && !hasProtectionOrder) {
       validationReport.skippedDocuments.push({
         template: templateDefinition.sourceFileName,
         title: templateDefinition.title,
-        reason: "No family violence notes were supplied.",
+        reason: "A Protection Order is not included in this matter.",
       });
       continue;
     }
 
     if (!(await templateExists(templateDefinition.sourceFileName))) {
-      if (templateDefinition.id === "domestic_violence_affidavit" && hasAffidavitNotes) {
+      if (templateDefinition.id === "domestic_violence_affidavit" && hasProtectionOrder) {
         return NextResponse.json(
-          { error: "Family violence notes were supplied, but the affidavit source template is missing from /templates." },
+          { error: "A Protection Order is included, but the affidavit source template is missing from /templates." },
           { status: 400 },
         );
       }
@@ -141,27 +133,7 @@ export async function POST(request: Request) {
 
     const sourceTemplate = await readSourceTemplate(templateDefinition.sourceFileName);
     const fields = buildTemplateMergeFields(body.matter, templateDefinition.id);
-    if (templateDefinition.id === "domestic_violence_affidavit") {
-      affidavitDraft = await draftDomesticViolenceAffidavit(body.matter);
-      if (
-        !affidavitDraft.sections.historyParagraphs.length &&
-        !affidavitDraft.sections.recentEventParagraphs.length
-      ) {
-        return NextResponse.json(
-          { error: "Family violence notes were supplied, but no affidavit paragraphs could be generated." },
-          { status: 422 },
-        );
-      }
-    }
     const applicantName = body.matter.intake.applicant.fullName || body.matter.clientName;
-    const respondentName = body.matter.intake.respondent.fullName || "the Respondent";
-    const parentingOrdersSought = affidavitDraft?.parentingOrdersSought ?? false;
-    const childNames = body.matter.intake.children
-      .map((child) => child.fullName.trim().split(/\s+/)[0])
-      .filter(Boolean);
-    const formattedChildNames = childNames.length > 1
-      ? `${childNames.slice(0, -1).join(", ")} and ${childNames.at(-1)}`
-      : childNames[0] || "the children";
     const templateFields = {
       ...fields,
       ...(templateDefinition.id === "confidential_address_application"
@@ -170,23 +142,24 @@ export async function POST(request: Request) {
             applicant_home_address: body.matter.intake.applicant.homeAddress,
           }
         : {}),
-      ...(affidavitDraft
+      ...(templateDefinition.id === "domestic_violence_affidavit"
         ? {
             Applicant_Name: applicantName,
-            relationship_start_blurb: affidavitDraft.relationshipStartBlurb,
-            relationship_end: affidavitDraft.relationshipEnd,
+            affidavit_application_title: affidavitContent.applicationTitle,
+            relationship_start_blurb: affidavitContent.relationshipStartBlurb,
+            relationship_end: affidavitContent.relationshipEnd,
             violence_categories: "",
             insert_history_blurb: "",
             insert_recent_events_blurb: "",
             children_blurb: "",
-            application_intro: parentingOrdersSought
-              ? `I am applying for a Protection Order. I am also applying for an interim Parenting Order against the Respondent ${respondentName}.`
-              : `I am applying for a Protection Order against the Respondent ${respondentName}.`,
+            protection_facts_heading: "",
+            application_intro: affidavitContent.applicationIntro,
+            without_notice_heading: "",
+            without_notice_intro: "",
+            without_notice_safety: "",
             parenting_heading: "",
             parenting_blurb: "",
-            orders_sought_blurb: parentingOrdersSought
-              ? `I seek an Order granting the children and myself a Protection Order against the Respondent. I seek the standard conditions of a Protection Order. I also seek a Parenting Order granting me the day-to-day care of ${formattedChildNames}. I respectfully request these orders are granted without notice to the Respondent.`
-              : "I seek an Order granting myself a Protection Order against the Respondent. I seek the standard conditions of a Protection Order. I respectfully request this order is granted without notice to the Respondent.",
+            orders_sought_blurb: "",
           }
         : {}),
     };
@@ -229,17 +202,20 @@ export async function POST(request: Request) {
             ] as [boolean[], boolean[]],
           }
         : {}),
-      ...(templateDefinition.id === "domestic_violence_affidavit" && affidavitDraft
+      ...(templateDefinition.id === "domestic_violence_affidavit"
         ? {
             paragraphInsertions: {
-              violence_categories: affidavitDraft.sections.violenceCategories.map(ensurePeriod),
-              children_blurb: affidavitDraft.childrenParagraphs,
-              insert_history_blurb: affidavitDraft.sections.historyParagraphs,
-              insert_recent_events_blurb: affidavitDraft.sections.recentEventParagraphs,
-              parenting_heading: affidavitDraft.parentingOrdersSought
-                ? ["MY PROPOSAL FOR DAY-TO-DAY CARE AND CONTACT"]
-                : [],
-              parenting_blurb: affidavitDraft.sections.parentingParagraphs,
+              children_blurb: affidavitContent.childrenParagraphs,
+              protection_facts_heading: affidavitContent.protectionFactsHeading,
+              violence_categories: [],
+              insert_history_blurb: [""],
+              insert_recent_events_blurb: [""],
+              without_notice_heading: affidavitContent.withoutNoticeHeading,
+              without_notice_intro: affidavitContent.withoutNoticeIntro,
+              without_notice_safety: affidavitContent.withoutNoticeSafetyFactors,
+              parenting_heading: affidavitContent.parentingHeading,
+              parenting_blurb: affidavitContent.parentingParagraphs,
+              orders_sought_blurb: affidavitContent.ordersSoughtParagraphs,
             },
           }
         : {}),
