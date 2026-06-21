@@ -47,6 +47,8 @@ export type DocxMergeResult = {
 
 export type DocxMergeOptions = {
   outputType?: "document" | "template";
+  childCount?: number;
+  informationSheetEthnicityCheckboxes?: [boolean[], boolean[]];
 };
 
 function escapeXml(value: string): string {
@@ -150,6 +152,60 @@ function readTextNodes(xml: string): TextNodeMatch[] {
   }
 
   return matches;
+}
+
+function removeUnusedChildBlocks(xml: string, childCount: number): string {
+  const removeMissingBlock = (block: string): string => {
+    const text = readTextNodes(block).map((node) => node.text).join("");
+    const indices = [...text.matchAll(/\{\{[^{}]*child_(\d+)[^{}]*\}\}/gi)]
+      .map((match) => Number(match[1]));
+    return indices.length > 0 && indices.every((index) => index > childCount) ? "" : block;
+  };
+
+  const withoutRows = xml.replace(/<w:tr\b[\s\S]*?<\/w:tr>/g, removeMissingBlock);
+  return withoutRows.replace(/<w:p\b[\s\S]*?<\/w:p>/g, removeMissingBlock);
+}
+
+function setCheckboxDefaults(rowXml: string, checkedStates: boolean[]): string {
+  let checkboxIndex = 0;
+  return rowXml.replace(
+    /(<w:checkBox>[\s\S]*?<w:default w:val=")[01]("\/>[\s\S]*?<\/w:checkBox>)/g,
+    (_match, prefix: string, suffix: string) => {
+      const checked = checkedStates[checkboxIndex] ?? false;
+      checkboxIndex += 1;
+      return `${prefix}${checked ? "1" : "0"}${suffix}`;
+    },
+  );
+}
+
+function updateInformationSheetCheckboxes(
+  xml: string,
+  checkboxGroups: [boolean[], boolean[]],
+): string {
+  let groupIndex = 0;
+  return xml.replace(/<w:tr\b[\s\S]*?<\/w:tr>/g, (row) => {
+    if (groupIndex >= checkboxGroups.length) return row;
+    const text = readTextNodes(row).map((node) => node.text).join("");
+    if (!text.includes("Ethnic Origin") || !row.includes("<w:checkBox>")) return row;
+
+    const updated = setCheckboxDefaults(row, checkboxGroups[groupIndex]);
+    groupIndex += 1;
+    return updated;
+  });
+}
+
+function applyTemplateTransformations(xml: string, options: DocxMergeOptions): string {
+  let output = xml;
+  if (typeof options.childCount === "number") {
+    output = removeUnusedChildBlocks(output, options.childCount);
+  }
+  if (options.informationSheetEthnicityCheckboxes) {
+    output = updateInformationSheetCheckboxes(
+      output,
+      options.informationSheetEthnicityCheckboxes,
+    );
+  }
+  return output;
 }
 
 function findNodeIndexAtStart(nodes: TextNodeMatch[], offset: number): number {
@@ -483,7 +539,10 @@ async function validateDocxStructure(
     if (WORD_XML_FILE_PATTERN.test(fileName)) {
       const originalXml = await originalFile.async("string");
       const generatedXml = await generatedFile.async("string");
-      const expectedXml = mergePlaceholdersInXml(originalXml, fields);
+      const expectedXml = mergePlaceholdersInXml(
+        applyTemplateTransformations(originalXml, options),
+        fields,
+      );
 
       if (generatedXml !== originalXml) {
         changedXmlFiles.push(fileName);
@@ -547,8 +606,9 @@ export async function mergeDocxTemplate(
 
   await Promise.all(
     Object.entries(xmlFiles).map(async ([path, xml]) => {
-      replacedPlaceholders += countReplaceablePlaceholdersInXml(xml, fields);
-      zip.file(path, mergePlaceholdersInXml(xml, fields));
+      const transformedXml = applyTemplateTransformations(xml, options);
+      replacedPlaceholders += countReplaceablePlaceholdersInXml(transformedXml, fields);
+      zip.file(path, mergePlaceholdersInXml(transformedXml, fields));
     }),
   );
 

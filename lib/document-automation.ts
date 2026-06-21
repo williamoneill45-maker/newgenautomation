@@ -124,6 +124,23 @@ export function calculateAge(dateOfBirth: string, asAt = new Date()): string {
   return age >= 0 ? String(age) : "";
 }
 
+export function calculateChildDisplayAge(dateOfBirth: string, asAt = new Date()): string {
+  const match = dateOfBirth.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return calculateAge(dateOfBirth, asAt);
+
+  const birthYear = Number(match[1]);
+  const birthMonth = Number(match[2]) - 1;
+  const birthDay = Number(match[3]);
+  const birthDate = new Date(birthYear, birthMonth, birthDay);
+  if (Number.isNaN(birthDate.getTime()) || birthDate > asAt) return "";
+
+  let months = (asAt.getFullYear() - birthYear) * 12 + asAt.getMonth() - birthMonth;
+  if (asAt.getDate() < birthDay) months -= 1;
+  if (months < 12) return `${Math.max(months, 0)}m`;
+
+  return String(Math.floor(months / 12));
+}
+
 export function formatDateForForms(date = new Date()): string {
   return new Intl.DateTimeFormat("en-NZ", {
     day: "2-digit",
@@ -141,13 +158,57 @@ function formatInputDateForForms(value: string): string {
   return `${match[3]}/${match[2]}/${match[1]}`;
 }
 
+function formatInputDateLong(value: string): string {
+  if (!value) return "";
+
+  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return value;
+
+  const date = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+  return new Intl.DateTimeFormat("en-NZ", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  }).format(date);
+}
+
+function formatOrdinalDay(day: number): string {
+  const remainder100 = day % 100;
+  if (remainder100 >= 11 && remainder100 <= 13) return `${day}th`;
+
+  if (day % 10 === 1) return `${day}st`;
+  if (day % 10 === 2) return `${day}nd`;
+  if (day % 10 === 3) return `${day}rd`;
+  return `${day}th`;
+}
+
+const courtNames: Record<string, { english: string; maori: string }> = {
+  auckland: { english: "Auckland", maori: "Tāmaki Makaurau" },
+  manukau: { english: "Manukau", maori: "Ōkahukura" },
+  "north shore": { english: "North Shore", maori: "Te Raki Paewhenua" },
+};
+
+function getCourtNames(value: string): { english: string; maori: string } {
+  const normalized = value.toLowerCase().replace(/\bcourt\b/g, "").replace(/\s+/g, " ").trim();
+  const mapped = courtNames[normalized];
+  if (mapped) return mapped;
+
+  const fallback = value.replace(/\s+court$/i, "").trim();
+  return { english: fallback, maori: fallback };
+}
+
 function getFirstName(fullName: string): string {
   return fullName.trim().split(/\s+/)[0] ?? "";
 }
 
 function getQuotedFirstName(fullName: string): string {
   const firstName = getFirstName(fullName);
-  return firstName ? `"${firstName}"` : "";
+  return firstName ? `“${firstName}”` : "";
+}
+
+function getParenthesizedNickname(fullName: string): string {
+  const nickname = getQuotedFirstName(fullName);
+  return nickname ? `(${nickname})` : "";
 }
 
 function getEthnicity(ethnicity: string, otherEthnicity?: string): string {
@@ -181,16 +242,59 @@ function isEthnicity(value: string, expected: string): string {
   return expectedAliases[expected]?.includes(normalizedValue) ? "☒" : "☐";
 }
 
+const informationSheetEthnicities = [
+  "New Zealand European",
+  "Māori",
+  "Samoan",
+  "Cook Island Māori",
+  "Tongan",
+  "Niuean",
+  "Chinese",
+  "Indian",
+  "Other",
+] as const;
+
+export function getInformationSheetEthnicityCheckboxes(value: string): boolean[] {
+  const normalizedValue = normalizeEthnicity(value);
+  return informationSheetEthnicities.map((option) => {
+    const normalizedOption = normalizeEthnicity(option);
+    if (normalizedOption === "maori") return normalizedValue === "maori";
+    return normalizedValue === normalizedOption;
+  });
+}
+
 function joinPresent(values: Array<string | undefined>): string {
   return values.filter((value) => value?.trim()).join("\n");
 }
 
-function buildChildMergeFields(child: Child | undefined, index: 1 | 2 | 3 | 4): RawMergeFields {
+function getLivingWithLabel(
+  child: Child,
+  applicantName: string,
+  respondentName: string,
+): string {
+  const livingWith = normalizeEthnicity(child.livingWithName);
+  const applicant = normalizeEthnicity(applicantName);
+  const respondent = normalizeEthnicity(respondentName);
+  const role = livingWith === "respondent" || (respondent && livingWith === respondent)
+    ? "Respondent"
+    : livingWith === "applicant" || (applicant && livingWith === applicant)
+      ? "Applicant"
+      : child.livingWithName || "Applicant";
+  const relationship = child.livingWithRelationshipToChild.trim();
+  return relationship ? `${role}/${relationship}` : role;
+}
+
+function buildChildMergeFields(
+  child: Child | undefined,
+  index: 1 | 2 | 3 | 4,
+  applicantName: string,
+  respondentName: string,
+): RawMergeFields {
   const prefix = `child_${index}`;
   const upperPrefix = `CHILD_${index}`;
 
   if (!child) {
-    return {
+    const emptyFields: RawMergeFields = {
       [`${prefix}_age`]: "",
       [`${prefix}_dob`]: "",
       [`${prefix}_ethnicity`]: "",
@@ -212,13 +316,23 @@ function buildChildMergeFields(child: Child | undefined, index: 1 | 2 | 3 | 4): 
       [`${upperPrefix}_DOB`]: "",
       [`${upperPrefix}_NAME`]: "",
     };
+    if (index <= 3) {
+      const shortPrefix = `c${index}`;
+      for (const suffix of ["a", "dob", "g", "living", "rta", "rtr", "e"]) {
+        emptyFields[`${shortPrefix}${suffix}`] = "";
+      }
+    }
+    return emptyFields;
   }
 
-  const childAge = child?.age || calculateAge(child?.dateOfBirth ?? "");
   const childEthnicity = getEthnicity(child.ethnicity, child.otherEthnicity);
   const childOtherEthnicity = child.ethnicity === "Other" ? child.otherEthnicity.trim() : "";
   const childName = child.fullName;
   const nickname = getQuotedFirstName(childName);
+  const childAge = calculateChildDisplayAge(child.dateOfBirth) || child.age;
+  const livingWith = getLivingWithLabel(child, applicantName, respondentName);
+
+  const shortPrefix = index <= 3 ? `c${index}` : "";
 
   return {
     [`${prefix}_age`]: childAge,
@@ -232,15 +346,26 @@ function buildChildMergeFields(child: Child | undefined, index: 1 | 2 | 3 | 4): 
     [`${prefix}_ethnicity_other`]: isEthnicity(child?.ethnicity ?? "", "Other"),
     [`${prefix}_ethnicity_other_value`]: childOtherEthnicity,
     [`${prefix}_gender`]: child?.gender,
-    [`${prefix}_living_with`]: child?.livingWithName,
+    [`${prefix}_living_with`]: livingWith,
     [`${prefix}_name`]: childName,
     [`${prefix}_nickname`]: nickname,
-    [`(“${prefix}_nickname”)`]: nickname,
+    [`(“${prefix}_nickname”)`]: getParenthesizedNickname(childName),
     [`${prefix}_relationship_to_applicant`]: child?.applicantRelationshipToChild,
     [`${prefix}_relationship_to_respondent`]: child?.respondentRelationshipToChild,
     [`${upperPrefix}_AGE`]: childAge,
     [`${upperPrefix}_DOB`]: formatInputDateForForms(child.dateOfBirth),
     [`${upperPrefix}_NAME`]: childName,
+    ...(shortPrefix
+      ? {
+          [`${shortPrefix}a`]: childAge,
+          [`${shortPrefix}dob`]: formatInputDateForForms(child.dateOfBirth),
+          [`${shortPrefix}g`]: child.gender,
+          [`${shortPrefix}living`]: livingWith,
+          [`${shortPrefix}rta`]: child.applicantRelationshipToChild,
+          [`${shortPrefix}rtr`]: child.respondentRelationshipToChild,
+          [`${shortPrefix}e`]: childEthnicity,
+        }
+      : {}),
   };
 }
 
@@ -251,10 +376,12 @@ export function buildMatterMergeFields(matter: MatterFile): MergeFields {
   const thirdChild = intake.children[2];
   const fourthChild = intake.children[3];
   const today = formatDateForForms();
+  const todayDate = new Date();
+  const court = getCourtNames(intake.courtLocation);
   const applicantAddress = intake.applicant.isAddressConfidential
     ? "Confidential Address"
     : intake.applicant.homeAddress;
-  const childAge = firstChild?.age || calculateAge(firstChild?.dateOfBirth ?? "");
+  const childAge = calculateChildDisplayAge(firstChild?.dateOfBirth ?? "") || firstChild?.age || "";
   const applicantAge = calculateAge(intake.applicant.dateOfBirth);
   const respondentAge = calculateAge(intake.respondent.dateOfBirth);
   const otherApplicationDetails = intake.otherApplicationDetails?.trim() ?? "";
@@ -276,13 +403,21 @@ export function buildMatterMergeFields(matter: MatterFile): MergeFields {
     RESPONDENT_NAME: intake.respondent.fullName,
     APPLICANT_ADDRESS: applicantAddress,
     RESPONDENT_ADDRESS: intake.respondent.homeAddress,
-    COURT_LOCATION: intake.courtLocation,
+    COURT_LOCATION: court.english,
     CHILD_1_NAME: firstChild?.fullName,
     CHILD_1_DOB: formatInputDateForForms(firstChild?.dateOfBirth ?? ""),
     CHILD_1_AGE: childAge,
     APPLICATION_TYPE_1: selectedApplications[0],
     APPLICATION_TYPE_2: selectedApplications[1],
     APPLICATION_TYPE_3: selectedApplications[2],
+    English_court_name: court.english,
+    Maori_court_name: court.maori,
+    court: court.english,
+    month_day: formatOrdinalDay(todayDate.getDate()),
+    month: new Intl.DateTimeFormat("en-NZ", { month: "long" }).format(todayDate),
+    a_dob: formatInputDateForForms(intake.applicant.dateOfBirth),
+    x: applicantAge,
+    ag: intake.applicant.gender ?? "",
     applicant_age: applicantAge,
     applicant_dob: formatInputDateForForms(intake.applicant.dateOfBirth),
     applicant_home_address: applicantAddress,
@@ -302,11 +437,11 @@ export function buildMatterMergeFields(matter: MatterFile): MergeFields {
     application_type_1: selectedApplications[0],
     application_type_2: selectedApplications[1],
     application_type_3: selectedApplications[2],
-    ...buildChildMergeFields(firstChild, 1),
-    ...buildChildMergeFields(secondChild, 2),
-    ...buildChildMergeFields(thirdChild, 3),
-    ...buildChildMergeFields(fourthChild, 4),
-    court_location: intake.courtLocation,
+    ...buildChildMergeFields(firstChild, 1, intake.applicant.fullName, intake.respondent.fullName),
+    ...buildChildMergeFields(secondChild, 2, intake.applicant.fullName, intake.respondent.fullName),
+    ...buildChildMergeFields(thirdChild, 3, intake.applicant.fullName, intake.respondent.fullName),
+    ...buildChildMergeFields(fourthChild, 4, intake.applicant.fullName, intake.respondent.fullName),
+    court_location: `${court.english} | ${court.maori}`,
     date_today: today,
     "date_today ": today,
     Date_today: today,
@@ -314,9 +449,11 @@ export function buildMatterMergeFields(matter: MatterFile): MergeFields {
     existing_orders_between_parties:
       intake.proceedings.existingOrdersBetweenParties,
     marriage_date: formatInputDateForForms(intake.relationship.marriageOrCivilUnionDate),
+    marriage_place: intake.relationship.marriageOrCivilUnionPlace,
     previous_applications: intake.proceedings.previousApplications,
     relationship_end_date: formatInputDateForForms(intake.relationship.relationshipEndDate),
     relationship_start_date: formatInputDateForForms(intake.relationship.deFactoRelationshipStart),
+    start: formatInputDateForForms(intake.relationship.deFactoRelationshipStart),
     todays_date: today,
     respondent_age: respondentAge,
     respondent_dob: formatInputDateForForms(intake.respondent.dateOfBirth),
@@ -325,6 +462,11 @@ export function buildMatterMergeFields(matter: MatterFile): MergeFields {
     respondent_name: intake.respondent.fullName,
     respondent_occupation: intake.respondent.occupation,
     respondent_phone: intake.respondent.mobilePhone,
+    respont_phone: intake.respondent.mobilePhone,
+    r_dob: formatInputDateForForms(intake.respondent.dateOfBirth),
+    z: respondentAge,
+    rg: intake.respondent.gender ?? "",
+    respont_occupation: intake.respondent.occupation,
     respondent_ethnicity: respondentEthnicity,
     respondent_ethnicity_other_value: respondentOtherEthnicity,
     respondent_ethnicity_nz_european: isEthnicity(intake.respondent.ethnicity, "New Zealand European"),
@@ -338,7 +480,28 @@ export function buildMatterMergeFields(matter: MatterFile): MergeFields {
     respondent_work_address: intake.respondent.workAddress,
     respondents_relationship_to_children:
       joinPresent(intake.children.slice(0, 4).map((child) => child.respondentRelationshipToChild)),
+    respondents_name: intake.respondent.fullName,
+    "respondents_name ": intake.respondent.fullName,
+    "respondents_relationshib to child": firstChild?.respondentRelationshipToChild,
   });
+}
+
+export function buildTemplateMergeFields(
+  matter: MatterFile,
+  documentType: DocumentType,
+): MergeFields {
+  const fields = buildMatterMergeFields(matter);
+  if (documentType !== "parenting_order_application") return fields;
+
+  const overrides: RawMergeFields = {};
+  matter.intake.children.slice(0, 3).forEach((child, index) => {
+    const childNumber = index + 1;
+    overrides[`child_${childNumber}_name`] = child.fullName.toLocaleUpperCase("en-NZ");
+    overrides[`child_${childNumber}_dob`] = formatInputDateLong(child.dateOfBirth);
+    overrides[`(“child_${childNumber}_nickname”)`] = getParenthesizedNickname(child.fullName);
+  });
+
+  return { ...fields, ...normalizeMergeFields(overrides) };
 }
 
 export function buildInformationSheetMergeFields(matter: MatterFile): MergeFields {

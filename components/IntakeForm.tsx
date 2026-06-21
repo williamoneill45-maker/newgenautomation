@@ -15,7 +15,7 @@ import {
   type MatterFile,
   type Party,
 } from "../lib/matter";
-import { calculateAge } from "../lib/document-automation";
+import { calculateChildDisplayAge } from "../lib/document-automation";
 import { legalAidMatterStorageKey, recentMattersStorageKey } from "../lib/legal-aid";
 import {
   billingClientsStorageKey,
@@ -346,7 +346,7 @@ export default function IntakeForm() {
 
           const nextChild = { ...child, [field]: value };
           if (field === "dateOfBirth") {
-            nextChild.age = calculateAge(value);
+            nextChild.age = calculateChildDisplayAge(value);
           }
 
           return nextChild;
@@ -568,6 +568,7 @@ export default function IntakeForm() {
         <div className="grid gap-5 md:grid-cols-2">
           <Field label="Full Name" value={matter.intake.applicant.fullName} onChange={(value) => setPartyValue("applicant", "fullName", value)} required />
           <Field label="Date of Birth" type="date" value={matter.intake.applicant.dateOfBirth} onChange={(value) => setPartyValue("applicant", "dateOfBirth", value)} />
+          <SelectField label="Gender" value={matter.intake.applicant.gender ?? ""} onChange={(value) => setPartyValue("applicant", "gender", value)} placeholder="Select" options={["F", "M"]} />
           <Field label="Occupation" value={matter.intake.applicant.occupation} onChange={(value) => setPartyValue("applicant", "occupation", value)} />
           <Field label="Mobile Phone" value={matter.intake.applicant.mobilePhone} onChange={(value) => setPartyValue("applicant", "mobilePhone", value)} placeholder="021 xxx xxxx" />
           <Field label="Email Address" value={matter.intake.applicant.emailAddress} onChange={(value) => setPartyValue("applicant", "emailAddress", value)} className="md:col-span-2" />
@@ -593,7 +594,10 @@ export default function IntakeForm() {
           <Field label="Full Name" value={matter.intake.respondent.fullName} onChange={(value) => setPartyValue("respondent", "fullName", value)} />
           <Field label="Relationship to Applicant" value={matter.intake.respondent.relationshipToApplicant ?? ""} onChange={(value) => setPartyValue("respondent", "relationshipToApplicant", value)} placeholder="e.g. Spouse, partner, ex-partner" />
           <Field label="Date of Birth" type="date" value={matter.intake.respondent.dateOfBirth} onChange={(value) => setPartyValue("respondent", "dateOfBirth", value)} />
+          <SelectField label="Gender" value={matter.intake.respondent.gender ?? ""} onChange={(value) => setPartyValue("respondent", "gender", value)} placeholder="Select" options={["F", "M"]} />
           <Field label="Occupation" value={matter.intake.respondent.occupation} onChange={(value) => setPartyValue("respondent", "occupation", value)} />
+          <Field label="Mobile Phone" value={matter.intake.respondent.mobilePhone} onChange={(value) => setPartyValue("respondent", "mobilePhone", value)} placeholder="021 xxx xxxx" />
+          <Field label="Email Address" value={matter.intake.respondent.emailAddress} onChange={(value) => setPartyValue("respondent", "emailAddress", value)} />
           <TextArea label="Home Address" value={matter.intake.respondent.homeAddress} onChange={(value) => setPartyValue("respondent", "homeAddress", value)} rows={3} />
           <TextArea label="Work Address" value={matter.intake.respondent.workAddress} onChange={(value) => setPartyValue("respondent", "workAddress", value)} rows={3} />
           <SelectField label="Ethnic Origin" value={matter.intake.respondent.ethnicity} onChange={(value) => setPartyValue("respondent", "ethnicity", value)} placeholder="Select ethnicity" options={ethnicities} />

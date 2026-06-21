@@ -8,10 +8,9 @@ export const applicationTypes = [
 export type ApplicationType = (typeof applicationTypes)[number];
 
 export const courts = [
-  "Manukau Court",
   "Auckland Court",
+  "Manukau Court",
   "North Shore Court",
-  "Waitakere Court",
 ] as const;
 
 export type CourtLocation = (typeof courts)[number] | "";
@@ -44,10 +43,13 @@ export function normalizeProceedingsType(value: string): ProceedingsType {
 
 export const ethnicities = [
   "New Zealand European",
-  "Maori",
-  "Pacific Peoples",
-  "Asian",
-  "Middle Eastern / Latin American / African",
+  "Māori",
+  "Samoan",
+  "Cook Island Māori",
+  "Tongan",
+  "Niuean",
+  "Chinese",
+  "Indian",
   "Other",
 ] as const;
 
@@ -63,6 +65,7 @@ export type Party = {
   role: PartyRole;
   fullName: string;
   dateOfBirth: string;
+  gender: "" | "F" | "M";
   occupation: string;
   mobilePhone: string;
   emailAddress: string;
@@ -179,6 +182,20 @@ export const placeholderKeys = [
   "APPLICATION_TYPE_1",
   "APPLICATION_TYPE_2",
   "APPLICATION_TYPE_3",
+  "English_court_name",
+  "Maori_court_name",
+  "month_day",
+  "month",
+  "a_dob",
+  "x",
+  "ag",
+  "respont_phone",
+  "r_dob",
+  "z",
+  "rg",
+  "respont_occupation",
+  "marriage_place",
+  "start",
   "applicant_dob",
   "applicant_home_address",
   "applicant_occupation",
@@ -228,11 +245,25 @@ export const placeholderKeys = [
   "application_type_2",
   "application_type_3",
   "child_1_age",
+  "c1a",
+  "c1dob",
+  "c1g",
+  "c1living",
+  "c1rta",
+  "c1rtr",
+  "c1e",
   "child_1_gender",
   "child_1_living_with",
   "child_1_relationship_to_applicant",
   "child_1_relationship_to_respondent",
   "child_2_age",
+  "c2a",
+  "c2dob",
+  "c2g",
+  "c2living",
+  "c2rta",
+  "c2rtr",
+  "c2e",
   "child_2_dob",
   "child_2_ethnicity",
   "child_2_ethnicity_nz_european",
@@ -249,6 +280,13 @@ export const placeholderKeys = [
   "child_2_relationship_to_applicant",
   "child_2_relationship_to_respondent",
   "child_3_age",
+  "c3a",
+  "c3dob",
+  "c3g",
+  "c3living",
+  "c3rta",
+  "c3rtr",
+  "c3e",
   "child_3_dob",
   "child_3_ethnicity",
   "child_3_ethnicity_nz_european",
@@ -300,6 +338,7 @@ export function createEmptyParty(role: PartyRole, matterId: string): Party {
     role,
     fullName: "",
     dateOfBirth: "",
+    gender: "",
     occupation: "",
     mobilePhone: "",
     emailAddress: "",

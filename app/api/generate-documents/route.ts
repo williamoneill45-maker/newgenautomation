@@ -4,7 +4,10 @@ import path from "node:path";
 import JSZip from "jszip";
 import { NextResponse } from "next/server";
 
-import { buildMatterMergeFields } from "../../../lib/document-automation";
+import {
+  buildTemplateMergeFields,
+  getInformationSheetEthnicityCheckboxes,
+} from "../../../lib/document-automation";
 import { mergeDocxTemplate, type DocxMergeReport } from "../../../lib/docx-template";
 import type { MatterFile } from "../../../lib/matter";
 import { getOneDriveClientFolderPaths, uploadFileToOneDrive, type OneDriveUploadResult } from "../../../lib/onedrive";
@@ -75,7 +78,6 @@ export async function POST(request: Request) {
 
   const bundle = new JSZip();
   const generatedFiles: GeneratedFile[] = [];
-  const fields = buildMatterMergeFields(body.matter);
   const clientName = body.matter.clientName || body.matter.intake.applicant.fullName;
   const legalAidNumber = body.matter.legalAidNumber.trim();
   const clientEmail = body.matter.intake.applicant.emailAddress.trim();
@@ -87,7 +89,8 @@ export async function POST(request: Request) {
     matterId: body.matter.id,
     rules: [
       "Source DOCX templates are read from /templates.",
-      "Only double-curly placeholders are replaced.",
+      "Double-curly placeholders are replaced deterministically.",
+      "Information Sheet checkbox fields and unused Parenting Order child paragraphs are updated from intake data.",
       "Missing fields are left unchanged in the completed DOCX.",
       "No AI generation is used for the standard DOCX forms.",
       "Missing source templates are skipped and listed in this validation report.",
@@ -107,6 +110,7 @@ export async function POST(request: Request) {
     }
 
     const sourceTemplate = await readSourceTemplate(templateDefinition.sourceFileName);
+    const fields = buildTemplateMergeFields(body.matter, templateDefinition.id);
     const templateFields = {
       ...fields,
       ...(templateDefinition.id === "confidential_address_application"
@@ -143,7 +147,19 @@ export async function POST(request: Request) {
       continue;
     }
 
-    const { buffer, report } = await mergeDocxTemplate(sourceTemplate, templateFields);
+    const { buffer, report } = await mergeDocxTemplate(sourceTemplate, templateFields, {
+      ...(templateDefinition.id === "parenting_order_application"
+        ? { childCount: Math.min(body.matter.intake.children.length, 3) }
+        : {}),
+      ...(templateDefinition.id === "information_sheet"
+        ? {
+            informationSheetEthnicityCheckboxes: [
+              getInformationSheetEthnicityCheckboxes(body.matter.intake.applicant.ethnicity),
+              getInformationSheetEthnicityCheckboxes(body.matter.intake.respondent.ethnicity),
+            ] as [boolean[], boolean[]],
+          }
+        : {}),
+    });
 
     bundle.file(templateDefinition.outputFileName, buffer);
     generatedFiles.push({
