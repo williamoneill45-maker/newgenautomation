@@ -171,7 +171,7 @@ function childDescription(child: Child): string {
   const name = clean(child.fullName) || "THE CHILD";
   const firstName = name.split(/\s+/)[0];
   const dob = formatLongDate(child.dateOfBirth);
-  return ensureSentence(`${name.toUpperCase()}${dob ? ` born ${dob}` : ""} (\u201c${firstName}\u201d)`);
+  return ensureSentence(`${name.toUpperCase()}${dob ? `, born ${dob}` : ""}, (\u201c${firstName}\u201d)`);
 }
 
 function parentNoun(gender: string): string {
@@ -304,7 +304,7 @@ export async function draftDomesticViolenceAffidavit(matter: MatterFile): Promis
         input: [
           {
             role: "system",
-            content: "Draft editable New Zealand Family Court affidavit evidence from lawyer notes. Use first-person, plain English, short factual paragraphs and chronological order. Preserve every material fact and direct quote. Do not invent, infer, duplicate, summarise, add headings, add paragraph numbers, or expose raw notes. Put background and patterns in historyParagraphs. Put recent assaults, strangulation, threats, police, refuge, charges, breaches and urgent safety facts in recentEventParagraphs. Return only supported violence categories from the supplied list.",
+            content: "Draft editable New Zealand Family Court affidavit evidence from shorthand lawyer notes. Use first-person, plain English, complete lawyer-drafted paragraphs and chronological order. One significant event, topic, or pattern belongs in each paragraph. Expand shorthand into grammatical evidence while preserving the underlying facts, dates, and every direct quote. For example, 'strangled me' may become 'The Respondent strangled me, causing me to fear for my life'; 'controlled money' may become 'The Respondent exercised significant control over finances'; and related fragments such as a date, assault details, and resulting injury should form one coherent paragraph. Do not invent a new event, date, injury, motive, frequency, feeling, or legal conclusion. Do not simply reproduce note-style one-line fragments. Do not duplicate, summarise, add headings, add paragraph numbers, use bullets, or expose raw notes. Put background and long-term patterns in historyParagraphs. Put recent assaults, strangulation, threats, police, refuge, charges, breaches and current fear in recentEventParagraphs. Return only supported violence categories from the supplied list.",
           },
           {
             role: "user",

@@ -213,6 +213,10 @@ function formatMoney(value: number): string {
   return value ? value.toFixed(2) : "";
 }
 
+function roundMoney(value: number): number {
+  return Math.round((value + Number.EPSILON) * 100) / 100;
+}
+
 function formatTotalMoney(value: number): string {
   return Number.isFinite(value) ? value.toFixed(2) : "0.00";
 }
@@ -253,6 +257,11 @@ function calculateHalfHourUnits(hours: number): number {
   return Math.max(1, Math.ceil(hours * 2));
 }
 
+function getSelectedAttendanceHours(record: BillingRecord, workItemId: string): number {
+  return record.draft.structuredSelection?.workItems.find((item) => item.id === workItemId)?.attendanceHours
+    ?? record.draft.attendanceHours;
+}
+
 function calculateForm33AAmounts(record: BillingRecord) {
   const draft = record.draft;
   const categories = draft.categories?.length ? draft.categories : [draft.category];
@@ -267,31 +276,35 @@ function calculateForm33AAmounts(record: BillingRecord) {
   const isAdditionalFactors = hasCategory("additional_factors");
   const isAgent = hasCategory("instructing_agent");
   const sourcePrompt = draft.sourcePrompt?.toLowerCase() ?? "";
-  const isFormalProofAgent = isAgent && sourcePrompt.includes("formal proof");
+  const agentHearingType = draft.structuredSelection?.agentHearingType;
+  const additionalFactorSection = draft.structuredSelection?.additionalFactorSection;
+  const isFormalProofAgent = isAgent && (agentHearingType === "formal_proof" || (!agentHearingType && sourcePrompt.includes("formal proof")));
   const isDefendedHearingAgent =
     isAgent &&
     !isFormalProofAgent &&
-    (sourcePrompt.includes("defended") || sourcePrompt.includes("hearing"));
+    (agentHearingType === "defended_hearing" || (!agentHearingType && (sourcePrompt.includes("defended") || sourcePrompt.includes("hearing"))));
   const isJudicialConferenceAgent = isAgent && !isFormalProofAgent && !isDefendedHearingAgent;
   const isAdditionalFactorsForDefended =
-    isAdditionalFactors && (sourcePrompt.includes("defended") || sourcePrompt.includes("hearing"));
+    isAdditionalFactors && (additionalFactorSection === "defended_hearing" || (!additionalFactorSection && (sourcePrompt.includes("defended") || sourcePrompt.includes("hearing"))));
   const isAdditionalFactorsForApplications =
     isAdditionalFactors &&
-    (sourcePrompt.includes("application") || sourcePrompt.includes("order"));
+    (additionalFactorSection === "applications_orders" || (!additionalFactorSection && (sourcePrompt.includes("application") || sourcePrompt.includes("order"))));
   const isAdditionalFactorsForPreHearing =
     isAdditionalFactors && !isAdditionalFactorsForDefended && !isAdditionalFactorsForApplications;
-  const halfHourUnits = calculateHalfHourUnits(draft.attendanceHours);
+  const judicialConferenceUnits = calculateHalfHourUnits(getSelectedAttendanceHours(record, "33-judicial-conference"));
+  const formalProofUnits = calculateHalfHourUnits(getSelectedAttendanceHours(record, "33-formal-proof"));
+  const defendedHearingSelectedUnits = calculateHalfHourUnits(getSelectedAttendanceHours(record, "33-defended-hearing"));
   const fixedFees = form33AFeeRules.fixedFees;
   const judicialConferencePreparation = isJudicialConference
     ? fixedFees.judicialConferencePreparation
     : 0;
   const judicialConferenceHearingUnits = isJudicialConference
-    ? halfHourUnits
+    ? judicialConferenceUnits
     : 0;
   const judicialConferenceHearingRate = fixedFees.judicialConferenceHearingPerHalfHour;
   const judicialConferenceHearingTotal = judicialConferenceHearingUnits * judicialConferenceHearingRate;
   const formalProofPreparation = isFormalProof ? fixedFees.formalProofPreparation : 0;
-  const formalProofHearingUnits = isFormalProof ? halfHourUnits : 0;
+  const formalProofHearingUnits = isFormalProof ? formalProofUnits : 0;
   const formalProofHearingTotal = formalProofHearingUnits * fixedFees.formalProofHearingPerHalfHour;
   const formalProofAgent = isFormalProofAgent ? fixedFees.formalProofAgent : 0;
   const applicationsOrdersAdditionalFactors = isAdditionalFactorsForApplications
@@ -305,7 +318,7 @@ function calculateForm33AAmounts(record: BillingRecord) {
     : 0;
   const judgeDirections = isJudgeDirections ? fixedFees.judgeDirections : 0;
   const defendedHearingPreparation = isDefendedHearing ? fixedFees.defendedHearingPreparation : 0;
-  const defendedHearingUnits = isDefendedHearing ? halfHourUnits : 0;
+  const defendedHearingUnits = isDefendedHearing ? defendedHearingSelectedUnits : 0;
   const defendedHearingTotal = defendedHearingUnits * fixedFees.defendedHearingPerHalfHour;
   const defendedHearingAgent = isDefendedHearingAgent ? fixedFees.defendedHearingAgent : 0;
   const defendedHearingAdditionalFactors = isAdditionalFactorsForDefended
@@ -333,16 +346,18 @@ function calculateForm33AAmounts(record: BillingRecord) {
     form33AFeeRules.fixedFeePlusActivities.travelTimeHourlyRate;
   const totalFixedFeePlusActivities = 0;
   const totalDisbursementsExcludingMileage = draft.parking + draft.officeDisbursements + travelTimeAmount;
-  const totalGst =
+  const totalGst = roundMoney(
     (totalApplication + totalFixedFeePlusActivities + totalDisbursementsExcludingMileage) *
-    form33AFeeRules.gstRate;
-  const totalMileage = (draft.travel?.mileageValue ?? 0) * form33AFeeRules.mileageRatePerKm;
-  const total =
+    form33AFeeRules.gstRate,
+  );
+  const totalMileage = roundMoney((draft.travel?.mileageValue ?? 0) * form33AFeeRules.mileageRatePerKm);
+  const total = roundMoney(
     totalApplication +
     totalFixedFeePlusActivities +
     totalDisbursementsExcludingMileage +
     totalGst +
-    totalMileage;
+    totalMileage,
+  );
 
   return {
     judicialConferencePreparation,
@@ -379,7 +394,6 @@ function calculateForm32BAmounts(record: BillingRecord) {
   const draft = record.draft;
   const sourcePrompt = draft.sourcePrompt.toLowerCase();
   const fixedFees = form32BFeeRules.fixedFees;
-  const halfHourUnits = calculateHalfHourUnits(draft.attendanceHours);
   const categories = draft.categories?.length ? draft.categories : [draft.category];
   const hasCategory = (category: BillingRecord["draft"]["category"]) => categories.includes(category);
   const isPreHearingMatters = hasCategory("pre_hearing_matters");
@@ -399,12 +413,16 @@ function calculateForm32BAmounts(record: BillingRecord) {
     : 0;
   const instructingAgent = isAgent ? fixedFees.instructingAgent : 0;
   const formalProofPreparation = isFormalProof ? fixedFees.formalProofPreparation : 0;
-  const formalProofHearingUnits = isFormalProof ? halfHourUnits : 0;
+  const formalProofHearingUnits = isFormalProof
+    ? calculateHalfHourUnits(getSelectedAttendanceHours(record, "32-formal-proof"))
+    : 0;
   const formalProofHearingTotal = formalProofHearingUnits * fixedFees.formalProofHearingPerHalfHour;
   const settlementConferencePreparation = isSettlementConference
     ? fixedFees.settlementConferencePreparation
     : 0;
-  const settlementConferenceHearingUnits = isSettlementConference ? halfHourUnits : 0;
+  const settlementConferenceHearingUnits = isSettlementConference
+    ? calculateHalfHourUnits(getSelectedAttendanceHours(record, "32-settlement-conference"))
+    : 0;
   const settlementConferenceHearingTotal =
     settlementConferenceHearingUnits * fixedFees.settlementConferenceHearingPerHalfHour;
   const memorandumOfConsent = isMemorandumOfConsent ? fixedFees.memorandumOfConsent : 0;
@@ -413,18 +431,24 @@ function calculateForm32BAmounts(record: BillingRecord) {
     ? fixedFees.additionalFactorsPreHearingMatters
     : 0;
   const defendedHearingPreparation = isDefendedHearing ? fixedFees.defendedHearingPreparation : 0;
-  const defendedHearingUnits = isDefendedHearing ? halfHourUnits : 0;
+  const defendedHearingUnits = isDefendedHearing
+    ? calculateHalfHourUnits(getSelectedAttendanceHours(record, "32-defended-hearing"))
+    : 0;
   const defendedHearingTotal = defendedHearingUnits * fixedFees.defendedHearingPerHalfHour;
   const directionsConferencePreparation = isDirectionsConference
     ? fixedFees.directionsConferencePreparation
     : 0;
-  const directionsConferenceHearingUnits = isDirectionsConference ? halfHourUnits : 0;
+  const directionsConferenceHearingUnits = isDirectionsConference
+    ? calculateHalfHourUnits(getSelectedAttendanceHours(record, "32-directions-conference"))
+    : 0;
   const directionsConferenceHearingTotal =
     directionsConferenceHearingUnits * fixedFees.directionsConferenceHearingPerHalfHour;
   const preHearingConferencePreparation = isPreHearingConference
     ? fixedFees.preHearingConferencePreparation
     : 0;
-  const preHearingConferenceHearingUnits = isPreHearingConference ? halfHourUnits : 0;
+  const preHearingConferenceHearingUnits = isPreHearingConference
+    ? calculateHalfHourUnits(getSelectedAttendanceHours(record, "32-pre-hearing-conference"))
+    : 0;
   const preHearingConferenceHearingTotal =
     preHearingConferenceHearingUnits * fixedFees.preHearingConferenceHearingPerHalfHour;
   const travelTimeAmount = (draft.travel?.travelTimeValue ?? 0) *
@@ -448,16 +472,18 @@ function calculateForm32BAmounts(record: BillingRecord) {
     preHearingConferenceHearingTotal;
   const totalFixedFeePlusActivities = 0;
   const totalDisbursementsExcludingMileage = draft.parking + draft.officeDisbursements + travelTimeAmount;
-  const totalGst =
+  const totalGst = roundMoney(
     (totalApplication + totalFixedFeePlusActivities + totalDisbursementsExcludingMileage) *
-    form32BFeeRules.gstRate;
-  const totalMileage = (draft.travel?.mileageValue ?? 0) * form32BFeeRules.mileageRatePerKm;
-  const total =
+    form32BFeeRules.gstRate,
+  );
+  const totalMileage = roundMoney((draft.travel?.mileageValue ?? 0) * form32BFeeRules.mileageRatePerKm);
+  const total = roundMoney(
     totalApplication +
     totalFixedFeePlusActivities +
     totalDisbursementsExcludingMileage +
     totalGst +
-    totalMileage;
+    totalMileage,
+  );
 
   return {
     sourcePrompt,

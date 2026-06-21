@@ -11,6 +11,7 @@ import {
 } from "../../../lib/billing-document";
 import { mergeDocxTemplate } from "../../../lib/docx-template";
 import type { BillingRecord } from "../../../lib/billing-automation";
+import { validateStructuredBillingRecord } from "../../../lib/billing-selection";
 import { uploadBillingDocumentToOneDrive } from "../../../lib/onedrive";
 
 export const runtime = "nodejs";
@@ -74,6 +75,11 @@ export async function POST(request: Request) {
         { error: "Review the billing record before generating the Word document." },
         { status: 400 },
       );
+    }
+
+    const selectionErrors = validateStructuredBillingRecord(body.record);
+    if (selectionErrors.length) {
+      return NextResponse.json({ error: selectionErrors.join(" ") }, { status: 400 });
     }
 
     const templateDefinition = billingTemplateDefinitions[body.record.formType];

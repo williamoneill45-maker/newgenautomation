@@ -1,1033 +1,317 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useEffect, useMemo, useState } from "react";
-import {
-  travelReferences,
-  type BillingCategory,
-  type BillingDraft,
-  type EvidenceRequirement,
-  type BillingFormType,
-  type BillingRecord,
-  type BillingStatus,
-} from "../../lib/billing-automation";
+import { useEffect, useMemo, useState } from "react";
+
+import { travelReferences, type BillingFormType, type BillingRecord } from "../../lib/billing-automation";
 import { calculateBillingTotals } from "../../lib/billing-document";
 import {
-  billingClientsStorageKey,
   billingInvoicesStorageKey,
-  createBillingClientId,
-  formatInvoiceNumber,
-  isInvoiceWithinRetention,
-  normalizeClientName,
-  type BillingClientProfile,
   type StoredBillingInvoice,
 } from "../../lib/billing-storage";
 import {
-  form32BManagementRules,
-  form32BSettingsStorageKey,
-  type Form32BRuleSettings,
-} from "../../lib/form32b-rules";
-import {
-  form33AManagementRules,
-  form33ASettingsStorageKey,
-  type Form33ARuleSettings,
-} from "../../lib/form33a-rules";
+  billingWorkItems,
+  createStructuredBillingRecord,
+  getBillingPreviewRows,
+  validateStructuredBillingInput,
+  type BillingItemDetails,
+  type BillingWorkItemId,
+  type StructuredBillingInput,
+} from "../../lib/billing-selection";
 
-const examplePrompt =
-  "Pre-hearing conference and memorandum of consent from 11:00am-11:30am at Waitakere Court, parking $12.";
+const today = new Date().toISOString().slice(0, 10);
+const emptyDetails: BillingItemDetails = { date: today, court: "", startTime: "", endTime: "" };
 
-const optionalEvidenceRequirements: EvidenceRequirement[] = [
-  { type: "parking", label: "Parking proof", uploaded: false },
-  { type: "notice", label: "Notice of fixture", uploaded: false },
-];
-
-const categoryPrimaryRuleMap: Record<string, string> = {
-  judicial_conference: "judicial-conference",
-  pre_hearing_conference: "judicial-conference",
-  formal_proof: "formal-proof",
-  complying_judges_directions: "judge-directions",
-  pre_hearing_matters: "pre-hearing-matters",
-  defended_hearing: "defended-hearing",
-  defended_protection_order: "defended-protection-order",
-  instructing_agent: "instructing-agent",
-  additional_factors: "additional-factors",
-};
-
-const categoryLabels: Record<BillingCategory, string> = {
-  pre_hearing_conference: "Pre-hearing conference",
-  judicial_conference: "Judicial conference",
-  formal_proof: "Formal proof",
-  instructing_agent: "Instructing agent",
-  pre_hearing_matters: "Pre-hearing matters",
-  defended_protection_order: "Defended protection order",
-  additional_factors: "Additional factors",
-  interlocutories: "Interlocutories",
-  directions_conference: "Directions conference",
-  settlement_conference: "Settlement conference",
-  lawyer_for_child_report: "Lawyer for Child report",
-  defended_hearing: "Defended hearing",
-  consent_memorandum: "Memorandum of consent",
-  complying_judges_directions: "Complying with Judge's directions",
-  general_billing_entry: "General billing entry",
-};
-
-const reviewableCategories = Object.entries(categoryLabels)
-  .filter(([category]) => category !== "general_billing_entry")
-  .map(([category, label]) => ({ category: category as BillingCategory, label }));
-
-const form32BCategoryPrimaryRuleMap: Record<string, string> = {
-  pre_hearing_matters: "pre-hearing-matters",
-  complying_judges_directions: "complying-judges-directions",
-  instructing_agent: "instructing-agent",
-  formal_proof: "formal-proof",
-  settlement_conference: "settlement-conference",
-  consent_memorandum: "memorandum-of-consent",
-  lawyer_for_child_report: "report",
-  additional_factors: "additional-factors",
-  defended_hearing: "defended-hearing",
-  directions_conference: "directions-conference",
-  pre_hearing_conference: "pre-hearing-conference",
-};
-
-type EditableBillingDraftField =
-  | "clientName"
-  | "legalAidNumber"
-  | "invoiceNumber"
-  | "court"
-  | "date"
-  | "startTime"
-  | "endTime"
-  | "attendanceHours"
-  | "parking"
-  | "officeDisbursements"
-  | "standardWording";
-
-function readJsonArray<T>(key: string): T[] {
-  if (typeof window === "undefined") return [];
-
-  try {
-    const raw = window.localStorage.getItem(key);
-    return raw ? (JSON.parse(raw) as T[]) : [];
-  } catch {
-    window.localStorage.removeItem(key);
-    return [];
-  }
-}
-
-function writeJsonArray<T>(key: string, value: T[]) {
-  window.localStorage.setItem(key, JSON.stringify(value));
-}
-
-function createClientProfile(clientName: string, legalAidNumber: string): BillingClientProfile {
-  const now = new Date().toISOString();
-  const normalizedName = normalizeClientName(clientName);
-
-  return {
-    id: createBillingClientId(`${normalizedName}-${legalAidNumber || now}`),
-    clientName: normalizedName,
-    legalAidNumber: legalAidNumber.trim(),
-    famNumber: "",
-    createdAt: now,
-    updatedAt: now,
-  };
+function makeInvoiceNumber(formType: BillingFormType, clientName: string): string {
+  const surname = clientName.trim().split(/\s+/).pop()?.replace(/[^A-Za-z0-9]/g, "").toUpperCase() || "CLIENT";
+  return `${today.replace(/-/g, "")}.${formType}.${surname}`;
 }
 
 export default function BillingPage() {
-  const [prompt, setPrompt] = useState(examplePrompt);
-  const [formType, setFormType] = useState<BillingFormType>("33A");
-  const [clients, setClients] = useState<BillingClientProfile[]>([]);
+  const [formType, setFormType] = useState<BillingFormType>("32B");
   const [clientName, setClientName] = useState("");
   const [legalAidNumber, setLegalAidNumber] = useState("");
-  const [selectedClientId, setSelectedClientId] = useState("");
-  const [clientNotice, setClientNotice] = useState("");
-  const [selectedRecord, setSelectedRecord] = useState<BillingRecord | null>(null);
-  const [error, setError] = useState("");
-  const [isLoading, setIsLoading] = useState(false);
+  const [selectedWorkItemIds, setSelectedWorkItemIds] = useState<BillingWorkItemId[]>([]);
+  const [detailsByItem, setDetailsByItem] = useState<Partial<Record<BillingWorkItemId, BillingItemDetails>>>({});
+  const [agentHearingType, setAgentHearingType] = useState<StructuredBillingInput["agentHearingType"]>();
+  const [additionalFactorSection, setAdditionalFactorSection] = useState<StructuredBillingInput["additionalFactorSection"]>();
+  const [travelTimeSelected, setTravelTimeSelected] = useState(false);
+  const [mileageSelected, setMileageSelected] = useState(false);
+  const [travelCourt, setTravelCourt] = useState("");
+  const [parking, setParking] = useState(0);
+  const [officeDisbursements, setOfficeDisbursements] = useState(0);
+  const [optionalWordingNotes, setOptionalWordingNotes] = useState("");
+  const [editableWording, setEditableWording] = useState("");
   const [generationError, setGenerationError] = useState("");
   const [generationNotice, setGenerationNotice] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
 
+  const formItems = billingWorkItems.filter((item) => item.formType === formType);
+  const groupedItems = useMemo(() => formItems.reduce<Record<string, typeof formItems>>((groups, item) => {
+    groups[item.group] = [...(groups[item.group] ?? []), item];
+    return groups;
+  }, {}), [formType]);
+
+  const structuredInput: StructuredBillingInput = {
+    formType,
+    clientName,
+    legalAidNumber,
+    invoiceNumber: makeInvoiceNumber(formType, clientName),
+    selectedWorkItemIds,
+    detailsByItem,
+    agentHearingType,
+    additionalFactorSection,
+    travelTimeSelected,
+    mileageSelected,
+    travelCourt,
+    parking,
+    officeDisbursements,
+    optionalWordingNotes,
+  };
+  const validationErrors = validateStructuredBillingInput(structuredInput);
+  const previewRecord = useMemo(() => {
+    if (validationErrors.length) return null;
+    try {
+      return createStructuredBillingRecord(structuredInput);
+    } catch {
+      return null;
+    }
+  }, [formType, clientName, legalAidNumber, selectedWorkItemIds, detailsByItem, agentHearingType, additionalFactorSection, travelTimeSelected, mileageSelected, travelCourt, parking, officeDisbursements, optionalWordingNotes]);
+
   useEffect(() => {
-    setClients(readJsonArray<BillingClientProfile>(billingClientsStorageKey));
-  }, []);
+    setEditableWording(previewRecord?.draft.standardWording ?? "");
+  }, [previewRecord?.draft.standardWording]);
 
-  const matchingClients = useMemo(() => {
-    const name = normalizeClientName(clientName).toLowerCase();
-    if (!name) return [];
-
-    return clients.filter((client) => client.clientName.toLowerCase().includes(name));
-  }, [clientName, clients]);
-
-  const selectedClient = clients.find((client) => client.id === selectedClientId) ?? null;
-
-  function saveClients(nextClients: BillingClientProfile[]) {
-    setClients(nextClients);
-    writeJsonArray(billingClientsStorageKey, nextClients);
+  function changeForm(nextFormType: BillingFormType) {
+    setFormType(nextFormType);
+    setSelectedWorkItemIds([]);
+    setDetailsByItem({});
+    setAgentHearingType(undefined);
+    setAdditionalFactorSection(undefined);
+    setGenerationError("");
+    setGenerationNotice("");
   }
 
-  async function saveInvoiceMetadata(record: BillingRecord, status: StoredBillingInvoice["status"], fileName = "") {
-    const totals = calculateBillingTotals(record);
-    const profile = saveOrUpdateClientProfile();
-    if (!profile) return false;
-
-    const invoice: StoredBillingInvoice = {
-      id: record.id,
-      clientId: profile.id,
-      clientName: record.clientName,
-      legalAidNumber: record.legalAidNumber,
-      famNumber: "",
-      invoiceNumber: record.invoiceNumber,
-      invoiceTotal: totals.total,
-      formType: record.formType,
-      status,
-      missingEvidence: record.evidence
-        .filter((requirement) => !requirement.uploaded)
-        .map((requirement) => requirement.label),
-      evidenceFiles: [],
-      billingRecord: record,
-      oneDriveUrl: "",
-      oneDrivePath: fileName ? `NewGenAutomation/Clients/${record.clientName} - ${record.legalAidNumber}/Billing/${fileName}` : "",
-      generatedFileName: fileName,
-      generatedAt: new Date().toISOString(),
-    };
-    const invoices = readJsonArray<StoredBillingInvoice>(billingInvoicesStorageKey)
-      .filter(isInvoiceWithinRetention);
-    writeJsonArray(
-      billingInvoicesStorageKey,
-      [invoice, ...invoices.filter((item) => item.id !== invoice.id)],
-    );
-
-    try {
-      await fetch("/api/billing-records", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(invoice),
-      });
-    } catch {
-      // Browser storage remains visible even if server-side persistence is temporarily unavailable.
-    }
-
-    return true;
-  }
-
-  function selectClient(client: BillingClientProfile) {
-    setSelectedClientId(client.id);
-    setClientName(client.clientName);
-    setLegalAidNumber(client.legalAidNumber);
-    setClientNotice(`Loaded ${client.clientName}'s billing profile.`);
-  }
-
-  function saveOrUpdateClientProfile() {
-    const normalizedName = normalizeClientName(clientName);
-    if (!normalizedName) {
-      setClientNotice("Enter the client name before saving a billing profile.");
-      return null;
-    }
-
-    const existing = selectedClient ?? clients.find((client) =>
-      client.clientName.toLowerCase() === normalizedName.toLowerCase(),
-    );
-    const now = new Date().toISOString();
-    const profile = existing
-      ? {
-          ...existing,
-          clientName: normalizedName,
-          legalAidNumber: legalAidNumber.trim(),
-          famNumber: "",
-          updatedAt: now,
-        }
-      : createClientProfile(normalizedName, legalAidNumber);
-    const nextClients = existing
-      ? clients.map((client) => (client.id === existing.id ? profile : client))
-      : [...clients, profile];
-
-    saveClients(nextClients);
-    setSelectedClientId(profile.id);
-    setClientNotice(existing ? "Updated the billing profile." : "Created a new billing profile.");
-    fetch("/api/billing-clients", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(profile),
-    }).catch(() => undefined);
-    return profile;
-  }
-
-  function readForm33ASettings(): Form33ARuleSettings | null {
-    const storedSettings = window.localStorage.getItem(form33ASettingsStorageKey);
-    if (!storedSettings) return null;
-
-    try {
-      return JSON.parse(storedSettings) as Form33ARuleSettings;
-    } catch {
-      window.localStorage.removeItem(form33ASettingsStorageKey);
-      return null;
+  function toggleWorkItem(id: BillingWorkItemId, checked: boolean) {
+    setSelectedWorkItemIds((current) => checked ? [...current, id] : current.filter((item) => item !== id));
+    const definition = billingWorkItems.find((item) => item.id === id);
+    if (checked && definition?.requiresAttendance) {
+      setDetailsByItem((current) => ({ ...current, [id]: current[id] ?? { ...emptyDetails } }));
     }
   }
 
-  function readForm32BSettings(): Form32BRuleSettings | null {
-    const storedSettings = window.localStorage.getItem(form32BSettingsStorageKey);
-    if (!storedSettings) return null;
+  function updateItemDetails(id: BillingWorkItemId, field: keyof BillingItemDetails, value: string) {
+    setDetailsByItem((current) => ({
+      ...current,
+      [id]: { ...(current[id] ?? emptyDetails), [field]: value },
+    }));
+  }
 
-    try {
-      return JSON.parse(storedSettings) as Form32BRuleSettings;
-    } catch {
-      window.localStorage.removeItem(form32BSettingsStorageKey);
-      return null;
+  async function generateDocument() {
+    if (!previewRecord) {
+      setGenerationError(validationErrors[0] ?? "Complete the required billing details.");
+      return;
     }
-  }
-
-  function applyDraftTokens(wording: string, draft: BillingDraft): string {
-    const attendanceTime = draft.startTime && draft.endTime ? `${draft.startTime}-${draft.endTime}` : "";
-
-    return wording
-      .replace(/\[billing date\]/gi, draft.date)
-      .replace(/\[attendance time\]/gi, attendanceTime)
-      .replace(/\[court\]/gi, draft.court);
-  }
-
-  function buildConfiguredWording(record: BillingRecord): string {
-    const isForm33A = record.formType === "33A";
-    const settings = isForm33A ? readForm33ASettings() : readForm32BSettings();
-    const rules = isForm33A ? form33AManagementRules : form32BManagementRules;
-    const ruleMap = isForm33A ? categoryPrimaryRuleMap : form32BCategoryPrimaryRuleMap;
-    const categories = record.draft.categories?.length ? record.draft.categories : [record.draft.category];
-
-    return categories
-      .map((category) => {
-        const ruleId = ruleMap[category];
-        const configuredWording = ruleId ? settings?.wordingByRuleId[ruleId] : "";
-        const fallbackWording = ruleId
-          ? rules.find((rule) => rule.id === ruleId)?.standardWording
-          : "";
-        const wording = configuredWording || fallbackWording;
-
-        return wording ? applyDraftTokens(wording, record.draft) : "";
-      })
-      .filter((wording, index, wordings) => wording.trim() && wordings.indexOf(wording) === index)
-      .join("\n\n");
-  }
-
-  function applyFormSettings(record: BillingRecord): BillingRecord {
-    const standardWording = buildConfiguredWording(record);
-
-    if (!standardWording) return record;
-
-    const draft = {
-      ...record.draft,
-      standardWording: applyDraftTokens(standardWording, record.draft),
-    };
-
-    return {
-      ...record,
-      draft,
-      updatedAt: new Date().toISOString(),
-    };
-  }
-
-  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const profile = saveOrUpdateClientProfile();
-    if (!profile) return;
-
-    setIsLoading(true);
-    setError("");
-
-    try {
-      const invoiceNumber = formatInvoiceNumber(new Date().toISOString().slice(0, 10), formType, profile.clientName);
-      const response = await fetch("/api/draft-billing", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          prompt,
-          formType,
-          matter: {
-            matterId: profile.id,
-            clientName: profile.clientName,
-            legalAidNumber: profile.legalAidNumber,
-            invoiceNumber,
-          },
-        }),
-      });
-
-      const payload = await response.json();
-      if (!response.ok) {
-        throw new Error(payload.error ?? "Unable to create billing draft.");
-      }
-
-      const parsedRecord = payload.record as BillingRecord;
-      const nextRecord = applyFormSettings({
-        ...parsedRecord,
-        status: "ready_to_review",
-        evidence: [],
-        draft: {
-          ...parsedRecord.draft,
-          status: "ready_to_review",
-          evidenceRequirements: [],
-        },
-      });
-      setSelectedRecord(nextRecord);
-    } catch (caughtError) {
-      setError(caughtError instanceof Error ? caughtError.message : "Unable to create billing draft.");
-    } finally {
-      setIsLoading(false);
-    }
-  }
-
-  function markEvidenceUploaded(recordId: string, evidenceType: string) {
-    updateBillingRecord(recordId, (record) => {
-      if (record.id !== recordId) return record;
-
-      const evidence = record.evidence.map((requirement) =>
-        requirement.type === evidenceType ? { ...requirement, uploaded: true } : requirement,
-      );
-      const status: BillingStatus = evidence.some((requirement) => !requirement.uploaded)
-        ? "pending_evidence"
-        : "ready_to_review";
-      const updatedRecord: BillingRecord = {
-        ...record,
-        status,
-        evidence,
-        evidenceStoragePaths: Array.from(new Set([...record.evidenceStoragePaths, `pending-upload/${evidenceType}`])),
-        draft: {
-          ...record.draft,
-          status,
-          evidenceRequirements: evidence,
-        },
-        updatedAt: new Date().toISOString(),
-      };
-
-      return updatedRecord;
-    });
-  }
-
-  function toggleEvidenceRequirement(recordId: string, evidenceType: string, checked: boolean) {
-    updateBillingRecord(recordId, (record) => {
-      const option = optionalEvidenceRequirements.find((item) => item.type === evidenceType);
-      if (!option) return record;
-
-      const evidence = checked
-        ? [...record.evidence.filter((requirement) => requirement.type !== evidenceType), option]
-        : record.evidence.filter((requirement) => requirement.type !== evidenceType);
-      const status: BillingStatus = evidence.some((requirement) => !requirement.uploaded)
-        ? "pending_evidence"
-        : "ready_to_review";
-
-      return {
-        ...record,
-        status,
-        evidence,
-        draft: {
-          ...record.draft,
-          status,
-          evidenceRequirements: evidence,
-        },
-        updatedAt: new Date().toISOString(),
-      };
-    });
-  }
-
-  function updateBillingRecord(recordId: string, updater: (record: BillingRecord) => BillingRecord) {
-    if (!selectedRecord || selectedRecord.id !== recordId) return;
-    setSelectedRecord(updater(selectedRecord));
-  }
-
-  function updateDetectedCategories(recordId: string, category: BillingCategory, checked: boolean) {
-    updateBillingRecord(recordId, (record) => {
-      const currentCategories = record.draft.categories?.length ? record.draft.categories : [record.draft.category];
-      const nextCategories = checked
-        ? Array.from(new Set([...currentCategories.filter((item) => item !== "general_billing_entry"), category]))
-        : currentCategories.filter((item) => item !== category);
-      const categories = nextCategories.length ? nextCategories : ["general_billing_entry" as BillingCategory];
-      const categoryLabelsForDraft = categories.map((item) => categoryLabels[item]);
-      const nextRecord: BillingRecord = {
-        ...record,
-        draft: {
-          ...record.draft,
-          category: categories[0],
-          categoryLabel: categoryLabelsForDraft[0],
-          categories,
-          categoryLabels: categoryLabelsForDraft,
-        },
-        updatedAt: new Date().toISOString(),
-      };
-
-      return applyFormSettings(nextRecord);
-    });
-  }
-
-  function updateDraftField(recordId: string, field: EditableBillingDraftField, value: string | number) {
-    if (field === "clientName") setClientName(String(value));
-    if (field === "legalAidNumber") setLegalAidNumber(String(value));
-
-    updateBillingRecord(recordId, (record) => {
-      if (record.id !== recordId) return record;
-
-      const draft = {
-        ...record.draft,
-        [field]: value,
-        travel:
-          field === "court"
-            ? travelReferences.find((reference) => reference.court === String(value))
-            : record.draft.travel,
-      } as BillingDraft;
-
-      return {
-        ...record,
-        clientName: field === "clientName" ? String(value) : record.clientName,
-        legalAidNumber: field === "legalAidNumber" ? String(value) : record.legalAidNumber,
-        invoiceNumber: field === "invoiceNumber" ? String(value) : record.invoiceNumber,
-        draft,
-        updatedAt: new Date().toISOString(),
-      };
-    });
-  }
-
-  async function generateBillingDocument(record: BillingRecord) {
     setIsGenerating(true);
     setGenerationError("");
     setGenerationNotice("");
-
+    const record: BillingRecord = {
+      ...previewRecord,
+      draft: { ...previewRecord.draft, standardWording: editableWording },
+    };
     try {
       const response = await fetch("/api/generate-billing-document", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ record, reviewed: true }),
       });
-
       if (!response.ok) {
         const payload = await response.json();
-        throw new Error(payload.error ?? "Unable to generate billing document.");
+        throw new Error(payload.error ?? "Unable to generate the billing form.");
       }
-
       const blob = await response.blob();
       const disposition = response.headers.get("Content-Disposition") ?? "";
-      const fileNameMatch = disposition.match(/filename="([^"]+)"/);
-      const fileName = fileNameMatch?.[1] ?? `Completed Form${record.formType}.docx`;
-      const oneDriveStatus = response.headers.get("X-OneDrive-Status") ?? "not_configured";
-      const url = window.URL.createObjectURL(blob);
+      const fileName = disposition.match(/filename="([^"]+)"/)?.[1] ?? `Completed Form${formType}.docx`;
+      const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
       link.download = fileName;
       document.body.appendChild(link);
       link.click();
       link.remove();
-      window.URL.revokeObjectURL(url);
-
-      await saveInvoiceMetadata(
-        {
-          ...record,
-          draft: record.draft,
-        },
-        record.evidence.some((requirement) => !requirement.uploaded)
-          ? "pending_evidence"
-          : oneDriveStatus === "uploaded"
-            ? "onedrive_uploaded"
-            : "onedrive_pending",
-        fileName,
+      URL.revokeObjectURL(url);
+      const totals = calculateBillingTotals(record);
+      const oneDriveStatus = response.headers.get("X-OneDrive-Status") ?? "not_configured";
+      const invoice: StoredBillingInvoice = {
+        id: record.id,
+        clientId: record.matterId,
+        clientName: record.clientName,
+        legalAidNumber: record.legalAidNumber,
+        famNumber: "",
+        invoiceNumber: record.invoiceNumber,
+        invoiceTotal: totals.total,
+        formType: record.formType,
+        status: oneDriveStatus === "uploaded" ? "onedrive_uploaded" : "onedrive_pending",
+        missingEvidence: [],
+        evidenceFiles: [],
+        billingRecord: record,
+        oneDriveUrl: decodeURIComponent(response.headers.get("X-OneDrive-Url") ?? ""),
+        oneDrivePath: decodeURIComponent(response.headers.get("X-OneDrive-Path") ?? ""),
+        generatedFileName: fileName,
+        generatedAt: new Date().toISOString(),
+      };
+      let storedInvoices: StoredBillingInvoice[] = [];
+      try {
+        storedInvoices = JSON.parse(window.localStorage.getItem(billingInvoicesStorageKey) ?? "[]") as StoredBillingInvoice[];
+      } catch {
+        window.localStorage.removeItem(billingInvoicesStorageKey);
+      }
+      window.localStorage.setItem(
+        billingInvoicesStorageKey,
+        JSON.stringify([invoice, ...storedInvoices.filter((item) => item.id !== invoice.id)]),
       );
-
-      setGenerationNotice(
-        record.evidence.some((requirement) => !requirement.uploaded)
-          ? "Generated and recorded. Evidence follow-up will stay on the dashboard until marked received."
-          : oneDriveStatus === "uploaded"
-          ? "Generated, uploaded to OneDrive, and recorded in the invoice register."
-          : "Generated and recorded locally. OneDrive upload will activate once Microsoft Graph credentials are configured.",
-      );
-    } catch (caughtError) {
-      setGenerationError(caughtError instanceof Error ? caughtError.message : "Unable to generate billing document.");
+      fetch("/api/billing-records", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(invoice),
+      }).catch(() => undefined);
+      setGenerationNotice(`Generated ${fileName}. The wording remains editable in Word.`);
+    } catch (error) {
+      setGenerationError(error instanceof Error ? error.message : "Unable to generate the billing form.");
     } finally {
       setIsGenerating(false);
     }
   }
 
-  async function savePendingInvoice(record: BillingRecord) {
-    setGenerationError("");
-    setGenerationNotice("");
-    const saved = await saveInvoiceMetadata(record, "pending_evidence");
-    if (saved) {
-      setGenerationNotice("Invoice saved as pending evidence. It will appear on the dashboard until the missing proof is marked received.");
-    }
-  }
-
   return (
     <main className="min-h-screen bg-slate-50">
-      <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
         <div className="mb-6 flex items-center justify-between gap-4">
-          <Link href="/" className="text-sm font-medium text-sky-700 transition hover:text-sky-900">
-            Back to dashboard
-          </Link>
-          <div className="flex items-center gap-3">
-            <Link
-              href="/billing-management/form-32b"
-              className="text-sm font-medium text-slate-600 transition hover:text-slate-950"
-            >
-              Form32B management
-            </Link>
-            <Link
-              href="/clients"
-              className="text-sm font-medium text-slate-600 transition hover:text-slate-950"
-            >
-              Clients
-            </Link>
-            <Link
-              href="/invoices"
-              className="text-sm font-medium text-slate-600 transition hover:text-slate-950"
-            >
-              Invoices
-            </Link>
-            <span className="rounded-md bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-900">
-              Forms 32B / 33A generation
-            </span>
+          <Link href="/" className="text-sm font-medium text-sky-700 hover:text-sky-900">Back to dashboard</Link>
+          <div className="flex gap-3 text-sm font-medium text-slate-600">
+            <Link href="/invoices" className="hover:text-slate-950">Invoices</Link>
+            <Link href="/billing-management/form-32b" className="hover:text-slate-950">Billing rules</Link>
           </div>
         </div>
 
         <header className="mb-6 border-b border-slate-200 pb-5">
           <p className="text-sm font-semibold uppercase tracking-wide text-sky-700">Legal aid billing</p>
-          <h1 className="mt-2 text-3xl font-semibold tracking-normal text-slate-950">Billing Workbench</h1>
-          <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-600">
-            Enter the billing note, choose the form, review the extracted billing entry, then generate the Word document.
-          </p>
+          <h1 className="mt-2 text-3xl font-semibold text-slate-950">Structured Billing</h1>
+          <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-600">Select the work completed and enter only the details needed for those items. Fees, units, GST, mileage, totals, wording, and Word placeholders are calculated automatically.</p>
         </header>
 
-        <section className="grid gap-6 lg:grid-cols-[420px_1fr]">
-          <form onSubmit={handleSubmit} className="rounded-lg border border-slate-200 bg-white p-5 shadow-form">
-            <h2 className="text-lg font-semibold text-slate-950">Billing prompt</h2>
-
-            <section className="mt-5 rounded-md border border-slate-200 bg-slate-50 p-4">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <h3 className="text-sm font-semibold text-slate-950">Client billing profile</h3>
-                  <p className="mt-1 text-xs leading-5 text-slate-600">
-                    Billing is separate from form production. First invoice creates or updates the client profile used for future bills.
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
-                  onClick={saveOrUpdateClientProfile}
-                >
-                  Save profile
-                </button>
+        <section className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_460px]">
+          <div className="space-y-6">
+            <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-form">
+              <h2 className="text-lg font-semibold text-slate-950">1. Client and form</h2>
+              <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                <TextField label="Client name" value={clientName} onChange={setClientName} />
+                <TextField label="Legal aid number" value={legalAidNumber} onChange={setLegalAidNumber} />
               </div>
-              <div className="mt-4 grid gap-3">
-                <Field label="Client name" value={clientName} onChange={(value) => {
-                  setSelectedClientId("");
-                  setClientName(value);
-                }} />
-                <Field label="Legal aid number" value={legalAidNumber} onChange={setLegalAidNumber} />
-              </div>
-              {matchingClients.length && !selectedClient ? (
-                <div className="mt-3 rounded-md border border-sky-200 bg-sky-50 p-3">
-                  <p className="text-xs font-semibold text-sky-950">Existing clients found</p>
-                  <div className="mt-2 space-y-2">
-                    {matchingClients.slice(0, 4).map((client) => (
-                      <button
-                        key={client.id}
-                        type="button"
-                        className="block w-full rounded-md bg-white px-3 py-2 text-left text-xs font-medium text-slate-700 shadow-sm transition hover:bg-slate-50"
-                        onClick={() => selectClient(client)}
-                      >
-                        {client.clientName} | Legal aid {client.legalAidNumber || "not supplied"}
-                      </button>
-                    ))}
-                  </div>
+              <fieldset className="mt-5">
+                <legend className="text-sm font-medium text-slate-700">Billing form</legend>
+                <div className="mt-2 grid grid-cols-2 gap-3">
+                  {(["32B", "33A"] as BillingFormType[]).map((value) => (
+                    <label key={value} className={formType === value ? "flex h-12 cursor-pointer items-center justify-center rounded-md border border-sky-500 bg-sky-50 font-semibold text-sky-800" : "flex h-12 cursor-pointer items-center justify-center rounded-md border border-slate-300 bg-white font-semibold text-slate-700"}>
+                      <input className="sr-only" type="radio" name="form-type" checked={formType === value} onChange={() => changeForm(value)} />
+                      Form {value}
+                    </label>
+                  ))}
                 </div>
-              ) : null}
-              {clientNotice ? <p className="mt-3 text-xs font-medium text-slate-600">{clientNotice}</p> : null}
+              </fieldset>
             </section>
 
-            <label className="mt-5 block text-sm font-medium text-slate-700" htmlFor="prompt">
-              Lawyer note
-            </label>
-            <textarea
-              id="prompt"
-              className="mt-2 min-h-40 w-full rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-950 shadow-sm outline-none transition placeholder:text-slate-400 focus:border-sky-500 focus:ring-2 focus:ring-sky-100"
-              value={prompt}
-              onChange={(event) => setPrompt(event.target.value)}
-            />
-
-            <fieldset className="mt-6">
-              <legend className="text-sm font-medium text-slate-700">Form</legend>
-              <div className="mt-2 grid grid-cols-2 gap-2">
-                <FormChoice label="32B" selected={formType === "32B"} onSelect={() => setFormType("32B")} />
-                <FormChoice label="33A" selected={formType === "33A"} onSelect={() => setFormType("33A")} />
+            <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-form">
+              <h2 className="text-lg font-semibold text-slate-950">2. Work completed</h2>
+              <p className="mt-2 text-sm text-slate-600">Selections—not keyword detection—control the billing rows.</p>
+              <div className="mt-5 space-y-6">
+                {Object.entries(groupedItems).map(([group, items]) => (
+                  <fieldset key={group}>
+                    <legend className="text-sm font-semibold text-slate-950">{group}</legend>
+                    <div className="mt-2 grid gap-2 md:grid-cols-2">
+                      {items.map((item) => (
+                        <label key={item.id} className={selectedWorkItemIds.includes(item.id) ? "flex cursor-pointer items-start gap-3 rounded-md border border-sky-300 bg-sky-50 p-3" : "flex cursor-pointer items-start gap-3 rounded-md border border-slate-200 p-3 hover:bg-slate-50"}>
+                          <input type="checkbox" className="mt-0.5 h-4 w-4 rounded border-slate-300 text-sky-600" checked={selectedWorkItemIds.includes(item.id)} onChange={(event) => toggleWorkItem(item.id, event.target.checked)} />
+                          <span><span className="block text-sm font-medium text-slate-900">{item.label}</span><span className="mt-1 block text-xs text-slate-500">{item.fixedFee ? `$${item.fixedFee} fixed fee` : `$${item.preparationFee} preparation + $${item.hearingRate} per half hour`}</span></span>
+                        </label>
+                      ))}
+                    </div>
+                  </fieldset>
+                ))}
               </div>
-            </fieldset>
+            </section>
 
-            <button
-              type="submit"
-              disabled={isLoading}
-              className="mt-6 inline-flex h-10 w-full items-center justify-center rounded-md bg-sky-600 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-sky-700 disabled:cursor-not-allowed disabled:bg-slate-300"
-            >
-              {isLoading ? "Creating draft..." : "Generate billing draft"}
-            </button>
-
-            {error ? <p className="mt-3 text-sm font-medium text-red-700">{error}</p> : null}
-
-            {selectedRecord ? (
-              <DetectedWorkPanel
-                record={selectedRecord}
-                onCategoryChange={updateDetectedCategories}
-              />
+            {selectedWorkItemIds.some((id) => billingWorkItems.find((item) => item.id === id)?.requiresAttendance) ? (
+              <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-form">
+                <h2 className="text-lg font-semibold text-slate-950">3. Hearing details</h2>
+                <div className="mt-4 space-y-4">
+                  {selectedWorkItemIds.map((id) => billingWorkItems.find((item) => item.id === id)).filter((item) => item?.requiresAttendance).map((item) => item ? (
+                    <div key={item.id} className="rounded-md border border-slate-200 bg-slate-50 p-4">
+                      <h3 className="text-sm font-semibold text-slate-950">{item.label}</h3>
+                      <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                        <Input label="Date" type="date" value={detailsByItem[item.id]?.date ?? today} onChange={(value) => updateItemDetails(item.id, "date", value)} />
+                        <SelectField label="Court" value={detailsByItem[item.id]?.court ?? ""} options={travelReferences.map((court) => court.court)} onChange={(value) => updateItemDetails(item.id, "court", value)} />
+                        <Input label="Start time" type="time" value={detailsByItem[item.id]?.startTime ?? ""} onChange={(value) => updateItemDetails(item.id, "startTime", value)} />
+                        <Input label="End time" type="time" value={detailsByItem[item.id]?.endTime ?? ""} onChange={(value) => updateItemDetails(item.id, "endTime", value)} />
+                      </div>
+                    </div>
+                  ) : null)}
+                </div>
+              </section>
             ) : null}
-          </form>
 
-          <div className="space-y-6">
-            {selectedRecord ? (
-              <>
-                <DraftPanel
-                  record={selectedRecord}
-                  generationError={generationError}
-                  generationNotice={generationNotice}
-                  isGenerating={isGenerating}
-                  onDraftFieldChange={updateDraftField}
-                  onEvidenceUploaded={markEvidenceUploaded}
-                  onEvidenceRequirementChange={toggleEvidenceRequirement}
-                  onGenerate={generateBillingDocument}
-                  onSavePending={savePendingInvoice}
-                />
-              </>
-            ) : (
-              <EmptyState />
-            )}
+            {selectedWorkItemIds.includes("33-instructing-agent") || selectedWorkItemIds.includes("33-additional-factors") ? (
+              <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-form">
+                <h2 className="text-lg font-semibold text-slate-950">3. Item options</h2>
+                <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                  {selectedWorkItemIds.includes("33-instructing-agent") ? <SelectField label="Agent attended" value={agentHearingType ?? ""} options={["judicial_conference", "formal_proof", "defended_hearing"]} optionLabels={{ judicial_conference: "Judicial Conference", formal_proof: "Formal Proof Hearing", defended_hearing: "Defended Hearing" }} onChange={(value) => setAgentHearingType(value as StructuredBillingInput["agentHearingType"])} /> : null}
+                  {selectedWorkItemIds.includes("33-additional-factors") ? <SelectField label="Additional factors apply to" value={additionalFactorSection ?? ""} options={["applications_orders", "pre_hearing", "defended_hearing"]} optionLabels={{ applications_orders: "Applications/orders", pre_hearing: "Pre-hearing", defended_hearing: "Defended hearing" }} onChange={(value) => setAdditionalFactorSection(value as StructuredBillingInput["additionalFactorSection"])} /> : null}
+                </div>
+              </section>
+            ) : null}
+
+            <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-form">
+              <h2 className="text-lg font-semibold text-slate-950">4. Travel and disbursements</h2>
+              <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                <CheckField label="Travel time" checked={travelTimeSelected} onChange={setTravelTimeSelected} detail="$63 per hour; GST applies" />
+                <CheckField label="Mileage" checked={mileageSelected} onChange={setMileageSelected} detail="$1.17 per km; no GST" />
+              </div>
+              {travelTimeSelected || mileageSelected ? <div className="mt-4 max-w-md"><SelectField label="Court for return travel" value={travelCourt} options={travelReferences.map((court) => court.court)} onChange={setTravelCourt} /></div> : null}
+              <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                <NumberField label="Parking amount" value={parking} onChange={setParking} />
+                <NumberField label="Other disbursement amount" value={officeDisbursements} onChange={setOfficeDisbursements} />
+              </div>
+              <label className="mt-4 block text-sm font-medium text-slate-700">Optional wording notes<textarea className="mt-2 min-h-24 w-full rounded-md border border-slate-300 px-3 py-2 text-sm" value={optionalWordingNotes} onChange={(event) => setOptionalWordingNotes(event.target.value)} placeholder="Optional only—work-item selection remains the source of truth." /></label>
+            </section>
           </div>
+
+          <aside className="space-y-6 xl:sticky xl:top-6 xl:self-start">
+            <PreviewPanel record={previewRecord} errors={validationErrors} editableWording={editableWording} onWordingChange={setEditableWording} />
+            <button type="button" disabled={isGenerating || !previewRecord} onClick={generateDocument} className="inline-flex h-12 w-full items-center justify-center rounded-md bg-sky-600 px-4 text-sm font-semibold text-white shadow-sm hover:bg-sky-700 disabled:cursor-not-allowed disabled:bg-slate-300">{isGenerating ? "Generating..." : `Generate Form${formType}`}</button>
+            {generationError ? <p className="rounded-md bg-red-50 p-3 text-sm font-medium text-red-700">{generationError}</p> : null}
+            {generationNotice ? <p className="rounded-md bg-emerald-50 p-3 text-sm font-medium text-emerald-800">{generationNotice}</p> : null}
+          </aside>
         </section>
       </div>
     </main>
   );
 }
 
-function Field({
-  label,
-  value,
-  onChange,
-}: {
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-}) {
-  const id = label.toLowerCase().replace(/\s+/g, "-");
-
-  return (
-    <label className="block text-sm font-medium text-slate-700" htmlFor={id}>
-      {label}
-      <input
-        id={id}
-        className="mt-2 h-10 w-full rounded-md border border-slate-300 px-3 text-sm text-slate-950 shadow-sm outline-none transition placeholder:text-slate-400 focus:border-sky-500 focus:ring-2 focus:ring-sky-100"
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-      />
-    </label>
-  );
-}
-
-function FormChoice({
-  label,
-  selected,
-  onSelect,
-}: {
-  label: BillingFormType;
-  selected: boolean;
-  onSelect: () => void;
-}) {
-  return (
-    <label className={selected
-      ? "flex h-11 cursor-pointer items-center justify-center rounded-md border border-sky-500 bg-sky-50 text-sm font-semibold text-sky-800"
-      : "flex h-11 cursor-pointer items-center justify-center rounded-md border border-slate-300 bg-white text-sm font-semibold text-slate-700 transition hover:bg-slate-50"}
-    >
-      <input
-        type="radio"
-        name="form-type"
-        className="sr-only"
-        checked={selected}
-        onChange={onSelect}
-      />
-      Form {label}
-    </label>
-  );
-}
-
-function EmptyState() {
-  return (
-    <div className="rounded-lg border border-dashed border-slate-300 bg-white px-5 py-12 text-center shadow-form">
-      <h2 className="text-lg font-semibold text-slate-950">No draft yet</h2>
-      <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-slate-600">
-        Enter a billing note and generate a draft to review the identified work, client details, wording, disbursements, and evidence status.
-      </p>
-    </div>
-  );
-}
-
-function DetectedWorkPanel({
-  record,
-  onCategoryChange,
-}: {
-  record: BillingRecord;
-  onCategoryChange: (recordId: string, category: BillingCategory, checked: boolean) => void;
-}) {
-  const selectedCategories = record.draft.categories?.length ? record.draft.categories : [record.draft.category];
-
-  return (
-    <section className="mt-5 border-t border-slate-200 pt-5">
-      <div className="flex items-center justify-between gap-3">
-        <h2 className="text-sm font-semibold text-slate-950">Identified work</h2>
-        <span className="rounded-md bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-700">
-          Review before generating
-        </span>
-      </div>
-      <div className="mt-3 space-y-2">
-        {reviewableCategories.map((item) => (
-          <label
-            key={item.category}
-            className="flex items-center gap-3 rounded-md border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700"
-          >
-            <input
-              type="checkbox"
-              className="h-4 w-4 rounded border-slate-300 text-sky-600 focus:ring-sky-500"
-              checked={selectedCategories.includes(item.category)}
-              onChange={(event) => onCategoryChange(record.id, item.category, event.target.checked)}
-            />
-            {item.label}
-          </label>
-        ))}
-      </div>
-    </section>
-  );
-}
-
-function DraftPanel({
-  record,
-  generationError,
-  generationNotice,
-  isGenerating,
-  onDraftFieldChange,
-  onEvidenceUploaded,
-  onEvidenceRequirementChange,
-  onGenerate,
-  onSavePending,
-}: {
-  record: BillingRecord;
-  generationError: string;
-  generationNotice: string;
-  isGenerating: boolean;
-  onDraftFieldChange: (recordId: string, field: EditableBillingDraftField, value: string | number) => void;
-  onEvidenceUploaded: (recordId: string, evidenceType: string) => void;
-  onEvidenceRequirementChange: (recordId: string, evidenceType: string, checked: boolean) => void;
-  onGenerate: (record: BillingRecord) => void;
-  onSavePending: (record: BillingRecord) => void;
-}) {
-  const draft = record.draft;
+function PreviewPanel({ record, errors, editableWording, onWordingChange }: { record: BillingRecord | null; errors: string[]; editableWording: string; onWordingChange: (value: string) => void }) {
+  if (!record) return <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-form"><h2 className="text-lg font-semibold text-slate-950">Preview</h2><div className="mt-4 space-y-2">{errors.map((error) => <p key={error} className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-900">{error}</p>)}</div></section>;
+  const rows = getBillingPreviewRows(record);
   const totals = calculateBillingTotals(record);
-  const missingEvidence = record.evidence.filter((requirement) => !requirement.uploaded);
-
-  return (
-    <>
-      <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-form">
-        <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
-          <div>
-            <h2 className="text-lg font-semibold text-slate-950">Review and generate</h2>
-            <p className="mt-1 text-sm text-slate-600">Form {draft.formType} | {(draft.categoryLabels?.length ? draft.categoryLabels : [draft.categoryLabel]).join(", ")}</p>
-            <p className="mt-2 text-sm font-semibold text-slate-950">Invoice total: ${totals.total.toFixed(2)}</p>
-          </div>
-          <span className={draft.status === "pending_evidence" ? "rounded-md bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-900" : "rounded-md bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-900"}>
-            {draft.status === "pending_evidence" ? "Pending evidence" : "Ready to review"}
-          </span>
-        </div>
-
-        <div className="mt-6 grid gap-4 sm:grid-cols-2">
-          <Field
-            label="Client name"
-            value={draft.clientName}
-            onChange={(value) => onDraftFieldChange(record.id, "clientName", value)}
-          />
-          <Field
-            label="Legal aid number"
-            value={draft.legalAidNumber}
-            onChange={(value) => onDraftFieldChange(record.id, "legalAidNumber", value)}
-          />
-          <Field
-            label="Invoice number"
-            value={draft.invoiceNumber}
-            onChange={(value) => onDraftFieldChange(record.id, "invoiceNumber", value)}
-          />
-          <Field
-            label="Court"
-            value={draft.court}
-            onChange={(value) => onDraftFieldChange(record.id, "court", value)}
-          />
-          <Field
-            label="Billing date"
-            value={draft.date}
-            onChange={(value) => onDraftFieldChange(record.id, "date", value)}
-          />
-          <Field
-            label="Start time"
-            value={draft.startTime}
-            onChange={(value) => onDraftFieldChange(record.id, "startTime", value)}
-          />
-          <Field
-            label="End time"
-            value={draft.endTime}
-            onChange={(value) => onDraftFieldChange(record.id, "endTime", value)}
-          />
-          <NumberField
-            label="Attendance hours"
-            value={draft.attendanceHours}
-            onChange={(value) => onDraftFieldChange(record.id, "attendanceHours", value)}
-          />
-          <NumberField
-            label="Parking"
-            value={draft.parking}
-            onChange={(value) => onDraftFieldChange(record.id, "parking", value)}
-          />
-          <NumberField
-            label="Office disbursements"
-            value={draft.officeDisbursements}
-            onChange={(value) => onDraftFieldChange(record.id, "officeDisbursements", value)}
-          />
-        </div>
-        <label className="mt-4 block text-sm font-medium text-slate-700" htmlFor="standard-wording">
-          Word form wording
-          <textarea
-            id="standard-wording"
-            className="mt-2 min-h-32 w-full rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-950 shadow-sm outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-100"
-            value={draft.standardWording}
-            onChange={(event) => onDraftFieldChange(record.id, "standardWording", event.target.value)}
-          />
-        </label>
-        <p className="mt-2 text-sm leading-6 text-slate-600">
-          This is the reviewed wording that will be inserted into the Word form. Edit it here before generating the document.
-        </p>
-      </section>
-
-      <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-form">
-        <h2 className="text-lg font-semibold text-slate-950">Evidence checklist</h2>
-        <p className="mt-2 text-sm leading-6 text-slate-600">
-          Evidence is optional tracking. Tick only the proof that will be collected later; the form can still be generated now.
-        </p>
-        <div className="mt-4 grid gap-2 sm:grid-cols-2">
-          {optionalEvidenceRequirements.map((requirement) => {
-            const selected = record.evidence.some((item) => item.type === requirement.type);
-
-            return (
-              <label
-                key={requirement.type}
-                className="flex items-center gap-2 rounded-md border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700"
-              >
-                <input
-                  type="checkbox"
-                  className="h-4 w-4 rounded border-slate-300 text-sky-600 focus:ring-sky-500"
-                  checked={selected}
-                  onChange={(event) => onEvidenceRequirementChange(record.id, requirement.type, event.target.checked)}
-                />
-                {requirement.label} needed
-              </label>
-            );
-          })}
-        </div>
-        {draft.evidenceRequirements.length ? (
-          <div className="mt-4 space-y-2">
-            {draft.evidenceRequirements.map((requirement) => (
-              <div key={requirement.type} className="flex items-center justify-between gap-4 rounded-md border border-slate-200 px-3 py-2">
-                <span className="text-sm font-medium text-slate-700">{requirement.label}</span>
-                {requirement.uploaded ? (
-                  <span className="text-xs font-semibold text-emerald-700">Received</span>
-                ) : (
-                  <button
-                    type="button"
-                    className="rounded-md border border-amber-200 bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-900 transition hover:bg-amber-100"
-                    onClick={() => onEvidenceUploaded(record.id, requirement.type)}
-                  >
-                    Upload / mark received
-                  </button>
-                )}
-              </div>
-            ))}
-          </div>
-        ) : (
-          <p className="mt-3 text-sm text-slate-600">No supporting evidence has been selected for follow-up.</p>
-        )}
-
-        {draft.warnings.length ? (
-          <div className="mt-5 rounded-md border border-amber-200 bg-amber-50 p-3">
-            <h3 className="text-sm font-semibold text-amber-950">Review flags</h3>
-            <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-amber-900">
-              {draft.warnings.map((warning) => <li key={warning}>{warning}</li>)}
-            </ul>
-          </div>
-        ) : null}
-      </section>
-
-      <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-form">
-        <h2 className="text-lg font-semibold text-slate-950">Template status</h2>
-        <p className="mt-3 text-sm leading-6 text-slate-600">{draft.templateStatus}</p>
-        <p className="mt-2 text-sm font-medium text-slate-700">Template path: {record.templatePath}</p>
-        <button
-          type="button"
-          disabled={isGenerating}
-          className="mt-5 inline-flex h-10 items-center justify-center rounded-md bg-sky-600 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-sky-700 disabled:cursor-not-allowed disabled:bg-slate-300"
-          onClick={() => onGenerate(record)}
-        >
-          {isGenerating ? "Generating..." : `Generate reviewed Form ${record.formType}`}
-        </button>
-        {missingEvidence.length ? (
-          <button
-            type="button"
-            className="ml-0 mt-3 inline-flex h-10 items-center justify-center rounded-md border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-800 shadow-sm transition hover:bg-slate-50 sm:ml-3"
-            onClick={() => onSavePending(record)}
-          >
-            Save pending invoice
-          </button>
-        ) : null}
-        {missingEvidence.length ? (
-          <p className="mt-3 text-sm font-medium text-amber-700">
-            Generation will continue. Dashboard follow-up will remain for: {missingEvidence.map((item) => item.label).join(", ")}.
-          </p>
-        ) : null}
-        {generationError ? <p className="mt-3 text-sm font-medium text-red-700">{generationError}</p> : null}
-        {generationNotice ? <p className="mt-3 text-sm font-medium text-emerald-700">{generationNotice}</p> : null}
-      </section>
-
-      <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-form">
-        <h2 className="text-lg font-semibold text-slate-950">Temporary evidence follow-up rules</h2>
-        <div className="mt-4 grid gap-3 text-sm leading-6 text-slate-700">
-          <p>
-            If required evidence is still pending one day after the invoice is created, the dashboard will notify the lawyer.
-          </p>
-          <p>
-            Each morning after that, the dashboard will continue to show a reminder until the missing evidence is marked received.
-          </p>
-          <p>
-            Current evidence types include parking receipts, notices of fixture, Judge's directions, reports, and agent or counsel invoices.
-          </p>
-        </div>
-      </section>
-    </>
-  );
+  return <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-form">
+    <div className="flex items-start justify-between gap-3"><div><h2 className="text-lg font-semibold text-slate-950">Form{record.formType} preview</h2><p className="mt-1 text-xs text-slate-500">{record.invoiceNumber}</p></div><span className="rounded bg-emerald-100 px-2 py-1 text-xs font-semibold text-emerald-900">Ready</span></div>
+    <div className="mt-4 overflow-hidden rounded-md border border-slate-200"><table className="w-full text-sm"><thead className="bg-slate-50 text-xs uppercase text-slate-500"><tr><th className="px-3 py-2 text-left">Row</th><th className="px-2 py-2 text-right">Qty</th><th className="px-2 py-2 text-right">Unit</th><th className="px-3 py-2 text-right">Total</th></tr></thead><tbody>{rows.map((row) => <tr key={row.label} className="border-t border-slate-100"><td className="px-3 py-2 text-slate-800">{row.label}</td><td className="px-2 py-2 text-right">{row.quantity}</td><td className="px-2 py-2 text-right">${row.unit.toFixed(2)}</td><td className="px-3 py-2 text-right font-medium">${row.total.toFixed(2)}</td></tr>)}</tbody></table></div>
+    <dl className="mt-4 space-y-2 text-sm"><Total label="Application fees (ta)" value={totals.totalApplication} /><Total label="Disbursements excluding mileage (td)" value={totals.totalDisbursementsExcludingMileage} /><Total label="GST (15%)" value={totals.totalGst} /><Total label="Mileage (m_t, no GST)" value={totals.totalMileage} /><Total label="Final payable" value={totals.total} strong /></dl>
+    <label className="mt-5 block text-sm font-medium text-slate-700">Editable Word wording<textarea className="mt-2 min-h-56 w-full rounded-md border border-slate-300 px-3 py-2 text-sm leading-6" value={editableWording} onChange={(event) => onWordingChange(event.target.value)} /></label>
+  </section>;
 }
 
-function NumberField({
-  label,
-  value,
-  onChange,
-}: {
-  label: string;
-  value: number;
-  onChange: (value: number) => void;
-}) {
-  const id = label.toLowerCase().replace(/\s+/g, "-");
-
-  return (
-    <label className="block text-sm font-medium text-slate-700" htmlFor={id}>
-      {label}
-      <input
-        id={id}
-        type="number"
-        step="0.01"
-        className="mt-2 h-10 w-full rounded-md border border-slate-300 px-3 text-sm text-slate-950 shadow-sm outline-none transition placeholder:text-slate-400 focus:border-sky-500 focus:ring-2 focus:ring-sky-100"
-        value={value}
-        onChange={(event) => onChange(Number(event.target.value))}
-      />
-    </label>
-  );
-}
+function TextField({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) { return <label className="block text-sm font-medium text-slate-700">{label}<input className="mt-2 h-10 w-full rounded-md border border-slate-300 px-3 text-sm" value={value} onChange={(event) => onChange(event.target.value)} /></label>; }
+function Input({ label, type, value, onChange }: { label: string; type: string; value: string; onChange: (value: string) => void }) { return <label className="block text-xs font-medium text-slate-700">{label}<input type={type} className="mt-1 h-10 w-full rounded-md border border-slate-300 px-2 text-sm" value={value} onChange={(event) => onChange(event.target.value)} /></label>; }
+function SelectField({ label, value, options, optionLabels = {}, onChange }: { label: string; value: string; options: string[]; optionLabels?: Record<string, string>; onChange: (value: string) => void }) { return <label className="block text-sm font-medium text-slate-700">{label}<select className="mt-2 h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm" value={value} onChange={(event) => onChange(event.target.value)}><option value="">Select...</option>{options.map((option) => <option key={option} value={option}>{optionLabels[option] ?? option}</option>)}</select></label>; }
+function NumberField({ label, value, onChange }: { label: string; value: number; onChange: (value: number) => void }) { return <label className="block text-sm font-medium text-slate-700">{label}<div className="relative mt-2"><span className="absolute left-3 top-2.5 text-sm text-slate-500">$</span><input type="number" min="0" step="0.01" className="h-10 w-full rounded-md border border-slate-300 pl-7 pr-3 text-sm" value={value || ""} onChange={(event) => onChange(Number(event.target.value) || 0)} /></div></label>; }
+function CheckField({ label, checked, onChange, detail }: { label: string; checked: boolean; onChange: (value: boolean) => void; detail: string }) { return <label className={checked ? "flex cursor-pointer gap-3 rounded-md border border-sky-300 bg-sky-50 p-3" : "flex cursor-pointer gap-3 rounded-md border border-slate-200 p-3"}><input type="checkbox" className="mt-0.5 h-4 w-4 rounded border-slate-300 text-sky-600" checked={checked} onChange={(event) => onChange(event.target.checked)} /><span><span className="block text-sm font-medium text-slate-900">{label}</span><span className="text-xs text-slate-500">{detail}</span></span></label>; }
+function Total({ label, value, strong = false }: { label: string; value: number; strong?: boolean }) { return <div className={strong ? "flex justify-between border-t border-slate-200 pt-3 text-base font-semibold text-slate-950" : "flex justify-between text-slate-700"}><dt>{label}</dt><dd>${value.toFixed(2)}</dd></div>; }

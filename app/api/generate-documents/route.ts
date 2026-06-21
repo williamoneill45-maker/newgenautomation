@@ -156,6 +156,12 @@ export async function POST(request: Request) {
     const applicantName = body.matter.intake.applicant.fullName || body.matter.clientName;
     const respondentName = body.matter.intake.respondent.fullName || "the Respondent";
     const parentingOrdersSought = affidavitDraft?.parentingOrdersSought ?? false;
+    const childNames = body.matter.intake.children
+      .map((child) => child.fullName.trim().split(/\s+/)[0])
+      .filter(Boolean);
+    const formattedChildNames = childNames.length > 1
+      ? `${childNames.slice(0, -1).join(", ")} and ${childNames.at(-1)}`
+      : childNames[0] || "the children";
     const templateFields = {
       ...fields,
       ...(templateDefinition.id === "confidential_address_application"
@@ -179,8 +185,8 @@ export async function POST(request: Request) {
             parenting_heading: "",
             parenting_blurb: "",
             orders_sought_blurb: parentingOrdersSought
-              ? "I seek a final Protection Order. I also seek an interim Parenting Order placing the children in my day-to-day care, with contact determined on terms that protect their safety and welfare."
-              : "I seek a final Protection Order against the Respondent.",
+              ? `I seek an Order granting the children and myself a Protection Order against the Respondent. I seek the standard conditions of a Protection Order. I also seek a Parenting Order granting me the day-to-day care of ${formattedChildNames}. I respectfully request these orders are granted without notice to the Respondent.`
+              : "I seek an Order granting myself a Protection Order against the Respondent. I seek the standard conditions of a Protection Order. I respectfully request this order is granted without notice to the Respondent.",
           }
         : {}),
     };

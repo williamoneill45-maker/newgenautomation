@@ -83,6 +83,22 @@ export type BillingDraft = {
   status: BillingStatus;
   templateStatus: string;
   warnings: string[];
+  structuredSelection?: {
+    workItems: Array<{
+      id: string;
+      label: string;
+      date: string;
+      court: string;
+      startTime: string;
+      endTime: string;
+      attendanceHours: number;
+      wording: string;
+    }>;
+    agentHearingType?: "judicial_conference" | "formal_proof" | "defended_hearing";
+    additionalFactorSection?: "applications_orders" | "pre_hearing" | "defended_hearing";
+    travelTimeSelected: boolean;
+    mileageSelected: boolean;
+  };
 };
 
 export type BillingRecord = {
