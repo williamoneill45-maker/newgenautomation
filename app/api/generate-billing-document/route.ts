@@ -90,8 +90,18 @@ export async function POST(request: Request) {
     }
 
     const fields = buildBillingMergeFields(body.record);
+    const travelCourt = body.record.draft.travel?.travelTimeValue
+      ? body.record.draft.travel.court
+      : "";
     const { buffer, report } = await mergeDocxTemplate(sourceTemplate, fields, {
       outputType: "document",
+      ...(travelCourt
+        ? {
+            literalTextReplacements: {
+              "Travel – Time – necessary": `Travel – Time – necessary to ${travelCourt}`,
+            },
+          }
+        : {}),
     });
     const outputBuffer = Buffer.from(buffer);
     const uploadBuffer = outputBuffer.buffer.slice(

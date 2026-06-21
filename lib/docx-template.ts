@@ -50,6 +50,7 @@ export type DocxMergeOptions = {
   childCount?: number;
   informationSheetEthnicityCheckboxes?: [boolean[], boolean[]];
   paragraphInsertions?: Record<string, string[]>;
+  literalTextReplacements?: Record<string, string>;
 };
 
 function escapeXml(value: string): string {
@@ -199,10 +200,14 @@ function updateInformationSheetCheckboxes(
 
 function replaceParagraphText(paragraphXml: string, value: string): string {
   const nodes = readTextNodes(paragraphXml);
+  const formattedValue = escapeXml(value).replace(
+    /\r?\n/g,
+    '</w:t><w:br/><w:t xml:space="preserve">',
+  );
   if (!nodes.length) {
     return paragraphXml.replace(
       "</w:p>",
-      `<w:r><w:t xml:space="preserve">${escapeXml(value)}</w:t></w:r></w:p>`,
+      `<w:r><w:t xml:space="preserve">${formattedValue}</w:t></w:r></w:p>`,
     );
   }
 
@@ -210,7 +215,7 @@ function replaceParagraphText(paragraphXml: string, value: string): string {
   let cursor = 0;
   nodes.forEach((node, index) => {
     output += paragraphXml.slice(cursor, node.fullMatchStart);
-    output += `${node.openTag}${index === 0 ? escapeXml(value) : ""}${node.closeTag}`;
+    output += `${node.openTag}${index === 0 ? formattedValue : ""}${node.closeTag}`;
     cursor = node.fullMatchEnd;
   });
   return output + paragraphXml.slice(cursor);
@@ -250,6 +255,9 @@ function applyTemplateTransformations(xml: string, options: DocxMergeOptions): s
   }
   if (options.paragraphInsertions) {
     output = insertRepeatedParagraphs(output, options.paragraphInsertions);
+  }
+  if (options.literalTextReplacements) {
+    output = replaceLiteralText(output, options.literalTextReplacements);
   }
   return output;
 }
@@ -306,6 +314,34 @@ function replaceTextRange(
     node.text = "";
     node.changed = true;
   }
+}
+
+function replaceLiteralText(xml: string, replacements: Record<string, string>): string {
+  const nodes = readTextNodes(xml);
+  const fullText = nodes.map((node) => node.text).join("");
+  const ranges: Array<{ start: number; end: number; value: string }> = [];
+
+  for (const [source, value] of Object.entries(replacements)) {
+    if (!source) continue;
+    let start = fullText.indexOf(source);
+    while (start !== -1) {
+      ranges.push({ start, end: start + source.length, value });
+      start = fullText.indexOf(source, start + source.length);
+    }
+  }
+
+  for (const range of ranges.sort((left, right) => right.start - left.start)) {
+    replaceTextRange(nodes, range.start, range.end, range.value);
+  }
+
+  let output = "";
+  let xmlCursor = 0;
+  for (const node of nodes) {
+    output += xml.slice(xmlCursor, node.fullMatchStart);
+    output += `${node.openTag}${node.changed ? escapeXml(node.text) : node.rawText}${node.closeTag}`;
+    xmlCursor = node.fullMatchEnd;
+  }
+  return output + xml.slice(xmlCursor);
 }
 
 export function mergePlaceholdersInXml(xml: string, fields: MergeFields): string {

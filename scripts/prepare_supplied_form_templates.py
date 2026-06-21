@@ -23,6 +23,9 @@ REPLACEMENTS = {
     "protection": {
         "North Shore": "{{English_court_name}}",
     },
+    "affidavit": {
+        "{{Applicant_Name}}": "Applicant",
+    },
 }
 
 
@@ -53,6 +56,49 @@ def patch_document_xml(data: bytes, form_kind: str) -> bytes:
         if "{{applicant_ethnicity_other_value}}" not in applicant_text:
             text_nodes = applicant_paragraph.xpath(".//w:t", namespaces=NS)
             text_nodes[-1].text = (text_nodes[-1].text or "") + " {{applicant_ethnicity_other_value}}"
+
+    if form_kind == "affidavit":
+        for instruction in root.xpath(".//w:instrText", namespaces=NS):
+            if (instruction.text or "").strip() == "1 Court":
+                instruction.tag = f"{{{W_NS}}}t"
+                instruction.text = "COURT"
+
+        for paragraph in root.xpath(".//w:p", namespaces=NS):
+            paragraph_text = "".join(paragraph.xpath(".//w:t/text()", namespaces=NS))
+            if paragraph_text.startswith("HELD AT "):
+                for run in paragraph.xpath("./w:r[w:fldChar]", namespaces=NS):
+                    paragraph.remove(run)
+
+            if "{{Applicant_Name}}" in paragraph_text:
+                text_nodes = paragraph.xpath(".//w:t", namespaces=NS)
+                text_nodes[0].text = paragraph_text.replace("{{Applicant_Name}}", "Applicant")
+                for text_node in text_nodes[1:]:
+                    text_node.text = ""
+                found["{{Applicant_Name}}"] += 1
+                paragraph_text = paragraph_text.replace("{{Applicant_Name}}", "Applicant")
+
+            if "{{application_intro}}" in paragraph_text:
+                paragraph_properties = paragraph.find(f"{{{W_NS}}}pPr")
+                if paragraph_properties is None:
+                    paragraph_properties = etree.Element(f"{{{W_NS}}}pPr")
+                    paragraph.insert(0, paragraph_properties)
+                spacing = paragraph_properties.find(f"{{{W_NS}}}spacing")
+                if spacing is None:
+                    spacing = etree.SubElement(paragraph_properties, f"{{{W_NS}}}spacing")
+                spacing.set(f"{{{W_NS}}}before", "120")
+                spacing.set(f"{{{W_NS}}}after", "120")
+
+            if paragraph_text.strip().startswith(("{{APPLICANT_NAME}}", "{{RESPONDENT_NAME}}")) or "AFFIDAVIT OF {{APPLICANT_NAME}}" in paragraph_text:
+                for run in paragraph.xpath(".//w:r", namespaces=NS):
+                    run_text = "".join(run.xpath(".//w:t/text()", namespaces=NS))
+                    if "{{APPLICANT_NAME}}" not in run_text and "{{RESPONDENT_NAME}}" not in run_text:
+                        continue
+                    run_properties = run.find(f"{{{W_NS}}}rPr")
+                    if run_properties is None:
+                        run_properties = etree.Element(f"{{{W_NS}}}rPr")
+                        run.insert(0, run_properties)
+                    if run_properties.find(f"{{{W_NS}}}b") is None:
+                        etree.SubElement(run_properties, f"{{{W_NS}}}b")
 
     document_text = "".join(root.xpath(".//w:t/text()", namespaces=NS))
     missing = [

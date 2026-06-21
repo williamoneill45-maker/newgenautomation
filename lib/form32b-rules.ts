@@ -15,7 +15,7 @@ export const form32BFeeRules = {
     report: 190,
     additionalFactorsPreHearingMatters: 190,
     defendedHearingPreparation: 160,
-    defendedHearingPerHalfHour: 160,
+    defendedHearingPerHalfHour: 67,
     directionsConferencePreparation: 140,
     directionsConferenceHearingPerHalfHour: 67,
     preHearingConferencePreparation: 140,
@@ -183,7 +183,7 @@ export const form32BManagementRules: Form32BManagementRule[] = [
       "Defended Hearing - review file, prepare for defended hearing, cross examination, briefing witnesses, preparing submissions. Reporting to client. We attended at the Fixture on [billing date] from [attendance time].",
     status: "Active",
     inactiveReason: "No blocker for current placeholders.",
-    howToFix: "Test defended hearing examples and confirm the hearing rate is $160 per unit.",
+    howToFix: "Test defended hearing examples and confirm the hearing rate is $67 per half hour.",
   },
   {
     id: "directions-conference",

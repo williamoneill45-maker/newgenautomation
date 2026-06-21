@@ -18,6 +18,8 @@ import {
   type BillingWorkItemId,
   type StructuredBillingInput,
 } from "../../lib/billing-selection";
+import { form32BSettingsStorageKey } from "../../lib/form32b-rules";
+import { form33ASettingsStorageKey } from "../../lib/form33a-rules";
 
 const today = new Date().toISOString().slice(0, 10);
 const emptyDetails: BillingItemDetails = { date: today, court: "", startTime: "", endTime: "" };
@@ -41,6 +43,7 @@ export default function BillingPage() {
   const [parking, setParking] = useState(0);
   const [officeDisbursements, setOfficeDisbursements] = useState(0);
   const [optionalWordingNotes, setOptionalWordingNotes] = useState("");
+  const [wordingOverrides, setWordingOverrides] = useState<Partial<Record<BillingWorkItemId, string>>>({});
   const [editableWording, setEditableWording] = useState("");
   const [generationError, setGenerationError] = useState("");
   const [generationNotice, setGenerationNotice] = useState("");
@@ -51,6 +54,32 @@ export default function BillingPage() {
     groups[item.group] = [...(groups[item.group] ?? []), item];
     return groups;
   }, {}), [formType]);
+  const selectedTravelReference = travelReferences.find((reference) => reference.court === travelCourt);
+
+  useEffect(() => {
+    const overrides: Partial<Record<BillingWorkItemId, string>> = {};
+    const storageKeys: Array<[BillingFormType, string]> = [
+      ["32B", form32BSettingsStorageKey],
+      ["33A", form33ASettingsStorageKey],
+    ];
+
+    storageKeys.forEach(([settingsFormType, storageKey]) => {
+      const storedSettings = window.localStorage.getItem(storageKey);
+      if (!storedSettings) return;
+      try {
+        const settings = JSON.parse(storedSettings) as { wordingByRuleId?: Record<string, string> };
+        billingWorkItems
+          .filter((item) => item.formType === settingsFormType)
+          .forEach((item) => {
+            const wording = settings.wordingByRuleId?.[item.managementRuleId];
+            if (typeof wording === "string") overrides[item.id] = wording;
+          });
+      } catch {
+        window.localStorage.removeItem(storageKey);
+      }
+    });
+    setWordingOverrides(overrides);
+  }, []);
 
   const structuredInput: StructuredBillingInput = {
     formType,
@@ -67,6 +96,7 @@ export default function BillingPage() {
     parking,
     officeDisbursements,
     optionalWordingNotes,
+    wordingOverrides,
   };
   const validationErrors = validateStructuredBillingInput(structuredInput);
   const previewRecord = useMemo(() => {
@@ -76,7 +106,7 @@ export default function BillingPage() {
     } catch {
       return null;
     }
-  }, [formType, clientName, legalAidNumber, selectedWorkItemIds, detailsByItem, agentHearingType, additionalFactorSection, travelTimeSelected, mileageSelected, travelCourt, parking, officeDisbursements, optionalWordingNotes]);
+  }, [formType, clientName, legalAidNumber, selectedWorkItemIds, detailsByItem, agentHearingType, additionalFactorSection, travelTimeSelected, mileageSelected, travelCourt, parking, officeDisbursements, optionalWordingNotes, wordingOverrides]);
 
   useEffect(() => {
     setEditableWording(previewRecord?.draft.standardWording ?? "");
@@ -276,7 +306,7 @@ export default function BillingPage() {
                 <CheckField label="Travel time" checked={travelTimeSelected} onChange={setTravelTimeSelected} detail="$63 per hour; GST applies" />
                 <CheckField label="Mileage" checked={mileageSelected} onChange={setMileageSelected} detail="$1.17 per km; no GST" />
               </div>
-              {travelTimeSelected || mileageSelected ? <div className="mt-4 max-w-md"><SelectField label="Court for return travel" value={travelCourt} options={travelReferences.map((court) => court.court)} onChange={setTravelCourt} /></div> : null}
+              {travelTimeSelected || mileageSelected ? <div className="mt-4 max-w-md"><SelectField label="Court for return travel" value={travelCourt} options={travelReferences.map((court) => court.court)} onChange={setTravelCourt} />{selectedTravelReference ? <p className="mt-2 text-sm text-slate-600">Return travel: {selectedTravelReference.returnTravelTime}; return distance: {selectedTravelReference.returnDistance}.</p> : null}</div> : null}
               <div className="mt-4 grid gap-4 sm:grid-cols-2">
                 <NumberField label="Parking amount" value={parking} onChange={setParking} />
                 <NumberField label="Other disbursement amount" value={officeDisbursements} onChange={setOfficeDisbursements} />
@@ -305,7 +335,8 @@ function PreviewPanel({ record, errors, editableWording, onWordingChange }: { re
     <div className="flex items-start justify-between gap-3"><div><h2 className="text-lg font-semibold text-slate-950">Form{record.formType} preview</h2><p className="mt-1 text-xs text-slate-500">{record.invoiceNumber}</p></div><span className="rounded bg-emerald-100 px-2 py-1 text-xs font-semibold text-emerald-900">Ready</span></div>
     <div className="mt-4 overflow-hidden rounded-md border border-slate-200"><table className="w-full text-sm"><thead className="bg-slate-50 text-xs uppercase text-slate-500"><tr><th className="px-3 py-2 text-left">Row</th><th className="px-2 py-2 text-right">Qty</th><th className="px-2 py-2 text-right">Unit</th><th className="px-3 py-2 text-right">Total</th></tr></thead><tbody>{rows.map((row) => <tr key={row.label} className="border-t border-slate-100"><td className="px-3 py-2 text-slate-800">{row.label}</td><td className="px-2 py-2 text-right">{row.quantity}</td><td className="px-2 py-2 text-right">${row.unit.toFixed(2)}</td><td className="px-3 py-2 text-right font-medium">${row.total.toFixed(2)}</td></tr>)}</tbody></table></div>
     <dl className="mt-4 space-y-2 text-sm"><Total label="Application fees (ta)" value={totals.totalApplication} /><Total label="Disbursements excluding mileage (td)" value={totals.totalDisbursementsExcludingMileage} /><Total label="GST (15%)" value={totals.totalGst} /><Total label="Mileage (m_t, no GST)" value={totals.totalMileage} /><Total label="Final payable" value={totals.total} strong /></dl>
-    <label className="mt-5 block text-sm font-medium text-slate-700">Editable Word wording<textarea className="mt-2 min-h-56 w-full rounded-md border border-slate-300 px-3 py-2 text-sm leading-6" value={editableWording} onChange={(event) => onWordingChange(event.target.value)} /></label>
+    <div className="mt-5"><p className="text-sm font-medium text-slate-700">Generated wording preview</p><div className="mt-2 max-h-48 overflow-y-auto whitespace-pre-wrap rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm leading-6 text-slate-700">{record.draft.standardWording}</div></div>
+    <label className="mt-5 block text-sm font-medium text-slate-700">Final wording inserted into the form<textarea className="mt-2 min-h-56 w-full rounded-md border border-slate-300 px-3 py-2 text-sm leading-6" value={editableWording} onChange={(event) => onWordingChange(event.target.value)} /><span className="mt-2 block text-xs font-normal leading-5 text-slate-500">Review and edit this text if needed. This exact final version is inserted into the wording section at the end of the generated form.</span></label>
   </section>;
 }
 

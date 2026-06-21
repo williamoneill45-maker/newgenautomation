@@ -133,7 +133,6 @@ export async function POST(request: Request) {
 
     const sourceTemplate = await readSourceTemplate(templateDefinition.sourceFileName);
     const fields = buildTemplateMergeFields(body.matter, templateDefinition.id);
-    const applicantName = body.matter.intake.applicant.fullName || body.matter.clientName;
     const templateFields = {
       ...fields,
       ...(templateDefinition.id === "confidential_address_application"
@@ -144,7 +143,9 @@ export async function POST(request: Request) {
         : {}),
       ...(templateDefinition.id === "domestic_violence_affidavit"
         ? {
-            Applicant_Name: applicantName,
+            Applicant_Name: "Applicant",
+            English_court_name: typeof fields.English_court_name === "string" ? fields.English_court_name.toUpperCase() : "",
+            Maori_court_name: typeof fields.Maori_court_name === "string" ? fields.Maori_court_name.toUpperCase() : "",
             affidavit_application_title: affidavitContent.applicationTitle,
             relationship_start_blurb: affidavitContent.relationshipStartBlurb,
             relationship_end: affidavitContent.relationshipEnd,
@@ -207,7 +208,7 @@ export async function POST(request: Request) {
             paragraphInsertions: {
               children_blurb: affidavitContent.childrenParagraphs,
               protection_facts_heading: affidavitContent.protectionFactsHeading,
-              violence_categories: [],
+              violence_categories: [""],
               insert_history_blurb: [""],
               insert_recent_events_blurb: [""],
               without_notice_heading: affidavitContent.withoutNoticeHeading,
