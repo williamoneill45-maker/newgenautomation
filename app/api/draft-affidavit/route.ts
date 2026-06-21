@@ -165,7 +165,7 @@ function buildFallbackDraft({
   const recentEvents = buildNumberedSection(
     "Recent Events",
     recentEventsNotes,
-    Math.max(history.nextNumber, 26),
+    history.nextNumber,
   );
   const ordersText = ensureSentence(ordersSought || selectedOrders.join(", "));
 
@@ -339,7 +339,7 @@ export async function POST(request: Request) {
               "Formatting requirements:",
               "- Put the paragraph number and paragraph text on the same line, for example: 4. During the relationship, the Respondent...",
               "- Start History of Family Violence at paragraph 4.",
-              "- Start Recent Events at paragraph 26 unless the history section needs more paragraphs; if so, continue numbering sequentially.",
+              "- Start Recent Events at the next paragraph after the history section and continue numbering sequentially.",
               "- Split different incidents into separate numbered paragraphs.",
               "- Use a polished affidavit style like: 'During our relationship, the Respondent pushed me on multiple occasions against objects including the kitchen bench...' where the supplied notes support that detail.",
               "- Do not merely repeat raw notes. Convert them into complete affidavit paragraphs.",

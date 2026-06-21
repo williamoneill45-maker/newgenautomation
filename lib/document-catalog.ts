@@ -65,9 +65,17 @@ export const requiredDocumentDefinitions: RequiredDocumentDefinition[] = [
     title: "Domestic Violence Affidavit",
     alwaysGenerate: true,
     stages: ["intake_merge", "ai_drafting"],
-    requiredPlaceholders: ["APPLICANT_NAME", "RESPONDENT_NAME", "COURT_LOCATION"],
+    requiredPlaceholders: [
+      "APPLICANT_NAME",
+      "RESPONDENT_NAME",
+      "relationship_start_blurb",
+      "relationship_end",
+      "violence_categories",
+      "insert_history_blurb",
+      "insert_recent_events_blurb",
+    ],
     notes:
-      "Draft history of domestic violence and recent events in real time from lawyer notes, but keep the final wording editable before generation.",
+      "Generate an editable DOCX affidavit from lawyer notes, including relationship, children, supported violence categories, history, recent events, and parenting sections when sought.",
   },
   {
     id: "legal_aid_application",

@@ -50,4 +50,10 @@ export const standardDocxTemplates: SourceTemplateDefinition[] = [
     sourceFileName: "family-court-lawyer-certificate.docx",
     outputFileName: "07 Family Court Lawyer Certificate.docx",
   },
+  {
+    id: "domestic_violence_affidavit",
+    title: "Family Violence Affidavit",
+    sourceFileName: "Domestic Violence Affidavit.docx",
+    outputFileName: "08 Family Violence Affidavit.docx",
+  },
 ];

@@ -8,6 +8,10 @@ import {
   buildTemplateMergeFields,
   getInformationSheetEthnicityCheckboxes,
 } from "../../../lib/document-automation";
+import {
+  draftDomesticViolenceAffidavit,
+  type AffidavitDraftResult,
+} from "../../../lib/affidavit-drafting";
 import { mergeDocxTemplate, type DocxMergeReport } from "../../../lib/docx-template";
 import type { MatterFile } from "../../../lib/matter";
 import { getOneDriveClientFolderPaths, uploadFileToOneDrive, type OneDriveUploadResult } from "../../../lib/onedrive";
@@ -60,6 +64,11 @@ function safeFileName(value: string): string {
   return value.replace(/[^A-Za-z0-9 ._-]/g, "").trim().replace(/\s+/g, "_") || "Client";
 }
 
+function ensurePeriod(value: string): string {
+  const trimmed = value.trim();
+  return !trimmed || /[.!?]$/.test(trimmed) ? trimmed : `${trimmed}.`;
+}
+
 function getApplicationType(matter: MatterFile): string {
   return matter.intake.selectedApplications.join(", ");
 }
@@ -92,15 +101,36 @@ export async function POST(request: Request) {
       "Double-curly placeholders are replaced deterministically.",
       "Information Sheet checkbox fields and unused Parenting Order child paragraphs are updated from intake data.",
       "Missing fields are left unchanged in the completed DOCX.",
-      "No AI generation is used for the standard DOCX forms.",
+      "AI drafting is used only for affidavit evidence; all other form fields are merged deterministically.",
+      "Affidavit paragraph insertions retain the template's editable Word text and automatic numbering.",
       "Missing source templates are skipped and listed in this validation report.",
     ],
     skippedDocuments: [],
     documents: [],
   };
+  const hasAffidavitNotes = Boolean(
+    body.matter.intake.domesticViolenceNotes.history.trim() ||
+      body.matter.intake.domesticViolenceNotes.recentEvents.trim(),
+  );
+  let affidavitDraft: AffidavitDraftResult | null = null;
 
   for (const templateDefinition of standardDocxTemplates) {
+    if (templateDefinition.id === "domestic_violence_affidavit" && !hasAffidavitNotes) {
+      validationReport.skippedDocuments.push({
+        template: templateDefinition.sourceFileName,
+        title: templateDefinition.title,
+        reason: "No family violence notes were supplied.",
+      });
+      continue;
+    }
+
     if (!(await templateExists(templateDefinition.sourceFileName))) {
+      if (templateDefinition.id === "domestic_violence_affidavit" && hasAffidavitNotes) {
+        return NextResponse.json(
+          { error: "Family violence notes were supplied, but the affidavit source template is missing from /templates." },
+          { status: 400 },
+        );
+      }
       validationReport.skippedDocuments.push({
         template: templateDefinition.sourceFileName,
         title: templateDefinition.title,
@@ -111,12 +141,46 @@ export async function POST(request: Request) {
 
     const sourceTemplate = await readSourceTemplate(templateDefinition.sourceFileName);
     const fields = buildTemplateMergeFields(body.matter, templateDefinition.id);
+    if (templateDefinition.id === "domestic_violence_affidavit") {
+      affidavitDraft = await draftDomesticViolenceAffidavit(body.matter);
+      if (
+        !affidavitDraft.sections.historyParagraphs.length &&
+        !affidavitDraft.sections.recentEventParagraphs.length
+      ) {
+        return NextResponse.json(
+          { error: "Family violence notes were supplied, but no affidavit paragraphs could be generated." },
+          { status: 422 },
+        );
+      }
+    }
+    const applicantName = body.matter.intake.applicant.fullName || body.matter.clientName;
+    const respondentName = body.matter.intake.respondent.fullName || "the Respondent";
+    const parentingOrdersSought = affidavitDraft?.parentingOrdersSought ?? false;
     const templateFields = {
       ...fields,
       ...(templateDefinition.id === "confidential_address_application"
         ? {
             APPLICANT_ADDRESS: body.matter.intake.applicant.homeAddress,
             applicant_home_address: body.matter.intake.applicant.homeAddress,
+          }
+        : {}),
+      ...(affidavitDraft
+        ? {
+            Applicant_Name: applicantName,
+            relationship_start_blurb: affidavitDraft.relationshipStartBlurb,
+            relationship_end: affidavitDraft.relationshipEnd,
+            violence_categories: "",
+            insert_history_blurb: "",
+            insert_recent_events_blurb: "",
+            children_blurb: "",
+            application_intro: parentingOrdersSought
+              ? `I am applying for a Protection Order. I am also applying for an interim Parenting Order against the Respondent ${respondentName}.`
+              : `I am applying for a Protection Order against the Respondent ${respondentName}.`,
+            parenting_heading: "",
+            parenting_blurb: "",
+            orders_sought_blurb: parentingOrdersSought
+              ? "I seek a final Protection Order. I also seek an interim Parenting Order placing the children in my day-to-day care, with contact determined on terms that protect their safety and welfare."
+              : "I seek a final Protection Order against the Respondent.",
           }
         : {}),
     };
@@ -159,7 +223,28 @@ export async function POST(request: Request) {
             ] as [boolean[], boolean[]],
           }
         : {}),
+      ...(templateDefinition.id === "domestic_violence_affidavit" && affidavitDraft
+        ? {
+            paragraphInsertions: {
+              violence_categories: affidavitDraft.sections.violenceCategories.map(ensurePeriod),
+              children_blurb: affidavitDraft.childrenParagraphs,
+              insert_history_blurb: affidavitDraft.sections.historyParagraphs,
+              insert_recent_events_blurb: affidavitDraft.sections.recentEventParagraphs,
+              parenting_heading: affidavitDraft.parentingOrdersSought
+                ? ["MY PROPOSAL FOR DAY-TO-DAY CARE AND CONTACT"]
+                : [],
+              parenting_blurb: affidavitDraft.sections.parentingParagraphs,
+            },
+          }
+        : {}),
     });
+
+    if (templateDefinition.id === "domestic_violence_affidavit" && report.missingFields.length) {
+      return NextResponse.json(
+        { error: `The affidavit template contains unresolved placeholders: ${report.missingFields.join(", ")}.` },
+        { status: 422 },
+      );
+    }
 
     bundle.file(templateDefinition.outputFileName, buffer);
     generatedFiles.push({

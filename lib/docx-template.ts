@@ -49,6 +49,7 @@ export type DocxMergeOptions = {
   outputType?: "document" | "template";
   childCount?: number;
   informationSheetEthnicityCheckboxes?: [boolean[], boolean[]];
+  paragraphInsertions?: Record<string, string[]>;
 };
 
 function escapeXml(value: string): string {
@@ -194,6 +195,46 @@ function updateInformationSheetCheckboxes(
   });
 }
 
+function replaceParagraphText(paragraphXml: string, value: string): string {
+  const nodes = readTextNodes(paragraphXml);
+  if (!nodes.length) {
+    return paragraphXml.replace(
+      "</w:p>",
+      `<w:r><w:t xml:space="preserve">${escapeXml(value)}</w:t></w:r></w:p>`,
+    );
+  }
+
+  let output = "";
+  let cursor = 0;
+  nodes.forEach((node, index) => {
+    output += paragraphXml.slice(cursor, node.fullMatchStart);
+    output += `${node.openTag}${index === 0 ? escapeXml(value) : ""}${node.closeTag}`;
+    cursor = node.fullMatchEnd;
+  });
+  return output + paragraphXml.slice(cursor);
+}
+
+function insertRepeatedParagraphs(
+  xml: string,
+  insertions: Record<string, string[]>,
+): string {
+  return xml.replace(/<w:p\b[\s\S]*?<\/w:p>/g, (paragraph) => {
+    const text = readTextNodes(paragraph).map((node) => node.text).join("").trim();
+    const match = /^\{\{([^{}]+)\}\}$/.exec(text);
+    if (!match) return paragraph;
+
+    const key = normalizePlaceholderKey(match[1]);
+    const values = Object.entries(insertions).find(
+      ([candidate]) => normalizePlaceholderKey(candidate) === key,
+    )?.[1];
+    if (!values) return paragraph;
+
+    return values
+      .map((value) => replaceParagraphText(paragraph, value.trim()))
+      .join("");
+  });
+}
+
 function applyTemplateTransformations(xml: string, options: DocxMergeOptions): string {
   let output = xml;
   if (typeof options.childCount === "number") {
@@ -204,6 +245,9 @@ function applyTemplateTransformations(xml: string, options: DocxMergeOptions): s
       output,
       options.informationSheetEthnicityCheckboxes,
     );
+  }
+  if (options.paragraphInsertions) {
+    output = insertRepeatedParagraphs(output, options.paragraphInsertions);
   }
   return output;
 }

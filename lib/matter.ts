@@ -327,6 +327,16 @@ export const placeholderKeys = [
   "relationship_start_date",
   "respondent_name",
   "respondent_relationship_to_applicant",
+  "relationship_start_blurb",
+  "relationship_end",
+  "violence_categories",
+  "insert_history_blurb",
+  "insert_recent_events_blurb",
+  "children_blurb",
+  "application_intro",
+  "parenting_heading",
+  "parenting_blurb",
+  "orders_sought_blurb",
 ] as const;
 
 export type PlaceholderKey = (typeof placeholderKeys)[number];

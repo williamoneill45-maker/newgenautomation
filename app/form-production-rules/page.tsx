@@ -6,12 +6,6 @@ import Link from "next/link";
 import { requiredDocumentDefinitions } from "../../lib/document-catalog";
 import { standardDocxTemplates } from "../../lib/template-catalog";
 
-const affidavitOutput = {
-  id: "domestic_violence_affidavit",
-  sourceFileName: "Generated from intake notes",
-  outputFileName: "07 Domestic Violence Affidavit Draft.txt",
-};
-
 function getTemplateForDocument(documentId: string) {
   return standardDocxTemplates.find((template) => template.id === documentId);
 }
@@ -56,7 +50,10 @@ export default async function FormProductionRulesPage() {
     requiredDocumentDefinitions
       .filter((document) => document.id !== "legal_aid_application")
       .map(async (document) => {
-        const template = getTemplateForDocument(document.id) ?? affidavitOutput;
+        const template = getTemplateForDocument(document.id) ?? {
+          sourceFileName: "No template configured",
+          outputFileName: "Not generated",
+        };
         const hasTemplate = await templateExists(template.sourceFileName);
         const hasRequiredPlaceholders = document.requiredPlaceholders.length > 0;
         const status = getRuleStatus({ hasTemplate, hasRequiredPlaceholders });
@@ -121,7 +118,7 @@ export default async function FormProductionRulesPage() {
           />
           <RuleNote
             label="Affidavit rule"
-            value="Domestic violence affidavit drafting is generated from intake notes and added to the ZIP as a reviewable draft text file when notes exist."
+            value="Family violence affidavit evidence is drafted from intake notes and inserted as editable, automatically numbered text in the source DOCX when notes exist."
           />
         </section>
 
