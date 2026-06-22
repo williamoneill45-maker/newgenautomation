@@ -33,7 +33,7 @@ function formatList(values: string[]): string {
 }
 
 function childDescription(child: Child): string {
-  const name = clean(child.fullName);
+  const name = clean(child.fullName).toLocaleUpperCase("en-NZ");
   const dob = formatInputDateLong(child.dateOfBirth);
   const nickname = firstName(name);
   return [
@@ -84,11 +84,11 @@ export type StandardAffidavitContent = {
 export function buildStandardAffidavitContent(matter: MatterFile): StandardAffidavitContent {
   const hasProtectionOrder = isProtectionOrderSought(matter);
   const hasParentingOrder = isParentingOrderSought(matter);
-  const respondentName = clean(matter.intake.respondent.fullName) || "the Respondent";
+  const respondentName = clean(matter.intake.respondent.fullName).toLocaleUpperCase("en-NZ") || "the Respondent";
   const children = matter.intake.children
     .filter((child) => clean(child.fullName))
     .slice(0, 3);
-  const childFirstNames = children.map((child) => firstName(child.fullName)).filter(Boolean);
+  const childFirstNames = children.map((child) => firstName(child.fullName).toLocaleUpperCase("en-NZ")).filter(Boolean);
   const formattedChildNames = formatList(childFirstNames) || "the children";
   const selectedOrderLabels = matter.intake.selectedApplications
     .map((application) => orderLabel(application, matter.intake.otherApplicationDetails))
@@ -120,7 +120,7 @@ export function buildStandardAffidavitContent(matter: MatterFile): StandardAffid
   const parentingParagraphs = includeParentingProposal
     ? [
         `I seek a Parenting Order granting me day-to-day care of ${formattedChildNames}. I have always had a greater role and responsibility in providing day-to-day care to ${formattedChildNames}. I want this arrangement to continue and for ${formattedChildNames} to remain in my day-to-day care.`,
-        `I seek an interim Parenting Order granting the Respondent supervised contact with ${formattedChildNames}. I am concerned about ${formattedChildNames}’s safety in the Respondent’s unsupervised care because:\n(i) ${formattedChildNames} ${children.length === 1 ? "has" : "have"} been exposed to the Respondent’s violence towards me and ${children.length === 1 ? "has" : "have"} been affected by the abuse ${children.length === 1 ? "the child has" : "they have"} witnessed.\n(ii) I am concerned that the Respondent is unable to control his anger and does not realise that his behaviour is abusive.\n(iii) I want to be sure that ${formattedChildNames} ${children.length === 1 ? "is" : "are"} safe and ${children.length === 1 ? "is" : "are"} returned to me at the end of any contact. I am concerned that without an order the Respondent may refuse to return ${formattedChildNames}.`,
+        `I seek an interim Parenting Order granting the Respondent supervised contact with ${formattedChildNames}. I am concerned about ${formattedChildNames}’s safety in the Respondent’s unsupervised care because:  (i) ${formattedChildNames} ${children.length === 1 ? "has" : "have"} been exposed to the Respondent’s violence towards me and ${children.length === 1 ? "has" : "have"} been affected by the abuse ${children.length === 1 ? "the child has" : "they have"} witnessed.  (ii) I am concerned that the Respondent is unable to control his anger and does not realise that his behaviour is abusive.  (iii) I want to be sure that ${formattedChildNames} ${children.length === 1 ? "is" : "are"} safe and ${children.length === 1 ? "is" : "are"} returned to me at the end of any contact. I am concerned that without an order the Respondent may refuse to return ${formattedChildNames}.`,
         "I propose that contact be supervised by a Professional Contact Provider.",
       ]
     : [];

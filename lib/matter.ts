@@ -116,6 +116,7 @@ export type IntakeData = {
   otherApplicationDetails: string;
   courtLocation: CourtLocation;
   famNumber: string;
+  msdClientNumber: string;
   applicant: Party;
   respondent: Party;
   relationship: RelationshipDetails;
@@ -343,6 +344,7 @@ export const placeholderKeys = [
   "parenting_heading",
   "parenting_blurb",
   "orders_sought_blurb",
+  "msd_client_number",
 ] as const;
 
 export type PlaceholderKey = (typeof placeholderKeys)[number];
@@ -401,6 +403,7 @@ export function createEmptyMatter(): MatterFile {
       otherApplicationDetails: "",
       courtLocation: "",
       famNumber: "",
+      msdClientNumber: "",
       applicant: createEmptyParty("applicant", matterId),
       respondent: createEmptyParty("respondent", matterId),
       relationship: {

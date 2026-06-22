@@ -202,7 +202,7 @@ function getFirstName(fullName: string): string {
 }
 
 function getQuotedFirstName(fullName: string): string {
-  const firstName = getFirstName(fullName);
+  const firstName = getFirstName(fullName).toLocaleUpperCase("en-NZ");
   return firstName ? `“${firstName}”` : "";
 }
 
@@ -279,7 +279,7 @@ function getLivingWithLabel(
     ? "Respondent"
     : livingWith === "applicant" || (applicant && livingWith === applicant)
       ? "Applicant"
-      : child.livingWithName || "Applicant";
+      : child.livingWithName.toLocaleUpperCase("en-NZ") || "Applicant";
   const relationship = child.livingWithRelationshipToChild.trim();
   return relationship ? `${role}/${relationship}` : role;
 }
@@ -327,7 +327,7 @@ function buildChildMergeFields(
 
   const childEthnicity = getEthnicity(child.ethnicity, child.otherEthnicity);
   const childOtherEthnicity = child.ethnicity === "Other" ? child.otherEthnicity.trim() : "";
-  const childName = child.fullName;
+  const childName = child.fullName.toLocaleUpperCase("en-NZ");
   const nickname = getQuotedFirstName(childName);
   const childAge = calculateChildDisplayAge(child.dateOfBirth) || child.age;
   const livingWith = getLivingWithLabel(child, applicantName, respondentName);
@@ -397,23 +397,27 @@ export function buildMatterMergeFields(matter: MatterFile): MergeFields {
     intake.applicant.ethnicity === "Other" ? intake.applicant.otherEthnicity.trim() : "";
   const respondentOtherEthnicity =
     intake.respondent.ethnicity === "Other" ? intake.respondent.otherEthnicity.trim() : "";
+  const applicantName = intake.applicant.fullName.toLocaleUpperCase("en-NZ");
+  const respondentName = intake.respondent.fullName.toLocaleUpperCase("en-NZ");
+  const englishCourtName = court.english.toLocaleUpperCase("en-NZ");
+  const maoriCourtName = court.maori.toLocaleUpperCase("mi-NZ");
 
   return normalizeMergeFields({
-    APPLICANT_NAME: intake.applicant.fullName,
-    APPLICANT_FIRST_NAME: getFirstName(intake.applicant.fullName),
-    RESPONDENT_NAME: intake.respondent.fullName,
+    APPLICANT_NAME: applicantName,
+    APPLICANT_FIRST_NAME: getFirstName(applicantName),
+    RESPONDENT_NAME: respondentName,
     APPLICANT_ADDRESS: applicantAddress,
     RESPONDENT_ADDRESS: intake.respondent.homeAddress,
-    COURT_LOCATION: court.english,
-    CHILD_1_NAME: firstChild?.fullName,
+    COURT_LOCATION: englishCourtName,
+    CHILD_1_NAME: firstChild?.fullName.toLocaleUpperCase("en-NZ"),
     CHILD_1_DOB: formatInputDateForForms(firstChild?.dateOfBirth ?? ""),
     CHILD_1_AGE: childAge,
     APPLICATION_TYPE_1: selectedApplications[0],
     APPLICATION_TYPE_2: selectedApplications[1],
     APPLICATION_TYPE_3: selectedApplications[2],
-    English_court_name: court.english,
-    Maori_court_name: court.maori,
-    court: court.english,
+    English_court_name: englishCourtName,
+    Maori_court_name: maoriCourtName,
+    court: englishCourtName,
     month_day: formatOrdinalDay(todayDate.getDate()),
     month: new Intl.DateTimeFormat("en-NZ", { month: "long" }).format(todayDate),
     a_dob: formatInputDateForForms(intake.applicant.dateOfBirth),
@@ -422,7 +426,7 @@ export function buildMatterMergeFields(matter: MatterFile): MergeFields {
     applicant_age: applicantAge,
     applicant_dob: formatInputDateForForms(intake.applicant.dateOfBirth),
     applicant_home_address: applicantAddress,
-    applicant_name: intake.applicant.fullName,
+    applicant_name: applicantName,
     applicant_occupation: intake.applicant.occupation,
     applicant_phone_number: intake.applicant.mobilePhone,
     applicant_phone: intake.applicant.mobilePhone,
@@ -438,11 +442,11 @@ export function buildMatterMergeFields(matter: MatterFile): MergeFields {
     application_type_1: selectedApplications[0],
     application_type_2: selectedApplications[1],
     application_type_3: selectedApplications[2],
-    ...buildChildMergeFields(firstChild, 1, intake.applicant.fullName, intake.respondent.fullName),
-    ...buildChildMergeFields(secondChild, 2, intake.applicant.fullName, intake.respondent.fullName),
-    ...buildChildMergeFields(thirdChild, 3, intake.applicant.fullName, intake.respondent.fullName),
-    ...buildChildMergeFields(fourthChild, 4, intake.applicant.fullName, intake.respondent.fullName),
-    court_location: `${court.english} | ${court.maori}`,
+    ...buildChildMergeFields(firstChild, 1, applicantName, respondentName),
+    ...buildChildMergeFields(secondChild, 2, applicantName, respondentName),
+    ...buildChildMergeFields(thirdChild, 3, applicantName, respondentName),
+    ...buildChildMergeFields(fourthChild, 4, applicantName, respondentName),
+    court_location: `${englishCourtName} | ${maoriCourtName}`,
     date_today: today,
     "date_today ": today,
     Date_today: today,
@@ -460,7 +464,7 @@ export function buildMatterMergeFields(matter: MatterFile): MergeFields {
     respondent_dob: formatInputDateForForms(intake.respondent.dateOfBirth),
     respondent_email: intake.respondent.emailAddress,
     respondent_home_address: intake.respondent.homeAddress,
-    respondent_name: intake.respondent.fullName,
+    respondent_name: respondentName,
     respondent_occupation: intake.respondent.occupation,
     respondent_phone: intake.respondent.mobilePhone,
     respont_phone: intake.respondent.mobilePhone,
@@ -481,9 +485,10 @@ export function buildMatterMergeFields(matter: MatterFile): MergeFields {
     respondent_work_address: intake.respondent.workAddress,
     respondents_relationship_to_children:
       joinPresent(intake.children.slice(0, 4).map((child) => child.respondentRelationshipToChild)),
-    respondents_name: intake.respondent.fullName,
-    "respondents_name ": intake.respondent.fullName,
+    respondents_name: respondentName,
+    "respondents_name ": respondentName,
     "respondents_relationshib to child": firstChild?.respondentRelationshipToChild,
+    msd_client_number: intake.msdClientNumber ?? "",
   });
 }
 

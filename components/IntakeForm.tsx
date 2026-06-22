@@ -439,6 +439,17 @@ export default function IntakeForm() {
             onChange={(value) => setMatterValue("clientName", value)}
             placeholder="Primary client name"
           />
+          <Field
+            label="Legal Aid Number"
+            value={matter.legalAidNumber}
+            onChange={(value) => setMatterValue("legalAidNumber", value)}
+          />
+          <Field
+            label="Applicant MSD Client Number"
+            value={matter.intake.msdClientNumber ?? ""}
+            onChange={(value) => setIntakeValue("msdClientNumber", value)}
+            placeholder="MSD client number"
+          />
         </div>
       </Card>
 

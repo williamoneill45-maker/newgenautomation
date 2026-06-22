@@ -71,6 +71,7 @@ export type StructuredBillingInput = {
   formType: BillingFormType;
   clientName: string;
   legalAidNumber: string;
+  matterName?: string;
   invoiceNumber: string;
   selectedWorkItemIds: BillingWorkItemId[];
   detailsByItem: Partial<Record<BillingWorkItemId, BillingItemDetails>>;
@@ -125,7 +126,7 @@ function applyTokens(wording: string, details?: BillingItemDetails): string {
   return wording
     .replace(/\[billing date\]/gi, details?.date ?? "")
     .replace(/\[attendance time\]/gi, details?.startTime && details.endTime ? `${details.startTime}-${details.endTime}` : "")
-    .replace(/\[court\]/gi, details?.court ?? "");
+    .replace(/\[court\]/gi, details?.court.toLocaleUpperCase("en-NZ") ?? "");
 }
 
 export function createStructuredBillingRecord(input: StructuredBillingInput): BillingRecord {
@@ -156,7 +157,7 @@ export function createStructuredBillingRecord(input: StructuredBillingInput): Bi
         mileageValue: input.mileageSelected ? travelReference.mileageValue : 0,
         returnKm: input.mileageSelected ? travelReference.returnKm : 0,
         returnDistance: input.mileageSelected ? travelReference.returnDistance : "",
-        progressResultsWording: `${input.travelTimeSelected ? "Travel time" : ""}${input.travelTimeSelected && input.mileageSelected ? " and " : ""}${input.mileageSelected ? "mileage" : ""} to ${travelReference.court} return`,
+        progressResultsWording: `${input.travelTimeSelected ? "Travel time" : ""}${input.travelTimeSelected && input.mileageSelected ? " and " : ""}${input.mileageSelected ? "mileage" : ""} to ${travelReference.court.toLocaleUpperCase("en-NZ")} return`,
       }
     : undefined;
   const standardWording = [
@@ -178,10 +179,10 @@ export function createStructuredBillingRecord(input: StructuredBillingInput): Bi
     draft: {
       sourcePrompt: "Structured billing selection",
       matterId: recordId,
-      clientName: input.clientName.trim(),
+      clientName: input.clientName.trim().toLocaleUpperCase("en-NZ"),
       legalAidNumber: input.legalAidNumber.trim(),
       invoiceNumber: input.invoiceNumber.trim(),
-      matterDetails: "",
+      matterDetails: input.matterName?.trim() ?? "",
       proceedingType: "Family Court",
       formType: input.formType,
       category,

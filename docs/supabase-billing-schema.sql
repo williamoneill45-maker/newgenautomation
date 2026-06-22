@@ -153,3 +153,29 @@ on conflict (id) do nothing;
 insert into storage.buckets (id, name, public)
 values ('billing', 'billing', false)
 on conflict (id) do nothing;
+
+create table if not exists public.legal_aid_claims (
+  id uuid primary key default gen_random_uuid(),
+  firm_id text not null,
+  claim_id text not null,
+  client_name text not null,
+  matter_name text not null,
+  form_type text not null check (form_type in ('32B', '33A')),
+  amount_claimed numeric(12, 2) not null check (amount_claimed >= 0),
+  date_sent date not null,
+  paid_status text not null default 'Unpaid' check (paid_status in ('Unpaid', 'Paid', 'Part Paid')),
+  date_paid date,
+  amount_paid numeric(12, 2) not null default 0 check (amount_paid >= 0),
+  outstanding_amount numeric(12, 2) not null check (outstanding_amount >= 0),
+  notes text not null default '',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (firm_id, claim_id)
+);
+
+create index if not exists legal_aid_claims_firm_date_idx
+  on public.legal_aid_claims (firm_id, date_sent desc);
+
+alter table public.legal_aid_claims enable row level security;
+revoke all on table public.legal_aid_claims from anon, authenticated;
+grant select, insert, update, delete on table public.legal_aid_claims to service_role;

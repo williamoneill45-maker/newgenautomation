@@ -21,7 +21,7 @@ import {
 import { form32BSettingsStorageKey } from "../../lib/form32b-rules";
 import { form33ASettingsStorageKey } from "../../lib/form33a-rules";
 
-const today = new Date().toISOString().slice(0, 10);
+const today = new Date().toLocaleDateString("en-CA", { timeZone: "Pacific/Auckland" });
 const emptyDetails: BillingItemDetails = { date: today, court: "", startTime: "", endTime: "" };
 
 function makeInvoiceNumber(formType: BillingFormType, clientName: string): string {
@@ -33,6 +33,8 @@ export default function BillingPage() {
   const [formType, setFormType] = useState<BillingFormType>("32B");
   const [clientName, setClientName] = useState("");
   const [legalAidNumber, setLegalAidNumber] = useState("");
+  const [matterName, setMatterName] = useState("");
+  const [createClaimRecord, setCreateClaimRecord] = useState(true);
   const [selectedWorkItemIds, setSelectedWorkItemIds] = useState<BillingWorkItemId[]>([]);
   const [detailsByItem, setDetailsByItem] = useState<Partial<Record<BillingWorkItemId, BillingItemDetails>>>({});
   const [agentHearingType, setAgentHearingType] = useState<StructuredBillingInput["agentHearingType"]>();
@@ -84,6 +86,7 @@ export default function BillingPage() {
   const structuredInput: StructuredBillingInput = {
     formType,
     clientName,
+    matterName,
     legalAidNumber,
     invoiceNumber: makeInvoiceNumber(formType, clientName),
     selectedWorkItemIds,
@@ -106,7 +109,7 @@ export default function BillingPage() {
     } catch {
       return null;
     }
-  }, [formType, clientName, legalAidNumber, selectedWorkItemIds, detailsByItem, agentHearingType, additionalFactorSection, travelTimeSelected, mileageSelected, travelCourt, parking, officeDisbursements, optionalWordingNotes, wordingOverrides]);
+  }, [formType, clientName, matterName, legalAidNumber, selectedWorkItemIds, detailsByItem, agentHearingType, additionalFactorSection, travelTimeSelected, mileageSelected, travelCourt, parking, officeDisbursements, optionalWordingNotes, wordingOverrides]);
 
   useEffect(() => {
     setEditableWording(previewRecord?.draft.standardWording ?? "");
@@ -138,6 +141,10 @@ export default function BillingPage() {
   }
 
   async function generateDocument() {
+    if (createClaimRecord && !matterName.trim()) {
+      setGenerationError("Enter the matter name to create a claim record.");
+      return;
+    }
     if (!previewRecord) {
       setGenerationError(validationErrors[0] ?? "Complete the required billing details.");
       return;
@@ -205,7 +212,26 @@ export default function BillingPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(invoice),
       }).catch(() => undefined);
-      setGenerationNotice(`Generated ${fileName}. The wording remains editable in Word.`);
+      let claimNotice = "";
+      if (createClaimRecord) {
+        const claimResponse = await fetch("/api/legal-aid-claims", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            clientName,
+            matterName,
+            formType,
+            amountClaimed: totals.total,
+            dateSent: today,
+          }),
+        });
+        const claimPayload = await claimResponse.json();
+        if (!claimResponse.ok || claimPayload.status !== "loaded") {
+          throw new Error(claimPayload.error ?? "The form was generated, but its claim record could not be saved.");
+        }
+        claimNotice = ` Claim ${claimPayload.data.claimId} was added to the tracker.`;
+      }
+      setGenerationNotice(`Generated ${fileName}.${claimNotice} The wording remains editable in Word.`);
     } catch (error) {
       setGenerationError(error instanceof Error ? error.message : "Unable to generate the billing form.");
     } finally {
@@ -219,6 +245,7 @@ export default function BillingPage() {
         <div className="mb-6 flex items-center justify-between gap-4">
           <Link href="/" className="text-sm font-medium text-sky-700 hover:text-sky-900">Back to dashboard</Link>
           <div className="flex gap-3 text-sm font-medium text-slate-600">
+            <Link href="/billing/claims" className="hover:text-slate-950">Claims tracker</Link>
             <Link href="/invoices" className="hover:text-slate-950">Invoices</Link>
             <Link href="/billing-management/form-32b" className="hover:text-slate-950">Billing rules</Link>
           </div>
@@ -234,8 +261,9 @@ export default function BillingPage() {
           <div className="space-y-6">
             <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-form">
               <h2 className="text-lg font-semibold text-slate-950">1. Client and form</h2>
-              <div className="mt-4 grid gap-4 sm:grid-cols-2">
+              <div className="mt-4 grid gap-4 sm:grid-cols-3">
                 <TextField label="Client name" value={clientName} onChange={setClientName} />
+                <TextField label="Matter name" value={matterName} onChange={setMatterName} />
                 <TextField label="Legal aid number" value={legalAidNumber} onChange={setLegalAidNumber} />
               </div>
               <fieldset className="mt-5">
@@ -317,6 +345,10 @@ export default function BillingPage() {
 
           <aside className="space-y-6 xl:sticky xl:top-6 xl:self-start">
             <PreviewPanel record={previewRecord} errors={validationErrors} editableWording={editableWording} onWordingChange={setEditableWording} />
+            <label className="flex cursor-pointer items-start gap-3 rounded-md border border-slate-200 bg-white p-4 text-sm shadow-form">
+              <input type="checkbox" className="mt-0.5 h-4 w-4 rounded border-slate-300 text-sky-600" checked={createClaimRecord} onChange={(event) => setCreateClaimRecord(event.target.checked)} />
+              <span><span className="block font-semibold text-slate-900">Add this form to Claims Tracker</span><span className="mt-1 block text-xs leading-5 text-slate-500">Creates an unpaid claim using the form total and today as the date sent.</span></span>
+            </label>
             <button type="button" disabled={isGenerating || !previewRecord} onClick={generateDocument} className="inline-flex h-12 w-full items-center justify-center rounded-md bg-sky-600 px-4 text-sm font-semibold text-white shadow-sm hover:bg-sky-700 disabled:cursor-not-allowed disabled:bg-slate-300">{isGenerating ? "Generating..." : `Generate Form${formType}`}</button>
             {generationError ? <p className="rounded-md bg-red-50 p-3 text-sm font-medium text-red-700">{generationError}</p> : null}
             {generationNotice ? <p className="rounded-md bg-emerald-50 p-3 text-sm font-medium text-emerald-800">{generationNotice}</p> : null}

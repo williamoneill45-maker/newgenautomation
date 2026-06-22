@@ -8,6 +8,7 @@ const navItems = [
   { href: "/new-client", label: "New client" },
   { href: "/clients", label: "Clients" },
   { href: "/billing", label: "Billing" },
+  { href: "/billing/claims", label: "Claims" },
   { href: "/invoices", label: "Invoices" },
   { href: "/legal-aid", label: "Legal Aid" },
   { href: "/form-production-rules", label: "Form rules" },
@@ -32,8 +33,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </div>
           <nav className="flex gap-1 overflow-x-auto px-3 py-3 lg:flex-col lg:overflow-visible">
             {navItems.map((item) => {
-              const active = item.href === "/"
-                ? pathname === "/"
+              const active = item.href === "/" || item.href === "/billing"
+                ? pathname === item.href
                 : pathname === item.href || pathname.startsWith(`${item.href}/`);
 
               return (

@@ -26,6 +26,7 @@ REPLACEMENTS = {
     "affidavit": {
         "{{Applicant_Name}}": "Applicant",
     },
+    "msd": {},
 }
 
 
@@ -57,6 +58,33 @@ def patch_document_xml(data: bytes, form_kind: str) -> bytes:
             text_nodes = applicant_paragraph.xpath(".//w:t", namespaces=NS)
             text_nodes[-1].text = (text_nodes[-1].text or "") + " {{applicant_ethnicity_other_value}}"
 
+    if form_kind == "parenting":
+        for paragraph in root.xpath(".//w:p", namespaces=NS):
+            paragraph_text = "".join(paragraph.xpath(".//w:t/text()", namespaces=NS)).strip()
+            if paragraph_text == "Name of child:" or paragraph_text.startswith("{{child_"):
+                paragraph_properties = paragraph.find(f"{{{W_NS}}}pPr")
+                if paragraph_properties is None:
+                    paragraph_properties = etree.Element(f"{{{W_NS}}}pPr")
+                    paragraph.insert(0, paragraph_properties)
+                alignment = paragraph_properties.find(f"{{{W_NS}}}jc")
+                if alignment is None:
+                    alignment = etree.SubElement(paragraph_properties, f"{{{W_NS}}}jc")
+                alignment.set(f"{{{W_NS}}}val", "left")
+
+    if form_kind == "msd":
+        client_number_paragraphs = [
+            paragraph
+            for paragraph in root.xpath(".//w:p", namespaces=NS)
+            if "Client Number:" in "".join(paragraph.xpath(".//w:t/text()", namespaces=NS))
+        ]
+        if not client_number_paragraphs:
+            raise RuntimeError("Expected Client Number paragraph not found in MSD template")
+        paragraph = client_number_paragraphs[0]
+        paragraph_text = "".join(paragraph.xpath(".//w:t/text()", namespaces=NS))
+        if "{{msd_client_number}}" not in paragraph_text:
+            text_nodes = paragraph.xpath(".//w:t", namespaces=NS)
+            text_nodes[-1].text = (text_nodes[-1].text or "") + " {{msd_client_number}}"
+
     if form_kind == "affidavit":
         for instruction in root.xpath(".//w:instrText", namespaces=NS):
             if (instruction.text or "").strip() == "1 Court":
@@ -65,6 +93,25 @@ def patch_document_xml(data: bytes, form_kind: str) -> bytes:
 
         for paragraph in root.xpath(".//w:p", namespaces=NS):
             paragraph_text = "".join(paragraph.xpath(".//w:t/text()", namespaces=NS))
+            if "{{parenting_blurb}}" in paragraph_text:
+                paragraph_properties = paragraph.find(f"{{{W_NS}}}pPr")
+                if paragraph_properties is None:
+                    paragraph_properties = etree.Element(f"{{{W_NS}}}pPr")
+                    paragraph.insert(0, paragraph_properties)
+                alignment = paragraph_properties.find(f"{{{W_NS}}}jc")
+                if alignment is None:
+                    alignment = etree.SubElement(paragraph_properties, f"{{{W_NS}}}jc")
+                alignment.set(f"{{{W_NS}}}val", "left")
+
+            if paragraph_text.startswith("AFFIDAVIT OF "):
+                paragraph_properties = paragraph.find(f"{{{W_NS}}}pPr")
+                if paragraph_properties is None:
+                    paragraph_properties = etree.Element(f"{{{W_NS}}}pPr")
+                    paragraph.insert(0, paragraph_properties)
+                alignment = paragraph_properties.find(f"{{{W_NS}}}jc")
+                if alignment is None:
+                    alignment = etree.SubElement(paragraph_properties, f"{{{W_NS}}}jc")
+                alignment.set(f"{{{W_NS}}}val", "center")
             if paragraph_text.startswith("HELD AT "):
                 for run in paragraph.xpath("./w:r[w:fldChar]", namespaces=NS):
                     paragraph.remove(run)

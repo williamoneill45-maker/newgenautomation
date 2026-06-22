@@ -98,7 +98,7 @@ export async function POST(request: Request) {
       ...(travelCourt
         ? {
             literalTextReplacements: {
-              "Travel – Time – necessary": `Travel – Time – necessary to ${travelCourt}`,
+              "Travel – Time – necessary": `Travel – Time – necessary to ${travelCourt.toLocaleUpperCase("en-NZ")}`,
             },
           }
         : {}),
