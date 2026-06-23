@@ -48,9 +48,11 @@ export type DocxMergeResult = {
 export type DocxMergeOptions = {
   outputType?: "document" | "template";
   childCount?: number;
+  repeatChildParagraphsThrough?: number;
   informationSheetEthnicityCheckboxes?: [boolean[], boolean[]];
   paragraphInsertions?: Record<string, string[]>;
   literalTextReplacements?: Record<string, string>;
+  continuationSections?: Array<{ heading: string; lines: string[]; pageBreak?: boolean }>;
 };
 
 function escapeXml(value: string): string {
@@ -170,6 +172,32 @@ function removeUnusedChildBlocks(xml: string, childCount: number): string {
   return withoutRows.replace(/<w:p\b[\s\S]*?<\/w:p>/g, removeMissingBlock);
 }
 
+function repeatChildParagraphs(
+  xml: string,
+  childCount: number,
+): string {
+  if (childCount <= 3) return xml;
+
+  return xml.replace(/<w:p\b[\s\S]*?<\/w:p>/g, (paragraph) => {
+    const text = readTextNodes(paragraph).map((node) => node.text).join("");
+    if (!text.includes("child_3_")) return paragraph;
+
+    const additionalParagraphs = Array.from(
+      { length: childCount - 3 },
+      (_, offset) => offset + 4,
+    ).map((childNumber) => replaceLiteralText(
+      paragraph.replace(/\s+w14:(?:paraId|textId)="[^"]*"/g, ""),
+      {
+        child_3_name: `child_${childNumber}_name`,
+        child_3_dob: `child_${childNumber}_dob`,
+        "(“child_3_nickname”)": `(“child_${childNumber}_nickname”)`,
+      },
+    )).join("");
+
+    return `${paragraph}${additionalParagraphs}`;
+  });
+}
+
 function setCheckboxDefaults(rowXml: string, checkedStates: boolean[]): string {
   let checkboxIndex = 0;
   return rowXml.replace(
@@ -242,10 +270,32 @@ function insertRepeatedParagraphs(
   });
 }
 
-function applyTemplateTransformations(xml: string, options: DocxMergeOptions): string {
+function appendContinuationSections(
+  xml: string,
+  sections: Array<{ heading: string; lines: string[]; pageBreak?: boolean }>,
+): string {
+  const populated = sections.filter((section) => section.lines.length > 0);
+  if (!populated.length) return xml;
+  const paragraphs = populated.map((section, sectionIndex) => {
+    const pageBreak = sectionIndex === 0 && section.pageBreak !== false
+      ? '<w:p><w:r><w:br w:type="page"/></w:r></w:p>'
+      : "";
+    const heading = `<w:p><w:pPr><w:spacing w:before="0" w:after="240"/><w:jc w:val="center"/></w:pPr><w:r><w:rPr><w:b/><w:sz w:val="22"/><w:szCs w:val="22"/></w:rPr><w:t xml:space="preserve">${escapeXml(section.heading)}</w:t></w:r></w:p>`;
+    const lines = section.lines.map((line) => `<w:p><w:pPr><w:spacing w:after="160"/></w:pPr><w:r><w:rPr><w:sz w:val="22"/><w:szCs w:val="22"/></w:rPr><w:t xml:space="preserve">${escapeXml(line)}</w:t></w:r></w:p>`).join("");
+    return `${pageBreak}${heading}${lines}`;
+  }).join("");
+  const finalSectionIndex = xml.lastIndexOf("<w:sectPr");
+  if (finalSectionIndex === -1) return xml.replace("</w:body>", `${paragraphs}</w:body>`);
+  return `${xml.slice(0, finalSectionIndex)}${paragraphs}${xml.slice(finalSectionIndex)}`;
+}
+
+function applyTemplateTransformations(xml: string, options: DocxMergeOptions, isMainDocument = false): string {
   let output = xml;
   if (typeof options.childCount === "number") {
     output = removeUnusedChildBlocks(output, options.childCount);
+  }
+  if (typeof options.repeatChildParagraphsThrough === "number") {
+    output = repeatChildParagraphs(output, options.repeatChildParagraphsThrough);
   }
   if (options.informationSheetEthnicityCheckboxes) {
     output = updateInformationSheetCheckboxes(
@@ -258,6 +308,9 @@ function applyTemplateTransformations(xml: string, options: DocxMergeOptions): s
   }
   if (options.literalTextReplacements) {
     output = replaceLiteralText(output, options.literalTextReplacements);
+  }
+  if (isMainDocument && options.continuationSections) {
+    output = appendContinuationSections(output, options.continuationSections);
   }
   return output;
 }
@@ -622,7 +675,7 @@ async function validateDocxStructure(
       const originalXml = await originalFile.async("string");
       const generatedXml = await generatedFile.async("string");
       const expectedXml = mergePlaceholdersInXml(
-        applyTemplateTransformations(originalXml, options),
+        applyTemplateTransformations(originalXml, options, fileName === "word/document.xml"),
         fields,
       );
 
@@ -688,7 +741,7 @@ export async function mergeDocxTemplate(
 
   await Promise.all(
     Object.entries(xmlFiles).map(async ([path, xml]) => {
-      const transformedXml = applyTemplateTransformations(xml, options);
+      const transformedXml = applyTemplateTransformations(xml, options, path === "word/document.xml");
       replacedPlaceholders += countReplaceablePlaceholdersInXml(transformedXml, fields);
       zip.file(path, mergePlaceholdersInXml(transformedXml, fields));
     }),

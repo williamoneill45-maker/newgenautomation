@@ -23,6 +23,7 @@ import {
   normalizeClientName,
   type BillingClientProfile,
 } from "../lib/billing-storage";
+import { demoMatter, isDemoEnvironment } from "../lib/demo-data";
 
 type FieldProps = {
   label: string;
@@ -173,7 +174,7 @@ function readBillingClients(): BillingClientProfile[] {
 }
 
 export default function IntakeForm() {
-  const [matter, setMatter] = useState<MatterFile>(() => createEmptyMatter());
+  const [matter, setMatter] = useState<MatterFile>(() => isDemoEnvironment ? structuredClone(demoMatter) : createEmptyMatter());
   const [saveStatus, setSaveStatus] = useState("");
 
   const setMatterValue = (field: "clientName" | "legalAidNumber", value: string) => {
@@ -241,7 +242,6 @@ export default function IntakeForm() {
 
   const addChild = () => {
     setMatter((current) => {
-      if (current.intake.children.length >= 3) return current;
       return {
         ...current,
         updatedAt: new Date().toISOString(),
@@ -316,6 +316,7 @@ export default function IntakeForm() {
       recentMattersStorageKey,
       JSON.stringify([matter, ...existing.filter((item) => item.id !== matter.id)].slice(0, 25)),
     );
+    window.dispatchEvent(new CustomEvent("newgen:matter-saved"));
 
     const clientName = normalizeClientName(matter.intake.applicant.fullName || matter.clientName);
     if (!clientName) {
@@ -365,38 +366,7 @@ export default function IntakeForm() {
           body: JSON.stringify(profile),
         });
 
-        const folderResponse = await fetch("/api/clients/create-folders", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ client: profile }),
-        });
-        const folderPayload = (await folderResponse.json().catch(() => null)) as {
-          error?: string;
-          client?: BillingClientProfile;
-          signing?: { status?: string; message?: string };
-        } | null;
-
-        if (!folderResponse.ok) {
-          throw new Error(folderPayload?.error ?? "Unable to create the OneDrive client folder.");
-        }
-
-        if (folderPayload?.client) {
-          window.localStorage.setItem(
-            billingClientsStorageKey,
-            JSON.stringify(nextClients.map((client) =>
-              client.id === folderPayload.client?.id ? folderPayload.client : client,
-            )),
-          );
-          if (!options.quiet) {
-            setSaveStatus([
-              `Intake saved and OneDrive folder created: ${folderPayload.client.oneDriveClientFolderPath}.`,
-              folderPayload.signing?.message ?? "",
-            ].filter(Boolean).join(" "));
-          }
-          return folderPayload.client;
-        }
-
-        if (!options.quiet) setSaveStatus("Intake saved.");
+        if (!options.quiet) setSaveStatus("Matter saved. Choose a storage action separately when the documents are ready.");
         return profile;
       } catch (error) {
         if (!options.quiet) {
@@ -418,8 +388,8 @@ export default function IntakeForm() {
     <div className="space-y-6">
       <header className="flex flex-col justify-between gap-4 border-b border-slate-200 pb-6 md:flex-row md:items-end">
         <div>
-          <p className="text-sm font-semibold uppercase tracking-wide text-sky-700">New Client</p>
-          <h1 className="mt-2 text-3xl font-semibold tracking-normal text-slate-950">Client and Application Details</h1>
+          <p className="text-sm font-semibold uppercase tracking-wide text-sky-700">New Matter</p>
+          <h1 className="mt-2 text-3xl font-semibold tracking-normal text-slate-950">Matter intake</h1>
         </div>
         <button
           type="button"
@@ -431,10 +401,10 @@ export default function IntakeForm() {
       </header>
       {saveStatus ? <p className="text-sm font-medium text-slate-700">{saveStatus}</p> : null}
 
-      <Card title="Client Details">
+      <Card title="Matter overview">
         <div className="grid gap-5 md:grid-cols-2">
           <Field
-            label="Client Name"
+            label="Matter client"
             value={matter.clientName}
             onChange={(value) => setMatterValue("clientName", value)}
             placeholder="Primary client name"
@@ -553,15 +523,14 @@ export default function IntakeForm() {
         </div>
       </Card>
 
-      <Card title="Children Affected by the Application">
+      <Card title="Children Affected by the Application" description="Add every child included in the application. Additional children are carried into a continuation section where a fixed court template has limited space.">
         <div className="mb-5 flex justify-end">
           <button
             type="button"
             onClick={addChild}
-            disabled={matter.intake.children.length >= 3}
-            className="h-9 rounded-md border border-slate-300 bg-white px-4 text-sm font-medium text-slate-950 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
+            className="h-9 rounded-md border border-slate-300 bg-white px-4 text-sm font-medium text-slate-950 shadow-sm transition hover:bg-slate-50"
           >
-            {matter.intake.children.length >= 3 ? "Maximum 3 children" : "+ Add Child"}
+            + Add Child
           </button>
         </div>
         {matter.intake.children.length === 0 ? (
@@ -602,18 +571,6 @@ export default function IntakeForm() {
         </div>
       </Card>
 
-      <Card title="Domestic Violence Affidavit">
-        <div className="rounded-md border border-sky-200 bg-sky-50 px-4 py-4 text-sm leading-6 text-slate-700">
-          <p className="font-semibold text-slate-950">Standardized affidavit</p>
-          <p className="mt-1">Generated when a Protection Order is selected. History of Family Violence and Recent Events are deliberately left blank for completion in Word.</p>
-          <ul className="mt-3 list-disc space-y-1 pl-5">
-            <li>The children paragraph includes only the children entered above, up to three.</li>
-            <li>The without-notice protection section is included only for a Protection Order.</li>
-            <li>The day-to-day care and contact proposal is included when both Protection and Parenting Orders are selected and children are entered.</li>
-            <li>Paragraph numbering updates automatically when conditional sections are removed.</li>
-          </ul>
-        </div>
-      </Card>
     </div>
   );
 }

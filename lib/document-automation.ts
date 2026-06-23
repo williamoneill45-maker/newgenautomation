@@ -484,7 +484,7 @@ export function buildMatterMergeFields(matter: MatterFile): MergeFields {
       intake.respondent.relationshipToApplicant,
     respondent_work_address: intake.respondent.workAddress,
     respondents_relationship_to_children:
-      joinPresent(intake.children.slice(0, 4).map((child) => child.respondentRelationshipToChild)),
+      joinPresent(intake.children.map((child) => child.respondentRelationshipToChild)),
     respondents_name: respondentName,
     "respondents_name ": respondentName,
     "respondents_relationshib to child": firstChild?.respondentRelationshipToChild,
@@ -500,7 +500,7 @@ export function buildTemplateMergeFields(
   if (documentType !== "parenting_order_application") return fields;
 
   const overrides: RawMergeFields = {};
-  matter.intake.children.slice(0, 3).forEach((child, index) => {
+  matter.intake.children.forEach((child, index) => {
     const childNumber = index + 1;
     overrides[`child_${childNumber}_name`] = child.fullName.toLocaleUpperCase("en-NZ");
     overrides[`child_${childNumber}_dob`] = formatInputDateLong(child.dateOfBirth);

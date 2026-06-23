@@ -54,7 +54,7 @@ export const billingWorkItems: BillingWorkItemDefinition[] = [
   { id: "32-memorandum-consent", managementRuleId: "memorandum-of-consent", formType: "32B", group: "Consent", label: "Memorandum of Consent", category: "consent_memorandum", fixedFee: 310, wording: "The parties and Counsel have negotiated a consent memorandum to advance proceedings." },
   { id: "32-report", managementRuleId: "report", formType: "32B", group: "Reports", label: "Report (s 132, s 133, or Lawyer for Child)", category: "lawyer_for_child_report", fixedFee: 190, wording: "Receipt of report. Perusing report. Considering recommendations. Advising client of impact of report on proceedings." },
   { id: "32-additional-factors", managementRuleId: "additional-factors", formType: "32B", group: "Additional factors", label: "Additional factors", category: "additional_factors", fixedFee: 190, wording: "The Respondent is self represented and this makes negotiations very challenging and is causing delays in advancing proceedings." },
-  { id: "32-defended-hearing", managementRuleId: "defended-hearing", formType: "32B", group: "Defended hearing", label: "Defended Hearing", category: "defended_hearing", preparationFee: 160, hearingRate: 67, requiresAttendance: true, wording: "Defended Hearing - review file, prepare for defended hearing, cross examination, briefing witnesses, preparing submissions. Reporting to client. We attended at the Fixture on [billing date] from [attendance time]." },
+  { id: "32-defended-hearing", managementRuleId: "defended-hearing", formType: "32B", group: "Defended hearing", label: "Defended Hearing", category: "defended_hearing", hearingRate: 67, requiresAttendance: true, wording: "Defended Hearing - attendance at the Fixture on [billing date] from [attendance time]." },
   { id: "33-judicial-conference", managementRuleId: "judicial-conference", formType: "33A", group: "Pre-hearing matters", label: "Judicial Conference", category: "judicial_conference", preparationFee: 140, hearingRate: 67, requiresAttendance: true, wording: "Preparing for Judicial Conference, taking client's instructions, advising of procedural steps, advising of what will take place at the Conference. All correspondence and calls with Counsel and parties. Enclosed Notice of Fixture, Directions granted to advance the proceedings. Attendance at Judicial Conference on [billing date] from [attendance time]." },
   { id: "33-pre-hearing-matters", managementRuleId: "pre-hearing-matters", formType: "33A", group: "Pre-hearing matters", label: "Pre-hearing matters", category: "pre_hearing_matters", fixedFee: 620, wording: "Pre-hearing matters including reviewing evidence, advising client, correspondence with parties and preparing matter for next procedural step." },
   { id: "33-formal-proof", managementRuleId: "formal-proof", formType: "33A", group: "Applications and orders", label: "Formal proof hearing", category: "formal_proof", preparationFee: 140, hearingRate: 67, requiresAttendance: true, wording: "Formal Proof Hearing preparation, taking instructions, reviewing evidence, preparing for hearing, attendance at hearing on [billing date] from [attendance time]." },
@@ -228,9 +228,11 @@ export function getBillingPreviewRows(record: BillingRecord): BillingPreviewRow[
     if (definition.fixedFee) return [{ label: definition.label, quantity: 1, unit: definition.fixedFee, total: definition.fixedFee }];
     const units = calculateHalfHourUnits(item.attendanceHours);
     return [
-      { label: `${definition.label} - Preparation`, quantity: 1, unit: definition.preparationFee ?? 0, total: definition.preparationFee ?? 0 },
+      definition.preparationFee
+        ? { label: `${definition.label} - Preparation`, quantity: 1, unit: definition.preparationFee, total: definition.preparationFee }
+        : null,
       { label: `${definition.label} - Hearing time`, quantity: units, unit: definition.hearingRate ?? 0, total: units * (definition.hearingRate ?? 0) },
-    ];
+    ].filter((row): row is BillingPreviewRow => Boolean(row));
   });
   const additionalRows: BillingPreviewRow[] = [];
   if ((record.draft.travel?.travelTimeValue ?? 0) > 0) additionalRows.push({ label: "Travel time", quantity: record.draft.travel?.travelTimeValue ?? 0, unit: 63, total: (record.draft.travel?.travelTimeValue ?? 0) * 63 });

@@ -108,7 +108,7 @@ create table if not exists public.legal_aid_applications (
   matter_id text not null,
   client_name text not null,
   status text not null default 'draft'
-    check (status in ('draft', 'pending_income_proof', 'pending_signed_page', 'ready_to_generate', 'generated')),
+    check (status in ('draft', 'pending_income_proof', 'pending_signed_page', 'ready_to_generate', 'generated', 'submitted')),
   review jsonb not null default '{}'::jsonb,
   has_income_proof boolean not null default false,
   has_signed_page boolean not null default false,
@@ -159,14 +159,19 @@ create table if not exists public.legal_aid_claims (
   firm_id text not null,
   claim_id text not null,
   client_name text not null,
+  legal_aid_number text not null default '',
   matter_name text not null,
   form_type text not null check (form_type in ('32B', '33A')),
   amount_claimed numeric(12, 2) not null check (amount_claimed >= 0),
-  date_sent date not null,
+  date_generated date not null default current_date,
+  date_sent date,
+  claim_status text not null default 'Draft' check (claim_status in ('Draft', 'Generated', 'Sent', 'Paid', 'Overdue')),
   paid_status text not null default 'Unpaid' check (paid_status in ('Unpaid', 'Paid', 'Part Paid')),
   date_paid date,
   amount_paid numeric(12, 2) not null default 0 check (amount_paid >= 0),
   outstanding_amount numeric(12, 2) not null check (outstanding_amount >= 0),
+  storage_provider text not null default '',
+  storage_location text not null default '',
   notes text not null default '',
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
@@ -174,8 +179,27 @@ create table if not exists public.legal_aid_claims (
 );
 
 create index if not exists legal_aid_claims_firm_date_idx
-  on public.legal_aid_claims (firm_id, date_sent desc);
+  on public.legal_aid_claims (firm_id, date_generated desc);
 
 alter table public.legal_aid_claims enable row level security;
 revoke all on table public.legal_aid_claims from anon, authenticated;
 grant select, insert, update, delete on table public.legal_aid_claims to service_role;
+
+-- Safe extensions for projects created from an earlier version of this schema.
+alter table public.legal_aid_applications drop constraint if exists legal_aid_applications_status_check;
+alter table public.legal_aid_applications add constraint legal_aid_applications_status_check
+  check (status in ('draft', 'pending_income_proof', 'pending_signed_page', 'ready_to_generate', 'generated', 'submitted'));
+
+alter table public.legal_aid_claims add column if not exists legal_aid_number text not null default '';
+alter table public.legal_aid_claims add column if not exists date_generated date not null default current_date;
+alter table public.legal_aid_claims alter column date_sent drop not null;
+alter table public.legal_aid_claims add column if not exists claim_status text not null default 'Draft';
+alter table public.legal_aid_claims add column if not exists storage_provider text not null default '';
+alter table public.legal_aid_claims add column if not exists storage_location text not null default '';
+alter table public.legal_aid_claims drop constraint if exists legal_aid_claims_claim_status_check;
+alter table public.legal_aid_claims add constraint legal_aid_claims_claim_status_check
+  check (claim_status in ('Draft', 'Generated', 'Sent', 'Paid', 'Overdue'));
+update public.legal_aid_claims
+set claim_status = case when paid_status = 'Paid' then 'Paid' else 'Sent' end,
+    date_generated = coalesce(date_generated, date_sent, created_at::date)
+where claim_status = 'Draft' and date_sent is not null;

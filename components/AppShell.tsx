@@ -5,15 +5,13 @@ import { usePathname } from "next/navigation";
 
 const navItems = [
   { href: "/", label: "Dashboard" },
-  { href: "/new-client", label: "New client" },
-  { href: "/clients", label: "Clients" },
-  { href: "/billing", label: "Billing" },
-  { href: "/billing/claims", label: "Claims" },
-  { href: "/invoices", label: "Invoices" },
+  { href: "/new-client", label: "New Matter" },
+  { href: "/clients", label: "Matters" },
   { href: "/legal-aid", label: "Legal Aid" },
-  { href: "/form-production-rules", label: "Form rules" },
-  { href: "/billing-management/form-32b", label: "Billing rules" },
-  { href: "/affidavit", label: "Affidavit" },
+  { href: "/billing", label: "Billing" },
+  { href: "/billing/claims", label: "Claims Tracker" },
+  { href: "/invoices", label: "Invoices" },
+  { href: "/settings", label: "Settings" },
 ];
 
 export function AppShell({ children }: { children: React.ReactNode }) {
@@ -28,8 +26,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <aside className="border-b border-slate-200 bg-white lg:sticky lg:top-0 lg:h-screen lg:border-b-0 lg:border-r">
         <div className="flex h-full flex-col">
           <div className="border-b border-slate-200 px-5 py-5">
-            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">NewGen</p>
-            <h1 className="mt-1 text-lg font-semibold tracking-normal text-slate-950">Family Law Automation</h1>
+            <p className="text-xs font-semibold uppercase tracking-wide text-sky-700">NewGen</p>
+            <h1 className="mt-1 text-lg font-semibold tracking-normal text-slate-950">Automation</h1>
+            {process.env.NEXT_PUBLIC_DEMO_MODE === "true" ? (
+              <span className="mt-3 inline-flex rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-sky-800">
+                Demo workspace
+              </span>
+            ) : null}
           </div>
           <nav className="flex gap-1 overflow-x-auto px-3 py-3 lg:flex-col lg:overflow-visible">
             {navItems.map((item) => {
@@ -51,7 +54,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             })}
           </nav>
           <div className="mt-auto hidden border-t border-slate-200 p-4 text-xs leading-5 text-slate-500 lg:block">
-            Client files, billing, Legal Aid, and form generation are being brought into one matter workspace.
+            Matter documents, Legal Aid, billing and claims in one secure workspace.
           </div>
         </div>
       </aside>

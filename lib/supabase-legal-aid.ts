@@ -76,8 +76,8 @@ function toRow(record: LegalAidRecord) {
     id: record.id,
     matter_id: record.matterId,
     client_name: record.clientName,
-    status: record.status === "generated"
-      ? "generated"
+    status: record.status === "generated" || record.status === "submitted"
+      ? record.status
       : getLegalAidStatus(record.hasIncomeProof, record.hasSignedPage),
     review: record.review,
     has_income_proof: record.hasIncomeProof,

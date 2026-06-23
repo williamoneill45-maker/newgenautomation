@@ -9,7 +9,8 @@ export type LegalAidStatus =
   | "pending_income_proof"
   | "pending_signed_page"
   | "ready_to_generate"
-  | "generated";
+  | "generated"
+  | "submitted";
 
 export type LegalAidReview = {
   matterId: string;
@@ -53,9 +54,9 @@ export type LegalAidPendingSummary = Pick<
 export const legalAidTemplatePath = "templates/Legal Aid Template.pdf";
 
 export const confidentialLawyerPostalAddress = [
-  "C/o Natalie Quirke",
-  "Po Box 25977",
-  "St Heliers",
+  "C/o Example Family Law",
+  "PO Box 1000",
+  "Auckland",
 ].join(", ");
 
 export const protectionOrderStandardWording =

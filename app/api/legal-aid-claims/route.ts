@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { authCookieName, authSessionValue } from "../../../lib/auth-gate";
 import {
   createLegalAidClaim,
-  listCurrentMonthClaims,
+  listLegalAidClaims,
   updateLegalAidClaim,
   type LegalAidClaimInput,
 } from "../../../lib/legal-aid-claims";
@@ -17,7 +17,7 @@ function authorized(request: NextRequest): boolean {
 export async function GET(request: NextRequest) {
   if (!authorized(request)) return NextResponse.json({ error: "Login required." }, { status: 401 });
   try {
-    return NextResponse.json(await listCurrentMonthClaims());
+    return NextResponse.json(await listLegalAidClaims());
   } catch (error) {
     console.error("Legal Aid claims load failed", error);
     return NextResponse.json({ error: "Unable to load Legal Aid claims." }, { status: 500 });
@@ -43,9 +43,13 @@ export async function PATCH(request: NextRequest) {
   try {
     const input = (await request.json()) as {
       id?: string;
+      lifecycleStatus?: "Draft" | "Generated" | "Sent" | "Paid" | "Overdue";
       markPaid?: boolean;
       amountPaid?: number;
+      dateSent?: string;
       datePaid?: string;
+      storageProvider?: string;
+      storageLocation?: string;
       notes?: string;
     };
     if (!input.id?.trim()) return NextResponse.json({ error: "Claim ID is required." }, { status: 400 });

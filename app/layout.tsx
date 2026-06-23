@@ -3,8 +3,8 @@ import { AppShell } from "../components/AppShell";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Family Law Automation",
-  description: "Family law intake and document automation workspace.",
+  title: "NewGen Automation",
+  description: "New Zealand family law matter, Legal Aid, billing and claims workflow.",
 };
 
 export default function RootLayout({

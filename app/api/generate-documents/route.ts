@@ -8,11 +8,13 @@ import {
   buildTemplateMergeFields,
   getInformationSheetEthnicityCheckboxes,
 } from "../../../lib/document-automation";
+import { buildAdditionalChildLines } from "../../../lib/child-continuation";
 import { mergeDocxTemplate, type DocxMergeReport } from "../../../lib/docx-template";
 import type { MatterFile } from "../../../lib/matter";
 import { getOneDriveClientFolderPaths, uploadFileToOneDrive, type OneDriveUploadResult } from "../../../lib/onedrive";
 import {
   buildStandardAffidavitContent,
+  isParentingOrderSought,
   isProtectionOrderSought,
 } from "../../../lib/standard-affidavit";
 import { standardDocxTemplates } from "../../../lib/template-catalog";
@@ -64,10 +66,6 @@ function safeFileName(value: string): string {
   return value.replace(/[^A-Za-z0-9 ._-]/g, "").trim().replace(/\s+/g, "_") || "Client";
 }
 
-function getApplicationType(matter: MatterFile): string {
-  return matter.intake.selectedApplications.join(", ");
-}
-
 export async function POST(request: Request) {
   const body = (await request.json()) as {
     matter?: MatterFile;
@@ -84,8 +82,6 @@ export async function POST(request: Request) {
   const generatedFiles: GeneratedFile[] = [];
   const clientName = body.matter.clientName || body.matter.intake.applicant.fullName;
   const legalAidNumber = body.matter.legalAidNumber.trim();
-  const clientEmail = body.matter.intake.applicant.emailAddress.trim();
-  const applicationType = getApplicationType(body.matter);
   const clientFolderPaths = getOneDriveClientFolderPaths({ clientName, legalAidNumber });
   const generatedAt = new Date().toISOString();
   const validationReport: DocumentValidationReport = {
@@ -104,14 +100,20 @@ export async function POST(request: Request) {
     documents: [],
   };
   const hasProtectionOrder = isProtectionOrderSought(body.matter);
+  const hasParentingOrder = isParentingOrderSought(body.matter);
   const affidavitContent = buildStandardAffidavitContent(body.matter);
 
   for (const templateDefinition of standardDocxTemplates) {
-    if (templateDefinition.id === "domestic_violence_affidavit" && !hasProtectionOrder) {
+    const conditionalSkip =
+      (templateDefinition.id === "confidential_address_application" && !body.matter.intake.applicant.isAddressConfidential)
+      || (templateDefinition.id === "parenting_order_application" && !hasParentingOrder)
+      || (templateDefinition.id === "protection_order_application" && !hasProtectionOrder)
+      || (templateDefinition.id === "domestic_violence_affidavit" && !hasProtectionOrder);
+    if (conditionalSkip) {
       validationReport.skippedDocuments.push({
         template: templateDefinition.sourceFileName,
         title: templateDefinition.title,
-        reason: "A Protection Order is not included in this matter.",
+        reason: "This document is not required for the applications selected in this matter.",
       });
       continue;
     }
@@ -193,7 +195,18 @@ export async function POST(request: Request) {
 
     const { buffer, report } = await mergeDocxTemplate(sourceTemplate, templateFields, {
       ...(templateDefinition.id === "parenting_order_application"
-        ? { childCount: Math.min(body.matter.intake.children.length, 3) }
+        ? {
+            childCount: Math.min(body.matter.intake.children.length, 3),
+            repeatChildParagraphsThrough: body.matter.intake.children.length,
+          }
+        : {}),
+      ...(templateDefinition.id === "information_sheet" && body.matter.intake.children.length > 3
+        ? {
+            continuationSections: [{
+              heading: "ADDITIONAL CHILDREN AFFECTED BY THE APPLICATION",
+              lines: buildAdditionalChildLines(body.matter),
+            }],
+          }
         : {}),
       ...(templateDefinition.id === "information_sheet"
         ? {
@@ -261,12 +274,6 @@ export async function POST(request: Request) {
   if (body.uploadToOneDrive && !clientName.trim()) {
     oneDriveStatus = "failed";
     oneDriveError = "Client name is required before generated forms can be uploaded to OneDrive.";
-  } else if (body.uploadToOneDrive && !clientEmail) {
-    oneDriveStatus = "failed";
-    oneDriveError = "Applicant email is required before forms can be uploaded for induction.";
-  } else if (body.uploadToOneDrive && !applicationType) {
-    oneDriveStatus = "failed";
-    oneDriveError = "At least one application type is required before forms can be uploaded for induction.";
   } else if (body.uploadToOneDrive) {
     oneDrivePath = clientFolderPaths.formsFolderPath;
 

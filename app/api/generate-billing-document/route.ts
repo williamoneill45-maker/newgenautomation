@@ -64,6 +64,7 @@ export async function POST(request: Request) {
     const body = (await request.json()) as {
       record?: BillingRecord;
       reviewed?: boolean;
+      uploadToOneDrive?: boolean;
     };
 
     if (!body.record) {
@@ -116,7 +117,7 @@ export async function POST(request: Request) {
     let oneDriveUrl = "";
     let oneDrivePath = "";
 
-    try {
+    if (body.uploadToOneDrive) try {
       const upload = await uploadBillingDocumentToOneDrive(fileName, uploadBuffer, {
         clientName: body.record.clientName,
         legalAidNumber: body.record.legalAidNumber,

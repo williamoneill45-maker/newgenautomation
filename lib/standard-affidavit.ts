@@ -86,8 +86,7 @@ export function buildStandardAffidavitContent(matter: MatterFile): StandardAffid
   const hasParentingOrder = isParentingOrderSought(matter);
   const respondentName = clean(matter.intake.respondent.fullName).toLocaleUpperCase("en-NZ") || "the Respondent";
   const children = matter.intake.children
-    .filter((child) => clean(child.fullName))
-    .slice(0, 3);
+    .filter((child) => clean(child.fullName));
   const childFirstNames = children.map((child) => firstName(child.fullName).toLocaleUpperCase("en-NZ")).filter(Boolean);
   const formattedChildNames = formatList(childFirstNames) || "the children";
   const selectedOrderLabels = matter.intake.selectedApplications

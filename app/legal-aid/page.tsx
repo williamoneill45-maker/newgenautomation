@@ -16,6 +16,7 @@ import {
   type LegalAidReview,
 } from "../../lib/legal-aid";
 import { courts, createEmptyMatter, type MatterFile } from "../../lib/matter";
+import { demoLegalAidApplications, demoMatter, isDemoEnvironment } from "../../lib/demo-data";
 
 type ReviewField = keyof LegalAidReview;
 
@@ -62,7 +63,8 @@ export default function LegalAidPage() {
   const [notice, setNotice] = useState("");
 
   useEffect(() => {
-    const recent = readRecentMatters().filter((item) => isWithinLastWeek(item.updatedAt || item.createdAt));
+    const storedRecent = readRecentMatters().filter((item) => isWithinLastWeek(item.updatedAt || item.createdAt));
+    const recent = storedRecent.length ? storedRecent : isDemoEnvironment ? [demoMatter] : [];
     setRecentMatters(recent);
     void loadSavedApplications();
     const storedMatter = window.localStorage.getItem(legalAidMatterStorageKey);
@@ -82,10 +84,10 @@ export default function LegalAidPage() {
       const response = await fetch("/api/legal-aid-applications", { cache: "no-store" });
       const payload = await response.json();
       if (payload.status === "loaded") {
-        setSavedApplications(payload.data);
+        setSavedApplications(payload.data.length ? payload.data : isDemoEnvironment ? demoLegalAidApplications : []);
       }
     } catch {
-      setSavedApplications([]);
+      setSavedApplications(isDemoEnvironment ? demoLegalAidApplications : []);
     }
   }
 
@@ -106,7 +108,7 @@ export default function LegalAidPage() {
     );
     setIncomeProof(null);
     setSignedPage(null);
-    setIsGenerated(record.status === "generated");
+    setIsGenerated(record.status === "generated" || record.status === "submitted");
   }
 
   async function saveDraft(nextReview = review, currentApplication = application) {
@@ -116,6 +118,40 @@ export default function LegalAidPage() {
     setNotice("");
 
     try {
+      if (isDemoEnvironment) {
+        const saved: LegalAidRecord = currentApplication
+          ? {
+              ...currentApplication,
+              clientName: nextReview.clientName,
+              review: nextReview,
+              status: currentApplication.status,
+              updatedAt: new Date().toISOString(),
+            }
+          : {
+              id: `legal-aid-${nextReview.matterId || "demo"}`,
+              matterId: nextReview.matterId || matter?.id || demoMatter.id,
+              clientName: nextReview.clientName,
+              status: getLegalAidStatus(true, true),
+              hasIncomeProof: true,
+              hasSignedPage: true,
+              incomeProofPath: "demo/income-proof-example.pdf",
+              signedPagePath: "demo/signed-page-5-example.pdf",
+              incomeProofFileName: "income-proof-example.pdf",
+              signedPageFileName: "signed-page-5-example.pdf",
+              templatePath: legalAidTemplatePath,
+              review: nextReview,
+              createdAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
+            };
+        setApplication(saved);
+        setSavedApplications((current) => {
+          const withoutSaved = current.filter((item) => item.id !== saved.id);
+          return [saved, ...withoutSaved];
+        });
+        setNotice("Legal Aid draft saved.");
+        return saved;
+      }
+
       const response = await fetch("/api/legal-aid-applications", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -125,9 +161,7 @@ export default function LegalAidPage() {
                 ...currentApplication,
                 clientName: nextReview.clientName,
                 review: nextReview,
-                status: currentApplication.status === "generated"
-                  ? getLegalAidStatus(currentApplication.hasIncomeProof, currentApplication.hasSignedPage)
-                  : currentApplication.status,
+                status: currentApplication.status,
               }
             : undefined,
           review: currentApplication ? undefined : nextReview,
@@ -242,11 +276,19 @@ export default function LegalAidPage() {
   }
 
   const status = useMemo(
-    () => isGenerated
+    () => application?.status === "submitted"
+      ? "submitted"
+      : isGenerated
       ? "generated"
       : getLegalAidStatus(Boolean(incomeProof || application?.hasIncomeProof), Boolean(signedPage || application?.hasSignedPage)),
     [application, incomeProof, signedPage, isGenerated],
   );
+
+  async function markSubmitted() {
+    if (!application) return;
+    const saved = await saveDraft(review, { ...application, status: "submitted" });
+    if (saved) setNotice("Legal Aid application marked as submitted.");
+  }
 
   async function handleFileChange(
     event: ChangeEvent<HTMLInputElement>,
@@ -416,6 +458,16 @@ export default function LegalAidPage() {
           </p>
         </header>
 
+        <section className="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+          {[
+            ["Missing income proof", savedApplications.filter((item) => !item.hasIncomeProof).length],
+            ["Missing signed page 5", savedApplications.filter((item) => item.hasIncomeProof && !item.hasSignedPage).length],
+            ["Ready", savedApplications.filter((item) => item.status === "ready_to_generate").length],
+            ["Generated", savedApplications.filter((item) => item.status === "generated").length],
+            ["Submitted", savedApplications.filter((item) => item.status === "submitted").length],
+          ].map(([label, count]) => <div key={label} className="rounded-lg border border-slate-200 bg-white p-4 shadow-form"><p className="text-2xl font-semibold text-slate-950">{count}</p><p className="mt-1 text-xs font-medium text-slate-600">{label}</p></div>)}
+        </section>
+
         <section className="mb-6 rounded-lg border border-slate-200 bg-white p-5 shadow-form">
           <div className="flex flex-col justify-between gap-3 md:flex-row md:items-end">
             <div>
@@ -540,18 +592,20 @@ export default function LegalAidPage() {
               </section>
 
               <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-form">
-                <h2 className="text-lg font-semibold text-slate-950">Generate PDF</h2>
+                <h2 className="text-lg font-semibold text-slate-950">Next action</h2>
                 <p className="mt-2 text-sm leading-6 text-slate-600">
-                  Source template: {legalAidTemplatePath}
+                  {status === "submitted" ? "This application is recorded as submitted." : status === "generated" ? "The PDF is generated. Mark it submitted once it has been sent to Legal Aid." : status === "ready_to_generate" ? "Both required uploads are present. Generate the completed PDF." : "Complete the missing upload shown above."}
                 </p>
-                <button
+                {status !== "submitted" ? <button
                   type="button"
-                  disabled={isGenerating || !(incomeProof || application?.hasIncomeProof) || !(signedPage || application?.hasSignedPage)}
+                  disabled={isGenerating || status === "generated" || !(incomeProof || application?.hasIncomeProof) || !(signedPage || application?.hasSignedPage)}
                   className="mt-5 inline-flex h-10 w-full items-center justify-center rounded-md bg-sky-600 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-sky-700 disabled:cursor-not-allowed disabled:bg-slate-300"
                   onClick={generateLegalAidApplication}
                 >
                   {isGenerating ? "Generating..." : "Generate Legal Aid PDF"}
-                </button>
+                </button> : null}
+                {status === "generated" ? <button type="button" onClick={() => void markSubmitted()} className="mt-3 inline-flex h-10 w-full items-center justify-center rounded-md bg-slate-950 px-4 text-sm font-semibold text-white hover:bg-slate-800">Mark as submitted</button> : null}
+                <p className="mt-3 text-xs text-slate-500">Source template: {legalAidTemplatePath}</p>
                 {error ? <p className="mt-3 text-sm font-medium text-red-700">{error}</p> : null}
               </section>
             </aside>

@@ -20,6 +20,7 @@ import {
 } from "../../lib/billing-selection";
 import { form32BSettingsStorageKey } from "../../lib/form32b-rules";
 import { form33ASettingsStorageKey } from "../../lib/form33a-rules";
+import { demoMatter, isDemoEnvironment } from "../../lib/demo-data";
 
 const today = new Date().toLocaleDateString("en-CA", { timeZone: "Pacific/Auckland" });
 const emptyDetails: BillingItemDetails = { date: today, court: "", startTime: "", endTime: "" };
@@ -31,11 +32,11 @@ function makeInvoiceNumber(formType: BillingFormType, clientName: string): strin
 
 export default function BillingPage() {
   const [formType, setFormType] = useState<BillingFormType>("32B");
-  const [clientName, setClientName] = useState("");
-  const [legalAidNumber, setLegalAidNumber] = useState("");
-  const [matterName, setMatterName] = useState("");
+  const [clientName, setClientName] = useState(isDemoEnvironment ? demoMatter.clientName : "");
+  const [legalAidNumber, setLegalAidNumber] = useState(isDemoEnvironment ? demoMatter.legalAidNumber : "");
+  const [matterName, setMatterName] = useState(isDemoEnvironment ? "Thompson v Roberts – Protection and Parenting" : "");
   const [createClaimRecord, setCreateClaimRecord] = useState(true);
-  const [selectedWorkItemIds, setSelectedWorkItemIds] = useState<BillingWorkItemId[]>([]);
+  const [selectedWorkItemIds, setSelectedWorkItemIds] = useState<BillingWorkItemId[]>(isDemoEnvironment ? ["32-pre-hearing-matters"] : []);
   const [detailsByItem, setDetailsByItem] = useState<Partial<Record<BillingWorkItemId, BillingItemDetails>>>({});
   const [agentHearingType, setAgentHearingType] = useState<StructuredBillingInput["agentHearingType"]>();
   const [additionalFactorSection, setAdditionalFactorSection] = useState<StructuredBillingInput["additionalFactorSection"]>();
@@ -50,6 +51,9 @@ export default function BillingPage() {
   const [generationError, setGenerationError] = useState("");
   const [generationNotice, setGenerationNotice] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
+  const [isSavingToOneDrive, setIsSavingToOneDrive] = useState(false);
+  const [oneDriveConfigured, setOneDriveConfigured] = useState(false);
+  const [generatedRecord, setGeneratedRecord] = useState<BillingRecord | null>(null);
 
   const formItems = billingWorkItems.filter((item) => item.formType === formType);
   const groupedItems = useMemo(() => formItems.reduce<Record<string, typeof formItems>>((groups, item) => {
@@ -81,6 +85,10 @@ export default function BillingPage() {
       }
     });
     setWordingOverrides(overrides);
+    void fetch("/api/onedrive-status")
+      .then((response) => response.ok ? response.json() : null)
+      .then((payload) => setOneDriveConfigured(Boolean(payload?.configured)))
+      .catch(() => setOneDriveConfigured(false));
   }, []);
 
   const structuredInput: StructuredBillingInput = {
@@ -160,7 +168,7 @@ export default function BillingPage() {
       const response = await fetch("/api/generate-billing-document", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ record, reviewed: true }),
+        body: JSON.stringify({ record, reviewed: true, uploadToOneDrive: false }),
       });
       if (!response.ok) {
         const payload = await response.json();
@@ -178,7 +186,6 @@ export default function BillingPage() {
       link.remove();
       URL.revokeObjectURL(url);
       const totals = calculateBillingTotals(record);
-      const oneDriveStatus = response.headers.get("X-OneDrive-Status") ?? "not_configured";
       const invoice: StoredBillingInvoice = {
         id: record.id,
         clientId: record.matterId,
@@ -188,7 +195,7 @@ export default function BillingPage() {
         invoiceNumber: record.invoiceNumber,
         invoiceTotal: totals.total,
         formType: record.formType,
-        status: oneDriveStatus === "uploaded" ? "onedrive_uploaded" : "onedrive_pending",
+        status: "generated",
         missingEvidence: [],
         evidenceFiles: [],
         billingRecord: record,
@@ -219,10 +226,12 @@ export default function BillingPage() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             clientName,
+            legalAidNumber,
             matterName,
             formType,
             amountClaimed: totals.total,
-            dateSent: today,
+            dateGenerated: today,
+            lifecycleStatus: "Generated",
           }),
         });
         const claimPayload = await claimResponse.json();
@@ -231,12 +240,35 @@ export default function BillingPage() {
         }
         claimNotice = ` Claim ${claimPayload.data.claimId} was added to the tracker.`;
       }
+      setGeneratedRecord(record);
       setGenerationNotice(`Generated ${fileName}.${claimNotice} The wording remains editable in Word.`);
     } catch (error) {
       setGenerationError(error instanceof Error ? error.message : "Unable to generate the billing form.");
     } finally {
       setIsGenerating(false);
     }
+  }
+
+  async function saveGeneratedToOneDrive() {
+    if (!generatedRecord) return;
+    setIsSavingToOneDrive(true);
+    setGenerationError("");
+    try {
+      const response = await fetch("/api/generate-billing-document", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ record: generatedRecord, reviewed: true, uploadToOneDrive: true }),
+      });
+      if (!response.ok) {
+        const payload = await response.json().catch(() => null) as { error?: string } | null;
+        throw new Error(payload?.error ?? "Unable to save the form to OneDrive.");
+      }
+      const storageStatus = response.headers.get("X-OneDrive-Status");
+      if (storageStatus !== "uploaded") throw new Error("OneDrive is configured, but the form was not uploaded.");
+      setGenerationNotice(`Saved the generated Form${generatedRecord.formType} to OneDrive.`);
+    } catch (error) {
+      setGenerationError(error instanceof Error ? error.message : "Unable to save the form to OneDrive.");
+    } finally { setIsSavingToOneDrive(false); }
   }
 
   return (
@@ -247,14 +279,13 @@ export default function BillingPage() {
           <div className="flex gap-3 text-sm font-medium text-slate-600">
             <Link href="/billing/claims" className="hover:text-slate-950">Claims tracker</Link>
             <Link href="/invoices" className="hover:text-slate-950">Invoices</Link>
-            <Link href="/billing-management/form-32b" className="hover:text-slate-950">Billing rules</Link>
           </div>
         </div>
 
         <header className="mb-6 border-b border-slate-200 pb-5">
           <p className="text-sm font-semibold uppercase tracking-wide text-sky-700">Legal aid billing</p>
           <h1 className="mt-2 text-3xl font-semibold text-slate-950">Structured Billing</h1>
-          <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-600">Select the work completed and enter only the details needed for those items. Fees, units, GST, mileage, totals, wording, and Word placeholders are calculated automatically.</p>
+          <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-600">Select the work completed. Fees, GST, totals, wording, and Word placeholders are calculated automatically.</p>
         </header>
 
         <section className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_460px]">
@@ -290,7 +321,16 @@ export default function BillingPage() {
                       {items.map((item) => (
                         <label key={item.id} className={selectedWorkItemIds.includes(item.id) ? "flex cursor-pointer items-start gap-3 rounded-md border border-sky-300 bg-sky-50 p-3" : "flex cursor-pointer items-start gap-3 rounded-md border border-slate-200 p-3 hover:bg-slate-50"}>
                           <input type="checkbox" className="mt-0.5 h-4 w-4 rounded border-slate-300 text-sky-600" checked={selectedWorkItemIds.includes(item.id)} onChange={(event) => toggleWorkItem(item.id, event.target.checked)} />
-                          <span><span className="block text-sm font-medium text-slate-900">{item.label}</span><span className="mt-1 block text-xs text-slate-500">{item.fixedFee ? `$${item.fixedFee} fixed fee` : `$${item.preparationFee} preparation + $${item.hearingRate} per half hour`}</span></span>
+                          <span>
+                            <span className="block text-sm font-medium text-slate-900">{item.label}</span>
+                            <span className="mt-1 block text-xs text-slate-500">
+                              {item.fixedFee
+                                ? `$${item.fixedFee} fixed fee`
+                                : item.preparationFee
+                                ? `$${item.preparationFee} preparation + $${item.hearingRate} per half hour`
+                                : `$${item.hearingRate} per half hour`}
+                            </span>
+                          </span>
                         </label>
                       ))}
                     </div>
@@ -347,9 +387,10 @@ export default function BillingPage() {
             <PreviewPanel record={previewRecord} errors={validationErrors} editableWording={editableWording} onWordingChange={setEditableWording} />
             <label className="flex cursor-pointer items-start gap-3 rounded-md border border-slate-200 bg-white p-4 text-sm shadow-form">
               <input type="checkbox" className="mt-0.5 h-4 w-4 rounded border-slate-300 text-sky-600" checked={createClaimRecord} onChange={(event) => setCreateClaimRecord(event.target.checked)} />
-              <span><span className="block font-semibold text-slate-900">Add this form to Claims Tracker</span><span className="mt-1 block text-xs leading-5 text-slate-500">Creates an unpaid claim using the form total and today as the date sent.</span></span>
+              <span><span className="block font-semibold text-slate-900">Add this form to Claims Tracker</span><span className="mt-1 block text-xs leading-5 text-slate-500">Creates a generated claim using this form total. Mark it sent when it is submitted to Legal Aid.</span></span>
             </label>
             <button type="button" disabled={isGenerating || !previewRecord} onClick={generateDocument} className="inline-flex h-12 w-full items-center justify-center rounded-md bg-sky-600 px-4 text-sm font-semibold text-white shadow-sm hover:bg-sky-700 disabled:cursor-not-allowed disabled:bg-slate-300">{isGenerating ? "Generating..." : `Generate Form${formType}`}</button>
+            {generatedRecord && oneDriveConfigured ? <button type="button" disabled={isSavingToOneDrive} onClick={() => void saveGeneratedToOneDrive()} className="inline-flex h-11 w-full items-center justify-center rounded-md border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50">{isSavingToOneDrive ? "Saving…" : "Save generated form to OneDrive"}</button> : null}
             {generationError ? <p className="rounded-md bg-red-50 p-3 text-sm font-medium text-red-700">{generationError}</p> : null}
             {generationNotice ? <p className="rounded-md bg-emerald-50 p-3 text-sm font-medium text-emerald-800">{generationNotice}</p> : null}
           </aside>

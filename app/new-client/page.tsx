@@ -21,7 +21,7 @@ export default function NewClientPage() {
             <div>
               <h2 className="text-lg font-semibold text-slate-950">Optional Legal Aid</h2>
               <p className="mt-1 text-sm text-slate-600">
-                Start this after induction documents are signed and the MSD response is available.
+                Start or continue the Legal Aid application when the required evidence is available.
               </p>
             </div>
             <Link
