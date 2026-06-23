@@ -9,8 +9,7 @@ const navItems = [
   { href: "/clients", label: "Matters" },
   { href: "/legal-aid", label: "Legal Aid" },
   { href: "/billing", label: "Billing" },
-  { href: "/billing/claims", label: "Claims Tracker" },
-  { href: "/invoices", label: "Invoices" },
+  { href: "/billing/register", label: "Billing Register" },
   { href: "/settings", label: "Settings" },
 ];
 

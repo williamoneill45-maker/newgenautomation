@@ -63,7 +63,7 @@ export default function LegalAidPage() {
   const [notice, setNotice] = useState("");
 
   useEffect(() => {
-    const storedRecent = readRecentMatters().filter((item) => isWithinLastWeek(item.updatedAt || item.createdAt));
+    const storedRecent = readRecentMatters().filter((item) => (item.legalAidRequired ?? true) && isWithinLastWeek(item.updatedAt || item.createdAt));
     const recent = storedRecent.length ? storedRecent : isDemoEnvironment ? [demoMatter] : [];
     setRecentMatters(recent);
     void loadSavedApplications();

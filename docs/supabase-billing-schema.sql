@@ -32,6 +32,29 @@ create table if not exists public.billing_clients (
   updated_at timestamptz not null default now()
 );
 
+create table if not exists public.matters (
+  id text primary key,
+  client_id text not null default '',
+  client_name text not null,
+  legal_aid_number text not null default '',
+  fam_number text not null default '',
+  legal_aid_required boolean not null default true,
+  status text not null default 'draft'
+    check (status in ('draft', 'ready_for_documents', 'documents_generated')),
+  intake_json jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+alter table public.matters add column if not exists client_id text not null default '';
+alter table public.matters add column if not exists legal_aid_required boolean not null default true;
+alter table public.matters add column if not exists intake_json jsonb not null default '{}'::jsonb;
+create index if not exists matters_client_name_idx on public.matters (client_name);
+create index if not exists matters_updated_at_idx on public.matters (updated_at desc);
+alter table public.matters enable row level security;
+revoke all on table public.matters from anon, authenticated;
+grant select, insert, update, delete on table public.matters to service_role;
+
 alter table public.billing_clients add column if not exists adobe_agreement_id text not null default '';
 alter table public.billing_clients add column if not exists adobe_agreement_status text not null default 'not_sent';
 alter table public.billing_clients add column if not exists adobe_agreement_sent_at timestamptz;
@@ -82,7 +105,19 @@ create table if not exists public.billing_invoices (
   updated_at timestamptz not null default now()
 );
 
+alter table public.billing_invoices add column if not exists client_id text;
+alter table public.billing_invoices add column if not exists fam_number text;
+alter table public.billing_invoices add column if not exists evidence_files_json jsonb not null default '[]'::jsonb;
+alter table public.billing_invoices add column if not exists billing_record_json jsonb;
+alter table public.billing_invoices add column if not exists onedrive_url text;
+alter table public.billing_invoices add column if not exists onedrive_path text;
+alter table public.billing_invoices add column if not exists generated_file_name text;
+alter table public.billing_invoices add column if not exists generated_at timestamptz;
+create index if not exists billing_invoices_client_idx on public.billing_invoices (client_id, client_name);
+
 alter table public.billing_invoices enable row level security;
+revoke all on table public.billing_invoices from anon, authenticated;
+grant select, insert, update, delete on table public.billing_invoices to service_role;
 
 create policy "billing_invoices_select_authenticated"
 on public.billing_invoices

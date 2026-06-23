@@ -1,12 +1,18 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { Suspense, useEffect, useMemo, useState } from "react";
 
 import { travelReferences, type BillingFormType, type BillingRecord } from "../../lib/billing-automation";
 import { calculateBillingTotals } from "../../lib/billing-document";
 import {
+  billingClientsStorageKey,
   billingInvoicesStorageKey,
+  createBillingClientId,
+  normalizeClientName,
+  type BillingClientProfile,
+  type BillingEvidenceFile,
   type StoredBillingInvoice,
 } from "../../lib/billing-storage";
 import {
@@ -18,23 +24,132 @@ import {
   type BillingWorkItemId,
   type StructuredBillingInput,
 } from "../../lib/billing-selection";
+import { demoMatter, isDemoEnvironment } from "../../lib/demo-data";
 import { form32BSettingsStorageKey } from "../../lib/form32b-rules";
 import { form33ASettingsStorageKey } from "../../lib/form33a-rules";
-import { demoMatter, isDemoEnvironment } from "../../lib/demo-data";
+import { recentMattersStorageKey } from "../../lib/legal-aid";
+import { createEmptyMatter, type CourtLocation, type MatterFile } from "../../lib/matter";
 
 const today = new Date().toLocaleDateString("en-CA", { timeZone: "Pacific/Auckland" });
 const emptyDetails: BillingItemDetails = { date: today, court: "", startTime: "", endTime: "" };
+
+type EvidenceImage = {
+  id: string;
+  label: string;
+  fileName: string;
+  contentType: "image/png" | "image/jpeg";
+  dataUrl: string;
+};
+
+type BillingSuggestion = {
+  key: string;
+  label: string;
+  detail: string;
+  clientName: string;
+  legalAidNumber: string;
+  famNumber: string;
+  matter?: MatterFile;
+  client?: BillingClientProfile;
+};
 
 function makeInvoiceNumber(formType: BillingFormType, clientName: string): string {
   const surname = clientName.trim().split(/\s+/).pop()?.replace(/[^A-Za-z0-9]/g, "").toUpperCase() || "CLIENT";
   return `${today.replace(/-/g, "")}.${formType}.${surname}`;
 }
 
+function readLocal<T>(key: string): T[] {
+  try {
+    return JSON.parse(window.localStorage.getItem(key) ?? "[]") as T[];
+  } catch {
+    window.localStorage.removeItem(key);
+    return [];
+  }
+}
+
+function writeRecentMatters(matters: MatterFile[]) {
+  window.localStorage.setItem(recentMattersStorageKey, JSON.stringify(matters));
+}
+
+function writeBillingClients(clients: BillingClientProfile[]) {
+  window.localStorage.setItem(billingClientsStorageKey, JSON.stringify(clients));
+}
+
+function matterLabel(matter?: MatterFile, fallbackClient = ""): string {
+  if (!matter) return fallbackClient ? `${fallbackClient} billing matter` : "Billing matter";
+  const proceeding = matter.intake.proceedingsType ? matter.intake.proceedingsType.replace(/_/g, " ") : "matter";
+  return `${matter.clientName || fallbackClient || "Client"} – ${proceeding}`;
+}
+
+function uniqueSuggestions(matters: MatterFile[], clients: BillingClientProfile[], search: string): BillingSuggestion[] {
+  const normalized = search.trim().toLowerCase();
+  const byKey = new Map<string, BillingSuggestion>();
+
+  for (const matter of matters) {
+    if (normalized && ![matter.clientName, matter.legalAidNumber, matter.intake.famNumber].join(" ").toLowerCase().includes(normalized)) continue;
+    byKey.set(`matter:${matter.id}`, {
+      key: `matter:${matter.id}`,
+      label: matter.clientName || "Unnamed matter",
+      detail: [matter.intake.famNumber, matter.legalAidNumber, matter.status.replace(/_/g, " ")].filter(Boolean).join(" · ") || "Matter profile",
+      clientName: matter.clientName,
+      legalAidNumber: matter.legalAidNumber,
+      famNumber: matter.intake.famNumber,
+      matter,
+    });
+  }
+
+  for (const client of clients) {
+    if (normalized && ![client.clientName, client.legalAidNumber, client.famNumber].join(" ").toLowerCase().includes(normalized)) continue;
+    const matchingMatter = matters.find((matter) =>
+      normalizeClientName(matter.clientName).toLowerCase() === normalizeClientName(client.clientName).toLowerCase() ||
+      (!!client.famNumber && matter.intake.famNumber === client.famNumber) ||
+      (!!client.legalAidNumber && matter.legalAidNumber === client.legalAidNumber)
+    );
+    const key = matchingMatter ? `matter:${matchingMatter.id}` : `client:${client.id}`;
+    if (byKey.has(key)) {
+      const existing = byKey.get(key);
+      if (existing) byKey.set(key, { ...existing, client });
+      continue;
+    }
+    byKey.set(key, {
+      key,
+      label: client.clientName || "Unnamed client",
+      detail: [client.famNumber, client.legalAidNumber, "Billing profile"].filter(Boolean).join(" · "),
+      clientName: client.clientName,
+      legalAidNumber: client.legalAidNumber,
+      famNumber: client.famNumber,
+      matter: matchingMatter,
+      client,
+    });
+  }
+
+  return [...byKey.values()].slice(0, 8);
+}
+
+async function fileToDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(new Error(`Unable to read ${file.name}.`));
+    reader.readAsDataURL(file);
+  });
+}
+
 export default function BillingPage() {
+  return (
+    <Suspense fallback={<main className="min-h-screen bg-slate-50 p-8 text-sm text-slate-600">Loading billing…</main>}>
+      <BillingPageContent />
+    </Suspense>
+  );
+}
+
+function BillingPageContent() {
+  const searchParams = useSearchParams();
   const [formType, setFormType] = useState<BillingFormType>("32B");
   const [clientName, setClientName] = useState(isDemoEnvironment ? demoMatter.clientName : "");
   const [legalAidNumber, setLegalAidNumber] = useState(isDemoEnvironment ? demoMatter.legalAidNumber : "");
-  const [matterName, setMatterName] = useState(isDemoEnvironment ? "Thompson v Roberts – Protection and Parenting" : "");
+  const [famNumber, setFamNumber] = useState(isDemoEnvironment ? demoMatter.intake.famNumber : "");
+  const [selectedMatterId, setSelectedMatterId] = useState(isDemoEnvironment ? demoMatter.id : "");
+  const [selectedClientId, setSelectedClientId] = useState("");
   const [createClaimRecord, setCreateClaimRecord] = useState(true);
   const [selectedWorkItemIds, setSelectedWorkItemIds] = useState<BillingWorkItemId[]>(isDemoEnvironment ? ["32-pre-hearing-matters"] : []);
   const [detailsByItem, setDetailsByItem] = useState<Partial<Record<BillingWorkItemId, BillingItemDetails>>>({});
@@ -48,19 +163,58 @@ export default function BillingPage() {
   const [optionalWordingNotes, setOptionalWordingNotes] = useState("");
   const [wordingOverrides, setWordingOverrides] = useState<Partial<Record<BillingWorkItemId, string>>>({});
   const [editableWording, setEditableWording] = useState("");
+  const [evidenceImages, setEvidenceImages] = useState<EvidenceImage[]>([]);
   const [generationError, setGenerationError] = useState("");
   const [generationNotice, setGenerationNotice] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
   const [isSavingToOneDrive, setIsSavingToOneDrive] = useState(false);
   const [oneDriveConfigured, setOneDriveConfigured] = useState(false);
   const [generatedRecord, setGeneratedRecord] = useState<BillingRecord | null>(null);
+  const [generatedInvoiceId, setGeneratedInvoiceId] = useState("");
+  const [matters, setMatters] = useState<MatterFile[]>([]);
+  const [clients, setClients] = useState<BillingClientProfile[]>([]);
 
+  const selectedMatter = useMemo(() => matters.find((matter) => matter.id === selectedMatterId), [matters, selectedMatterId]);
+  const selectedClient = useMemo(() => clients.find((client) => client.id === selectedClientId), [clients, selectedClientId]);
+  const matterName = matterLabel(selectedMatter, clientName);
   const formItems = billingWorkItems.filter((item) => item.formType === formType);
   const groupedItems = useMemo(() => formItems.reduce<Record<string, typeof formItems>>((groups, item) => {
     groups[item.group] = [...(groups[item.group] ?? []), item];
     return groups;
   }, {}), [formType]);
   const selectedTravelReference = travelReferences.find((reference) => reference.court === travelCourt);
+
+  useEffect(() => {
+    const localMatters = [demoMatter, ...readLocal<MatterFile>(recentMattersStorageKey)].filter((matter, index, all) => all.findIndex((item) => item.id === matter.id) === index);
+    const localClients = readLocal<BillingClientProfile>(billingClientsStorageKey);
+    setMatters(localMatters);
+    setClients(localClients);
+
+    const queryClient = searchParams.get("client")?.trim();
+    if (queryClient) {
+      const match = uniqueSuggestions(localMatters, localClients, queryClient)[0];
+      if (match) selectSuggestion(match);
+      else setClientName(queryClient);
+    }
+
+    void fetch("/api/matters")
+      .then((response) => response.ok ? response.json() : null)
+      .then((payload) => {
+        if (payload?.status === "loaded" && Array.isArray(payload.data)) {
+          setMatters((current) => [...payload.data, ...current].filter((matter, index, all) => all.findIndex((item) => item.id === matter.id) === index));
+        }
+      })
+      .catch(() => undefined);
+    void fetch("/api/billing-clients")
+      .then((response) => response.ok ? response.json() : null)
+      .then((payload) => {
+        if (payload?.status === "loaded" && Array.isArray(payload.clients)) {
+          setClients((current) => [...payload.clients, ...current].filter((client, index, all) => all.findIndex((item) => item.id === client.id) === index));
+        }
+      })
+      .catch(() => undefined);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     const overrides: Partial<Record<BillingWorkItemId, string>> = {};
@@ -91,6 +245,7 @@ export default function BillingPage() {
       .catch(() => setOneDriveConfigured(false));
   }, []);
 
+  const suggestions = useMemo(() => uniqueSuggestions(matters, clients, clientName), [matters, clients, clientName]);
   const structuredInput: StructuredBillingInput = {
     formType,
     clientName,
@@ -123,6 +278,22 @@ export default function BillingPage() {
     setEditableWording(previewRecord?.draft.standardWording ?? "");
   }, [previewRecord?.draft.standardWording]);
 
+  function selectSuggestion(suggestion: BillingSuggestion) {
+    setClientName(suggestion.clientName);
+    setLegalAidNumber(suggestion.legalAidNumber);
+    setFamNumber(suggestion.famNumber);
+    setSelectedMatterId(suggestion.matter?.id ?? "");
+    setSelectedClientId(suggestion.client?.id ?? "");
+    setGenerationNotice("");
+    setGenerationError("");
+  }
+
+  function changeClientName(value: string) {
+    setClientName(value);
+    setSelectedMatterId("");
+    setSelectedClientId("");
+  }
+
   function changeForm(nextFormType: BillingFormType) {
     setFormType(nextFormType);
     setSelectedWorkItemIds([]);
@@ -148,11 +319,115 @@ export default function BillingPage() {
     }));
   }
 
-  async function generateDocument() {
-    if (createClaimRecord && !matterName.trim()) {
-      setGenerationError("Enter the matter name to create a claim record.");
-      return;
+  async function addEvidenceFiles(files: FileList | null) {
+    if (!files?.length) return;
+    setGenerationError("");
+    const accepted: EvidenceImage[] = [];
+    for (const file of Array.from(files)) {
+      if (!["image/png", "image/jpeg"].includes(file.type)) {
+        setGenerationError("Only PNG and JPG screenshots can be inserted into the billing form at this stage.");
+        continue;
+      }
+      const dataUrl = await fileToDataUrl(file);
+      accepted.push({
+        id: `${Date.now()}-${file.name}`,
+        label: file.name.replace(/\.[^.]+$/, ""),
+        fileName: file.name,
+        contentType: file.type as "image/png" | "image/jpeg",
+        dataUrl,
+      });
     }
+    setEvidenceImages((current) => [...current, ...accepted]);
+  }
+
+  async function upsertMatterAndClient(): Promise<{ matter: MatterFile; client: BillingClientProfile }> {
+    const normalizedClientName = normalizeClientName(clientName);
+    const existingMatter = selectedMatter ?? matters.find((matter) =>
+      normalizeClientName(matter.clientName).toLowerCase() === normalizedClientName.toLowerCase() ||
+      (!!famNumber && matter.intake.famNumber === famNumber) ||
+      (!!legalAidNumber && matter.legalAidNumber === legalAidNumber)
+    );
+    const existingClient = selectedClient ?? clients.find((client) =>
+      normalizeClientName(client.clientName).toLowerCase() === normalizedClientName.toLowerCase() ||
+      (!!famNumber && client.famNumber === famNumber) ||
+      (!!legalAidNumber && client.legalAidNumber === legalAidNumber)
+    );
+
+    const shellMatter = createEmptyMatter();
+    const shellCourt: CourtLocation = selectedTravelReference?.court === "Manukau Court"
+      ? "Manukau Court"
+      : selectedTravelReference?.court === "North Shore Court"
+      ? "North Shore Court"
+      : selectedTravelReference?.court === "Auckland Court"
+      ? "Auckland Court"
+      : "";
+    const matter: MatterFile = existingMatter
+      ? {
+          ...existingMatter,
+          clientName: normalizedClientName,
+          legalAidNumber,
+          updatedAt: new Date().toISOString(),
+          intake: { ...existingMatter.intake, famNumber },
+        }
+      : {
+          ...shellMatter,
+          id: shellMatter.id,
+          clientName: normalizedClientName,
+          legalAidNumber,
+          legalAidRequired: Boolean(legalAidNumber),
+          status: "draft" as const,
+          intake: {
+            ...shellMatter.intake,
+            famNumber,
+            courtLocation: shellCourt,
+            applicant: { ...shellMatter.intake.applicant, fullName: normalizedClientName },
+          },
+        };
+
+    const client: BillingClientProfile = {
+      ...(existingClient ?? {
+        id: createBillingClientId(normalizedClientName || `client-${Date.now()}`),
+        clientName: normalizedClientName,
+        legalAidNumber: "",
+        famNumber: "",
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      }),
+      clientName: normalizedClientName,
+      legalAidNumber,
+      famNumber,
+      updatedAt: new Date().toISOString(),
+    };
+
+    const nextMatters = [matter, ...matters.filter((item) => item.id !== matter.id)];
+    const nextClients = [client, ...clients.filter((item) => item.id !== client.id)];
+    setMatters(nextMatters);
+    setClients(nextClients);
+    setSelectedMatterId(matter.id);
+    setSelectedClientId(client.id);
+    writeRecentMatters(nextMatters.filter((item) => item.id !== demoMatter.id));
+    writeBillingClients(nextClients);
+
+    await Promise.allSettled([
+      fetch("/api/matters", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ matter, clientId: client.id }) }),
+      fetch("/api/billing-clients", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(client) }),
+    ]);
+
+    return { matter, client };
+  }
+
+  async function persistInvoice(invoice: StoredBillingInvoice) {
+    const storedInvoices = readLocal<StoredBillingInvoice>(billingInvoicesStorageKey);
+    const nextInvoices = [invoice, ...storedInvoices.filter((item) => item.id !== invoice.id)];
+    window.localStorage.setItem(billingInvoicesStorageKey, JSON.stringify(nextInvoices));
+    await fetch("/api/billing-records", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(invoice),
+    }).catch(() => undefined);
+  }
+
+  async function generateDocument() {
     if (!previewRecord) {
       setGenerationError(validationErrors[0] ?? "Complete the required billing details.");
       return;
@@ -160,19 +435,31 @@ export default function BillingPage() {
     setIsGenerating(true);
     setGenerationError("");
     setGenerationNotice("");
-    const record: BillingRecord = {
-      ...previewRecord,
-      draft: { ...previewRecord.draft, standardWording: editableWording },
-    };
     try {
+      const { matter } = await upsertMatterAndClient();
+      const record: BillingRecord = {
+        ...previewRecord,
+        id: previewRecord.id,
+        matterId: matter.id,
+        clientName: normalizeClientName(clientName),
+        legalAidNumber,
+        draft: {
+          ...previewRecord.draft,
+          matterId: matter.id,
+          clientName: normalizeClientName(clientName),
+          legalAidNumber,
+          matterDetails: matterLabel(matter, clientName),
+          standardWording: editableWording,
+        },
+      };
       const response = await fetch("/api/generate-billing-document", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ record, reviewed: true, uploadToOneDrive: false }),
+        body: JSON.stringify({ record, reviewed: true, uploadToOneDrive: false, evidenceImages }),
       });
       if (!response.ok) {
-        const payload = await response.json();
-        throw new Error(payload.error ?? "Unable to generate the billing form.");
+        const payload = await response.json().catch(() => null) as { error?: string } | null;
+        throw new Error(payload?.error ?? "Unable to generate the billing form.");
       }
       const blob = await response.blob();
       const disposition = response.headers.get("Content-Disposition") ?? "";
@@ -185,63 +472,63 @@ export default function BillingPage() {
       link.click();
       link.remove();
       URL.revokeObjectURL(url);
+
       const totals = calculateBillingTotals(record);
+      const evidenceFiles: BillingEvidenceFile[] = evidenceImages.map((item) => ({
+        label: item.label,
+        fileName: item.fileName,
+        storagePath: "",
+        uploadedAt: new Date().toISOString(),
+        contentType: item.contentType,
+        dataUrl: item.dataUrl,
+        insertedIntoBillingForm: true,
+      }));
       const invoice: StoredBillingInvoice = {
         id: record.id,
-        clientId: record.matterId,
+        clientId: matter.id,
         clientName: record.clientName,
         legalAidNumber: record.legalAidNumber,
-        famNumber: "",
+        famNumber,
         invoiceNumber: record.invoiceNumber,
         invoiceTotal: totals.total,
         formType: record.formType,
         status: "generated",
         missingEvidence: [],
-        evidenceFiles: [],
+        evidenceFiles,
         billingRecord: record,
         oneDriveUrl: decodeURIComponent(response.headers.get("X-OneDrive-Url") ?? ""),
         oneDrivePath: decodeURIComponent(response.headers.get("X-OneDrive-Path") ?? ""),
         generatedFileName: fileName,
         generatedAt: new Date().toISOString(),
       };
-      let storedInvoices: StoredBillingInvoice[] = [];
-      try {
-        storedInvoices = JSON.parse(window.localStorage.getItem(billingInvoicesStorageKey) ?? "[]") as StoredBillingInvoice[];
-      } catch {
-        window.localStorage.removeItem(billingInvoicesStorageKey);
-      }
-      window.localStorage.setItem(
-        billingInvoicesStorageKey,
-        JSON.stringify([invoice, ...storedInvoices.filter((item) => item.id !== invoice.id)]),
-      );
-      fetch("/api/billing-records", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(invoice),
-      }).catch(() => undefined);
+      await persistInvoice(invoice);
+
       let claimNotice = "";
       if (createClaimRecord) {
         const claimResponse = await fetch("/api/legal-aid-claims", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            clientName,
-            legalAidNumber,
-            matterName,
+            claimId: invoice.invoiceNumber,
+            clientName: invoice.clientName,
+            legalAidNumber: invoice.legalAidNumber,
+            matterName: matterLabel(matter, invoice.clientName),
             formType,
             amountClaimed: totals.total,
             dateGenerated: today,
             lifecycleStatus: "Generated",
           }),
         });
-        const claimPayload = await claimResponse.json();
-        if (!claimResponse.ok || claimPayload.status !== "loaded") {
-          throw new Error(claimPayload.error ?? "The form was generated, but its claim record could not be saved.");
+        const claimPayload = await claimResponse.json().catch(() => null);
+        if (!claimResponse.ok || claimPayload?.status !== "loaded") {
+          throw new Error(claimPayload?.error ?? "The form was generated, but its register payment record could not be saved.");
         }
-        claimNotice = ` Claim ${claimPayload.data.claimId} was added to the tracker.`;
+        claimNotice = " A payment record was added to the Billing Register.";
       }
+
       setGeneratedRecord(record);
-      setGenerationNotice(`Generated ${fileName}.${claimNotice} The wording remains editable in Word.`);
+      setGeneratedInvoiceId(invoice.id);
+      setGenerationNotice(`Generated ${fileName}.${claimNotice} Open the Billing Register to inspect, regenerate, mark paid, or delete it.`);
     } catch (error) {
       setGenerationError(error instanceof Error ? error.message : "Unable to generate the billing form.");
     } finally {
@@ -257,7 +544,7 @@ export default function BillingPage() {
       const response = await fetch("/api/generate-billing-document", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ record: generatedRecord, reviewed: true, uploadToOneDrive: true }),
+        body: JSON.stringify({ record: generatedRecord, reviewed: true, uploadToOneDrive: true, evidenceImages }),
       });
       if (!response.ok) {
         const payload = await response.json().catch(() => null) as { error?: string } | null;
@@ -265,10 +552,24 @@ export default function BillingPage() {
       }
       const storageStatus = response.headers.get("X-OneDrive-Status");
       if (storageStatus !== "uploaded") throw new Error("OneDrive is configured, but the form was not uploaded.");
-      setGenerationNotice(`Saved the generated Form${generatedRecord.formType} to OneDrive.`);
+      const oneDriveUrl = decodeURIComponent(response.headers.get("X-OneDrive-Url") ?? "");
+      const oneDrivePath = decodeURIComponent(response.headers.get("X-OneDrive-Path") ?? "");
+      const storedInvoices = readLocal<StoredBillingInvoice>(billingInvoicesStorageKey);
+      const nextInvoices = storedInvoices.map((invoice) => invoice.id === generatedRecord.id ? {
+        ...invoice,
+        status: "onedrive_uploaded" as const,
+        oneDriveUrl,
+        oneDrivePath,
+      } : invoice);
+      window.localStorage.setItem(billingInvoicesStorageKey, JSON.stringify(nextInvoices));
+      const updated = nextInvoices.find((invoice) => invoice.id === generatedRecord.id);
+      if (updated) await persistInvoice(updated);
+      setGenerationNotice(`Saved the generated Form${generatedRecord.formType} to OneDrive${oneDrivePath ? ` at ${oneDrivePath}` : ""}.`);
     } catch (error) {
       setGenerationError(error instanceof Error ? error.message : "Unable to save the form to OneDrive.");
-    } finally { setIsSavingToOneDrive(false); }
+    } finally {
+      setIsSavingToOneDrive(false);
+    }
   }
 
   return (
@@ -276,10 +577,7 @@ export default function BillingPage() {
       <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
         <div className="mb-6 flex items-center justify-between gap-4">
           <Link href="/" className="text-sm font-medium text-sky-700 hover:text-sky-900">Back to dashboard</Link>
-          <div className="flex gap-3 text-sm font-medium text-slate-600">
-            <Link href="/billing/claims" className="hover:text-slate-950">Claims tracker</Link>
-            <Link href="/invoices" className="hover:text-slate-950">Invoices</Link>
-          </div>
+          <Link href="/billing/register" className="text-sm font-semibold text-sky-700 hover:text-sky-900">Billing Register</Link>
         </div>
 
         <header className="mb-6 border-b border-slate-200 pb-5">
@@ -293,10 +591,24 @@ export default function BillingPage() {
             <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-form">
               <h2 className="text-lg font-semibold text-slate-950">1. Client and form</h2>
               <div className="mt-4 grid gap-4 sm:grid-cols-3">
-                <TextField label="Client name" value={clientName} onChange={setClientName} />
-                <TextField label="Matter name" value={matterName} onChange={setMatterName} />
+                <div className="sm:col-span-1">
+                  <TextField label="Client name" value={clientName} onChange={changeClientName} />
+                  {clientName.trim() && suggestions.length ? (
+                    <div className="mt-2 rounded-md border border-slate-200 bg-slate-50 p-2">
+                      <p className="px-2 py-1 text-xs font-semibold uppercase tracking-wide text-slate-500">Matching matters</p>
+                      {suggestions.map((suggestion) => (
+                        <button key={suggestion.key} type="button" onClick={() => selectSuggestion(suggestion)} className="block w-full rounded px-2 py-2 text-left text-sm hover:bg-white">
+                          <span className="block font-semibold text-slate-900">{suggestion.label}</span>
+                          <span className="block text-xs text-slate-500">{suggestion.detail || "Select this client"}</span>
+                        </button>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
                 <TextField label="Legal aid number" value={legalAidNumber} onChange={setLegalAidNumber} />
+                <TextField label="FAM number" value={famNumber} onChange={setFamNumber} />
               </div>
+              <p className="mt-3 text-xs leading-5 text-slate-500">Matter name is now taken from the selected matter/client profile. If this client has not been intaken, generating the form creates a shell matter so future billing and OneDrive storage can still attach to the right file.</p>
               <fieldset className="mt-5">
                 <legend className="text-sm font-medium text-slate-700">Billing form</legend>
                 <div className="mt-2 grid grid-cols-2 gap-3">
@@ -324,11 +636,7 @@ export default function BillingPage() {
                           <span>
                             <span className="block text-sm font-medium text-slate-900">{item.label}</span>
                             <span className="mt-1 block text-xs text-slate-500">
-                              {item.fixedFee
-                                ? `$${item.fixedFee} fixed fee`
-                                : item.preparationFee
-                                ? `$${item.preparationFee} preparation + $${item.hearingRate} per half hour`
-                                : `$${item.hearingRate} per half hour`}
+                              {item.fixedFee ? `$${item.fixedFee} fixed fee` : item.preparationFee ? `$${item.preparationFee} preparation + $${item.hearingRate} per half hour` : `$${item.hearingRate} per half hour`}
                             </span>
                           </span>
                         </label>
@@ -369,7 +677,7 @@ export default function BillingPage() {
             ) : null}
 
             <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-form">
-              <h2 className="text-lg font-semibold text-slate-950">4. Travel and disbursements</h2>
+              <h2 className="text-lg font-semibold text-slate-950">4. Travel, disbursements and evidence</h2>
               <div className="mt-4 grid gap-3 sm:grid-cols-2">
                 <CheckField label="Travel time" checked={travelTimeSelected} onChange={setTravelTimeSelected} detail="$63 per hour; GST applies" />
                 <CheckField label="Mileage" checked={mileageSelected} onChange={setMileageSelected} detail="$1.17 per km; no GST" />
@@ -380,6 +688,23 @@ export default function BillingPage() {
                 <NumberField label="Other disbursement amount" value={officeDisbursements} onChange={setOfficeDisbursements} />
               </div>
               <label className="mt-4 block text-sm font-medium text-slate-700">Optional wording notes<textarea className="mt-2 min-h-24 w-full rounded-md border border-slate-300 px-3 py-2 text-sm" value={optionalWordingNotes} onChange={(event) => setOptionalWordingNotes(event.target.value)} placeholder="Optional only—work-item selection remains the source of truth." /></label>
+
+              <div className="mt-5 rounded-md border border-slate-200 bg-slate-50 p-4">
+                <label className="block text-sm font-semibold text-slate-900">Court direction / supporting screenshot</label>
+                <p className="mt-1 text-xs leading-5 text-slate-500">Optional. Upload PNG or JPG screenshots only when a billing item needs supporting court wording. They are appended after the final billing page.</p>
+                <input type="file" accept="image/png,image/jpeg" multiple className="mt-3 block w-full text-sm text-slate-700 file:mr-4 file:rounded-md file:border-0 file:bg-slate-900 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-white" onChange={(event) => void addEvidenceFiles(event.target.files)} />
+                {evidenceImages.length ? (
+                  <div className="mt-3 space-y-2">
+                    {evidenceImages.map((file) => (
+                      <div key={file.id} className="grid gap-2 rounded border border-slate-200 bg-white p-2 sm:grid-cols-[1fr_auto]">
+                        <label className="text-xs font-medium text-slate-600">Label<input className="mt-1 h-9 w-full rounded border border-slate-300 px-2 text-sm" value={file.label} onChange={(event) => setEvidenceImages((current) => current.map((item) => item.id === file.id ? { ...item, label: event.target.value } : item))} /></label>
+                        <button type="button" className="self-end rounded border border-red-200 px-3 py-2 text-xs font-semibold text-red-700" onClick={() => setEvidenceImages((current) => current.filter((item) => item.id !== file.id))}>Remove</button>
+                        <p className="text-xs text-slate-500 sm:col-span-2">{file.fileName}</p>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
             </section>
           </div>
 
@@ -387,10 +712,11 @@ export default function BillingPage() {
             <PreviewPanel record={previewRecord} errors={validationErrors} editableWording={editableWording} onWordingChange={setEditableWording} />
             <label className="flex cursor-pointer items-start gap-3 rounded-md border border-slate-200 bg-white p-4 text-sm shadow-form">
               <input type="checkbox" className="mt-0.5 h-4 w-4 rounded border-slate-300 text-sky-600" checked={createClaimRecord} onChange={(event) => setCreateClaimRecord(event.target.checked)} />
-              <span><span className="block font-semibold text-slate-900">Add this form to Claims Tracker</span><span className="mt-1 block text-xs leading-5 text-slate-500">Creates a generated claim using this form total. Mark it sent when it is submitted to Legal Aid.</span></span>
+              <span><span className="block font-semibold text-slate-900">Track payment in Billing Register</span><span className="mt-1 block text-xs leading-5 text-slate-500">Creates the payment fields for this generated form so it can be marked sent, part paid, paid, or overdue later.</span></span>
             </label>
             <button type="button" disabled={isGenerating || !previewRecord} onClick={generateDocument} className="inline-flex h-12 w-full items-center justify-center rounded-md bg-sky-600 px-4 text-sm font-semibold text-white shadow-sm hover:bg-sky-700 disabled:cursor-not-allowed disabled:bg-slate-300">{isGenerating ? "Generating..." : `Generate Form${formType}`}</button>
             {generatedRecord && oneDriveConfigured ? <button type="button" disabled={isSavingToOneDrive} onClick={() => void saveGeneratedToOneDrive()} className="inline-flex h-11 w-full items-center justify-center rounded-md border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50">{isSavingToOneDrive ? "Saving…" : "Save generated form to OneDrive"}</button> : null}
+            {generatedInvoiceId ? <Link href={`/billing/register?record=${encodeURIComponent(generatedInvoiceId)}`} className="inline-flex h-11 w-full items-center justify-center rounded-md border border-sky-200 bg-sky-50 px-4 text-sm font-semibold text-sky-800 hover:bg-sky-100">Open in Billing Register</Link> : null}
             {generationError ? <p className="rounded-md bg-red-50 p-3 text-sm font-medium text-red-700">{generationError}</p> : null}
             {generationNotice ? <p className="rounded-md bg-emerald-50 p-3 text-sm font-medium text-emerald-800">{generationNotice}</p> : null}
           </aside>

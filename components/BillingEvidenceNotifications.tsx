@@ -72,7 +72,7 @@ export function BillingEvidenceNotifications() {
           </p>
         ))}
       </div>
-      <Link href={`/invoices/${pendingInvoices[0]?.id ?? ""}`} className="mt-2 inline-flex text-sm font-semibold text-amber-950 hover:text-amber-800">
+      <Link href={`/billing/register?record=${encodeURIComponent(pendingInvoices[0]?.id ?? "")}`} className="mt-2 inline-flex text-sm font-semibold text-amber-950 hover:text-amber-800">
         Open pending invoice
       </Link>
     </div>

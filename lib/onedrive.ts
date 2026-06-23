@@ -138,10 +138,10 @@ export async function uploadBillingDocumentToOneDrive(
   client?: ClientFolderInput,
 ): Promise<OneDriveUploadResult> {
   const env = getRequiredEnv();
-  const hasClientFolder = Boolean(client?.clientName?.trim() && client?.legalAidNumber?.trim());
+  const hasClientFolder = Boolean(client?.clientName?.trim());
   const folderPath = hasClientFolder
     ? getOneDriveClientFolderPaths(client as ClientFolderInput).billingFolderPath
-    : cleanPath(`${CLIENTS_ROOT_PATH}/Missing Client - Missing Legal Aid Number/Billing`);
+    : cleanPath(`${CLIENTS_ROOT_PATH}/Missing Client/Billing`);
   const oneDrivePath = cleanPath(`${folderPath}/${fileName}`);
 
   if (!hasClientFolder) {
@@ -149,7 +149,7 @@ export async function uploadBillingDocumentToOneDrive(
       status: "not_configured",
       webUrl: "",
       path: oneDrivePath,
-      missing: ["clientName and legalAidNumber"],
+      missing: ["clientName"],
     };
   }
 

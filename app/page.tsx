@@ -67,8 +67,8 @@ export default function Dashboard() {
   const actions = [
     { label: "Missing evidence", count: legalAid.filter((item) => !item.hasIncomeProof || !item.hasSignedPage).length, href: "/legal-aid" },
     { label: "Applications ready to generate", count: legalAid.filter((item) => item.status === "ready_to_generate").length, href: "/legal-aid" },
-    { label: "Claims ready to send", count: claims.filter((item) => item.lifecycleStatus === "Generated").length, href: "/billing/claims" },
-    { label: "Unpaid claims requiring follow-up", count: claims.filter((item) => overdue(item) || (item.amountPaid > 0 && item.outstandingAmount > 0)).length, href: "/billing/claims" },
+    { label: "Claims ready to send", count: claims.filter((item) => item.lifecycleStatus === "Generated").length, href: "/billing/register" },
+    { label: "Unpaid claims requiring follow-up", count: claims.filter((item) => overdue(item) || (item.amountPaid > 0 && item.outstandingAmount > 0)).length, href: "/billing/register" },
   ];
 
   return (
@@ -83,7 +83,7 @@ export default function Dashboard() {
           <div className="flex flex-wrap gap-3">
             <SecondaryLink href="/legal-aid">Legal Aid</SecondaryLink>
             <SecondaryLink href="/billing">Billing</SecondaryLink>
-            <SecondaryLink href="/billing/claims">Claims Tracker</SecondaryLink>
+            <SecondaryLink href="/billing/register">Billing Register</SecondaryLink>
             <Link href="/new-client" className="inline-flex h-11 items-center justify-center rounded-md bg-sky-600 px-5 text-sm font-semibold text-white shadow-sm transition hover:bg-sky-700 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:ring-offset-2">
               Create New Matter
             </Link>
@@ -110,7 +110,7 @@ export default function Dashboard() {
 
         <div className="mt-6 grid gap-6 xl:grid-cols-2">
           <Queue title="Legal Aid queue" href="/legal-aid" items={legalAidQueue} />
-          <Queue title="Billing and claims queue" href="/billing/claims" items={billingQueue} />
+          <Queue title="Billing register queue" href="/billing/register" items={billingQueue} />
         </div>
 
         <section className="mt-6 rounded-lg border border-slate-200 bg-white p-5 shadow-form">

@@ -20,6 +20,24 @@ function safeFileName(value: string): string {
   return value.replace(/[^A-Za-z0-9 ._-]/g, "").trim() || "completed-billing-form";
 }
 
+type BillingEvidenceImageInput = {
+  fileName: string;
+  contentType: "image/png" | "image/jpeg";
+  dataUrl: string;
+  label?: string;
+};
+
+function decodeDataUrl(input: BillingEvidenceImageInput) {
+  const base64 = input.dataUrl.includes(",") ? input.dataUrl.split(",").pop() ?? "" : input.dataUrl;
+  const buffer = Buffer.from(base64, "base64");
+  return {
+    fileName: safeFileName(input.fileName),
+    contentType: input.contentType,
+    data: buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength) as ArrayBuffer,
+    label: input.label?.trim() || "Court direction",
+  };
+}
+
 async function readBillingTemplate(sourcePath: string): Promise<ArrayBuffer> {
   const templatePath = path.join(process.cwd(), sourcePath);
   let template: Buffer;
@@ -65,6 +83,7 @@ export async function POST(request: Request) {
       record?: BillingRecord;
       reviewed?: boolean;
       uploadToOneDrive?: boolean;
+      evidenceImages?: BillingEvidenceImageInput[];
     };
 
     if (!body.record) {
@@ -96,6 +115,7 @@ export async function POST(request: Request) {
       : "";
     const { buffer, report } = await mergeDocxTemplate(sourceTemplate, fields, {
       outputType: "document",
+      imageAppendices: (body.evidenceImages ?? []).map(decodeDataUrl),
       ...(travelCourt
         ? {
             literalTextReplacements: {

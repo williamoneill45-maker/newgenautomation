@@ -1,5 +1,15 @@
 import type { BillingFormType, BillingRecord, BillingStatus } from "./billing-automation";
 
+export type BillingEvidenceFile = {
+  label: string;
+  fileName: string;
+  storagePath: string;
+  uploadedAt: string;
+  contentType?: string;
+  dataUrl?: string;
+  insertedIntoBillingForm?: boolean;
+};
+
 export type BillingClientProfile = {
   id: string;
   clientName: string;
@@ -45,6 +55,9 @@ export type StoredBillingInvoice = {
     fileName: string;
     storagePath: string;
     uploadedAt: string;
+    contentType?: string;
+    dataUrl?: string;
+    insertedIntoBillingForm?: boolean;
   }>;
   billingRecord?: BillingRecord;
   oneDriveUrl: string;

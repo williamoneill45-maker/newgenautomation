@@ -2,7 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { authCookieName, authSessionValue } from "../../../lib/auth-gate";
 import {
+  clearLegalAidClaims,
   createLegalAidClaim,
+  deleteLegalAidClaim,
   listLegalAidClaims,
   updateLegalAidClaim,
   type LegalAidClaimInput,
@@ -57,5 +59,17 @@ export async function PATCH(request: NextRequest) {
   } catch (error) {
     console.error("Legal Aid claim update failed", error);
     return NextResponse.json({ error: "Unable to update the Legal Aid claim." }, { status: 500 });
+  }
+}
+
+export async function DELETE(request: NextRequest) {
+  if (!authorized(request)) return NextResponse.json({ error: "Login required." }, { status: 401 });
+  try {
+    const input = await request.json().catch(() => ({})) as { id?: string; clearAll?: boolean };
+    if (input.id?.trim()) return NextResponse.json(await deleteLegalAidClaim(input.id));
+    return NextResponse.json(await clearLegalAidClaims());
+  } catch (error) {
+    console.error("Legal Aid claims clear failed", error);
+    return NextResponse.json({ error: "Unable to delete Legal Aid claims." }, { status: 500 });
   }
 }

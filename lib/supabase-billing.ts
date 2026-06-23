@@ -53,7 +53,7 @@ export async function saveBillingInvoiceToSupabase(
       invoice_number: invoice.invoiceNumber,
       invoice_total: invoice.invoiceTotal,
       client_id: invoice.clientId,
-      fam_number: "",
+      fam_number: invoice.famNumber ?? "",
       form_type: invoice.formType,
       status: invoice.status,
       evidence_json: invoice.missingEvidence ?? [],
@@ -215,6 +215,7 @@ export async function listBillingInvoicesFromSupabase(): Promise<
     client_id?: string;
     client_name: string;
     legal_aid_number: string;
+    fam_number?: string;
     invoice_number: string;
     invoice_total: number | string;
     form_type?: StoredBillingInvoice["formType"];
@@ -235,7 +236,7 @@ export async function listBillingInvoicesFromSupabase(): Promise<
       clientId: row.client_id ?? "",
       clientName: row.client_name,
       legalAidNumber: row.legal_aid_number,
-      famNumber: "",
+      famNumber: "fam_number" in row && typeof row.fam_number === "string" ? row.fam_number : "",
       invoiceNumber: row.invoice_number,
       invoiceTotal: Number(row.invoice_total) || 0,
       formType: row.form_type ?? "32B",
@@ -249,6 +250,65 @@ export async function listBillingInvoicesFromSupabase(): Promise<
       generatedAt: row.generated_at ?? "",
     })),
   };
+}
+
+export async function deleteBillingInvoiceFromSupabase(
+  invoiceId: string,
+): Promise<SupabaseSaveResult> {
+  const supabaseUrl = process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY ?? "";
+  const missing = [
+    supabaseUrl ? "" : "SUPABASE_URL",
+    serviceKey ? "" : "SUPABASE_SERVICE_ROLE_KEY",
+  ].filter(Boolean);
+
+  if (missing.length) {
+    return { status: "not_configured", missing };
+  }
+
+  const response = await fetch(
+    `${supabaseUrl.replace(/\/$/, "")}/rest/v1/billing_invoices?id=eq.${encodeURIComponent(invoiceId)}`,
+    {
+      method: "DELETE",
+      headers: {
+        apikey: serviceKey,
+        Authorization: `Bearer ${serviceKey}`,
+      },
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(`Supabase billing invoice delete failed with status ${response.status}.`);
+  }
+
+  return { status: "saved" };
+}
+
+export async function clearBillingInvoicesFromSupabase(): Promise<SupabaseSaveResult> {
+  const supabaseUrl = process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY ?? "";
+  const missing = [
+    supabaseUrl ? "" : "SUPABASE_URL",
+    serviceKey ? "" : "SUPABASE_SERVICE_ROLE_KEY",
+  ].filter(Boolean);
+
+  if (missing.length) {
+    return { status: "not_configured", missing };
+  }
+
+  const response = await fetch(`${supabaseUrl.replace(/\/$/, "")}/rest/v1/billing_invoices?id=not.is.null`, {
+    method: "DELETE",
+    headers: {
+      apikey: serviceKey,
+      Authorization: `Bearer ${serviceKey}`,
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error(`Supabase billing invoice clear failed with status ${response.status}.`);
+  }
+
+  return { status: "saved" };
 }
 
 export async function listBillingClientsFromSupabase(): Promise<

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import {
   applicationTypes,
   courts,
@@ -174,10 +175,11 @@ function readBillingClients(): BillingClientProfile[] {
 }
 
 export default function IntakeForm() {
+  const searchParams = useSearchParams();
   const [matter, setMatter] = useState<MatterFile>(() => isDemoEnvironment ? structuredClone(demoMatter) : createEmptyMatter());
   const [saveStatus, setSaveStatus] = useState("");
 
-  const setMatterValue = (field: "clientName" | "legalAidNumber", value: string) => {
+  const setMatterValue = (field: "clientName" | "legalAidNumber" | "legalAidRequired", value: string | boolean) => {
     setMatter((current) => ({ ...current, [field]: value, updatedAt: new Date().toISOString() }));
   };
 
@@ -360,6 +362,12 @@ export default function IntakeForm() {
       );
 
       try {
+        await fetch("/api/matters", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ matter, clientId: profile.id }),
+        }).catch(() => undefined);
+
         await fetch("/api/billing-clients", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -383,6 +391,29 @@ export default function IntakeForm() {
   useEffect(() => {
     window.localStorage.setItem(legalAidMatterStorageKey, JSON.stringify(matter));
   }, [matter]);
+
+  useEffect(() => {
+    const matterId = searchParams.get("matterId");
+    if (!matterId) return;
+
+    const localMatter = readRecentMatters().find((item) => item.id === matterId);
+    if (localMatter) {
+      setMatter(localMatter);
+      window.localStorage.setItem(legalAidMatterStorageKey, JSON.stringify(localMatter));
+      return;
+    }
+
+    void fetch("/api/matters", { cache: "no-store" })
+      .then((response) => response.ok ? response.json() : null)
+      .then((payload: { status?: string; data?: MatterFile[] } | null) => {
+        const remoteMatter = payload?.status === "loaded" ? payload.data?.find((item) => item.id === matterId) : null;
+        if (remoteMatter) {
+          setMatter(remoteMatter);
+          window.localStorage.setItem(legalAidMatterStorageKey, JSON.stringify(remoteMatter));
+        }
+      })
+      .catch(() => undefined);
+  }, [searchParams]);
 
   return (
     <div className="space-y-6">
@@ -414,6 +445,15 @@ export default function IntakeForm() {
             value={matter.legalAidNumber}
             onChange={(value) => setMatterValue("legalAidNumber", value)}
           />
+          <label className="flex min-h-10 items-center gap-3 self-end rounded-md border border-slate-200 px-3 py-2 text-sm text-slate-950">
+            <input
+              type="checkbox"
+              checked={matter.legalAidRequired ?? true}
+              onChange={(event) => setMatterValue("legalAidRequired", event.target.checked)}
+              className="h-4 w-4 rounded border-slate-300 text-sky-600 focus:ring-sky-500"
+            />
+            <span>Legal Aid Application Required</span>
+          </label>
           <Field
             label="Applicant MSD Client Number"
             value={matter.intake.msdClientNumber ?? ""}

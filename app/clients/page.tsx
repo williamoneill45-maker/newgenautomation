@@ -1,12 +1,19 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { ChangeEvent, useEffect, useMemo, useState } from "react";
 
-import { billingClientsStorageKey, billingInvoicesStorageKey, type BillingClientProfile, type StoredBillingInvoice } from "../../lib/billing-storage";
-import { demoClient, demoMatter, isDemoEnvironment } from "../../lib/demo-data";
+import {
+  billingClientsStorageKey,
+  billingInvoicesStorageKey,
+  createBillingClientId,
+  normalizeClientName,
+  type BillingClientProfile,
+  type StoredBillingInvoice,
+} from "../../lib/billing-storage";
+import { demoMatter, isDemoEnvironment } from "../../lib/demo-data";
 import { recentMattersStorageKey } from "../../lib/legal-aid";
-import type { MatterFile } from "../../lib/matter";
+import { createEmptyMatter, normalizeProceedingsType, type MatterFile } from "../../lib/matter";
 
 function read<T>(key: string): T[] {
   try {
@@ -17,34 +24,133 @@ function read<T>(key: string): T[] {
   }
 }
 
+function writeMatters(matters: MatterFile[]) {
+  window.localStorage.setItem(recentMattersStorageKey, JSON.stringify(matters.slice(0, 100)));
+}
+
+function csvCells(line: string): string[] {
+  const cells: string[] = [];
+  let current = "";
+  let quoted = false;
+  for (let index = 0; index < line.length; index += 1) {
+    const char = line[index];
+    if (char === '"' && line[index + 1] === '"') {
+      current += '"';
+      index += 1;
+    } else if (char === '"') {
+      quoted = !quoted;
+    } else if (char === "," && !quoted) {
+      cells.push(current.trim());
+      current = "";
+    } else {
+      current += char;
+    }
+  }
+  cells.push(current.trim());
+  return cells;
+}
+
+function matterFromCsv(row: Record<string, string>): MatterFile | null {
+  const clientName = normalizeClientName(row.client_name || row.client || row.name || "");
+  const famNumber = row.fam_number || row.family_number || row.fam || "";
+  if (!clientName || !famNumber) return null;
+  const matter = createEmptyMatter();
+  const legalAidRequired = !["false", "no", "n", "0"].includes(String(row.legal_aid_required ?? "true").toLowerCase());
+  matter.id = `matter-${clientName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")}-${famNumber.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
+  matter.clientName = clientName.toLocaleUpperCase("en-NZ");
+  matter.legalAidNumber = row.legal_aid_number || row.legal_aid || "";
+  matter.legalAidRequired = legalAidRequired;
+  matter.intake.applicant.fullName = matter.clientName;
+  matter.intake.respondent.fullName = (row.respondent_name || row.respondent || "").toLocaleUpperCase("en-NZ");
+  matter.intake.famNumber = famNumber;
+  matter.intake.courtLocation = row.court as MatterFile["intake"]["courtLocation"] || "";
+  matter.intake.proceedingsType = normalizeProceedingsType(row.proceedings_type || row.proceedings || "");
+  matter.status = "draft";
+  matter.updatedAt = new Date().toISOString();
+  return matter;
+}
+
 export default function MattersPage() {
-  const [clients, setClients] = useState<BillingClientProfile[]>([]);
   const [matters, setMatters] = useState<MatterFile[]>([]);
   const [invoices, setInvoices] = useState<StoredBillingInvoice[]>([]);
   const [query, setQuery] = useState("");
+  const [notice, setNotice] = useState("");
 
   useEffect(() => {
-    const localClients = read<BillingClientProfile>(billingClientsStorageKey);
     const localMatters = read<MatterFile>(recentMattersStorageKey);
-    setClients(localClients.length ? localClients : isDemoEnvironment ? [demoClient] : []);
     setMatters(localMatters.length ? localMatters : isDemoEnvironment ? [demoMatter] : []);
     setInvoices(read<StoredBillingInvoice>(billingInvoicesStorageKey));
-    void fetch("/api/billing-clients")
+    void fetch("/api/matters")
       .then((response) => response.ok ? response.json() : null)
-      .then((payload) => {
-        if (payload?.status === "loaded" && payload.clients?.length) setClients(payload.clients);
+      .then((payload: { status?: string; data?: MatterFile[] } | null) => {
+        if (payload?.status === "loaded" && payload.data?.length) {
+          setMatters(payload.data);
+          writeMatters(payload.data);
+        }
       })
       .catch(() => undefined);
   }, []);
 
-  const rows = useMemo(() => clients.map((client) => {
-    const matter = matters.find((item) => [item.clientName, item.intake.applicant.fullName].some((name) => name.toLowerCase() === client.clientName.toLowerCase()));
-    const clientInvoices = invoices.filter((invoice) => invoice.clientId === client.id || invoice.clientName.toLowerCase() === client.clientName.toLowerCase());
-    return { client, matter, invoices: clientInvoices.length };
-  }).filter(({ client, matter }) => {
+  async function importCsv(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    setNotice("");
+    const text = await file.text();
+    const lines = text.split(/\r?\n/).filter((line) => line.trim());
+    const headers = csvCells(lines[0] ?? "").map((header) => header.trim().toLowerCase().replace(/\s+/g, "_"));
+    const imported = lines.slice(1).map((line) => {
+      const values = csvCells(line);
+      return matterFromCsv(Object.fromEntries(headers.map((header, index) => [header, values[index] ?? ""])));
+    }).filter((matter): matter is MatterFile => Boolean(matter));
+
+    const nextMatters = [
+      ...imported,
+      ...matters.filter((matter) => !imported.some((item) => item.id === matter.id)),
+    ];
+    setMatters(nextMatters);
+    writeMatters(nextMatters);
+
+    const existingClients = read<BillingClientProfile>(billingClientsStorageKey);
+    const importedClients = imported.map((matter) => ({
+      id: createBillingClientId(`${matter.clientName}-${matter.id}`),
+      clientName: matter.clientName,
+      legalAidNumber: matter.legalAidNumber,
+      famNumber: matter.intake.famNumber,
+      applicationType: matter.intake.proceedingsType === "both" ? "both" : matter.intake.proceedingsType === "care_of_children" ? "parenting" : matter.intake.proceedingsType === "protection_order" ? "protection" : "",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    } satisfies BillingClientProfile));
+    window.localStorage.setItem(
+      billingClientsStorageKey,
+      JSON.stringify([...importedClients, ...existingClients.filter((client) => !importedClients.some((item) => item.clientName === client.clientName))]),
+    );
+
+    await Promise.all(imported.map((matter) => fetch("/api/matters", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ matter }),
+    }).catch(() => undefined)));
+
+    setNotice(`${imported.length} matter${imported.length === 1 ? "" : "s"} imported.`);
+    event.target.value = "";
+  }
+
+  const rows = useMemo(() => matters.map((matter) => {
+    const clientInvoices = invoices.filter((invoice) =>
+      invoice.clientId === matter.id ||
+      invoice.clientName.toLowerCase() === (matter.clientName || matter.intake.applicant.fullName).toLowerCase(),
+    );
+    return { matter, invoices: clientInvoices, total: clientInvoices.reduce((sum, invoice) => sum + invoice.invoiceTotal, 0) };
+  }).filter(({ matter }) => {
     const search = query.trim().toLowerCase();
-    return !search || [client.clientName, client.legalAidNumber, matter?.intake.famNumber ?? "", matter?.intake.courtLocation ?? ""].some((value) => value.toLowerCase().includes(search));
-  }), [clients, matters, invoices, query]);
+    return !search || [
+      matter.clientName,
+      matter.legalAidNumber,
+      matter.intake.famNumber,
+      matter.intake.courtLocation,
+      matter.intake.respondent.fullName,
+    ].some((value) => value.toLowerCase().includes(search));
+  }), [matters, invoices, query]);
 
   return (
     <main className="min-h-screen bg-slate-50">
@@ -53,28 +159,34 @@ export default function MattersPage() {
           <div>
             <p className="text-sm font-semibold uppercase tracking-wide text-sky-700">Matter workspace</p>
             <h1 className="mt-2 text-3xl font-semibold tracking-tight text-slate-950">Matters</h1>
-            <p className="mt-2 text-sm text-slate-600">Find a matter and see its document, Legal Aid and billing position.</p>
+            <p className="mt-2 text-sm text-slate-600">Find, import, and reopen matter intakes.</p>
           </div>
-          <Link href="/new-client" className="inline-flex h-10 items-center justify-center rounded-md bg-sky-600 px-4 text-sm font-semibold text-white hover:bg-sky-700">Create New Matter</Link>
+          <div className="flex flex-wrap gap-3">
+            <label className="inline-flex h-10 cursor-pointer items-center justify-center rounded-md border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+              Upload CSV
+              <input type="file" accept=".csv,text/csv" className="sr-only" onChange={(event) => void importCsv(event)} />
+            </label>
+            <Link href="/new-client" className="inline-flex h-10 items-center justify-center rounded-md bg-sky-600 px-4 text-sm font-semibold text-white hover:bg-sky-700">Create New Matter</Link>
+          </div>
         </header>
+        {notice ? <p className="mt-4 rounded-md bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-800">{notice}</p> : null}
         <section className="mt-6 rounded-lg border border-slate-200 bg-white p-5 shadow-form">
           <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
             <h2 className="text-lg font-semibold text-slate-950">All matters</h2>
-            <label className="sr-only" htmlFor="matter-search">Search matters</label>
-            <input id="matter-search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search client, Legal Aid number, FAM number or court" className="h-10 w-full rounded-md border border-slate-300 px-3 text-sm outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-100 sm:max-w-md" />
+            <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search client, Legal Aid, FAM number, court or respondent" className="h-10 w-full rounded-md border border-slate-300 px-3 text-sm outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-100 sm:max-w-md" />
           </div>
           <div className="mt-5 overflow-x-auto rounded-md border border-slate-200">
-            <table className="min-w-[920px] w-full text-sm">
-              <thead className="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500"><tr><th className="px-4 py-3">Matter</th><th className="px-4 py-3">Legal Aid</th><th className="px-4 py-3">Court</th><th className="px-4 py-3">Proceedings</th><th className="px-4 py-3">Documents</th><th className="px-4 py-3">Billing</th><th className="px-4 py-3">Action</th></tr></thead>
+            <table className="min-w-[980px] w-full text-sm">
+              <thead className="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500"><tr><th className="px-4 py-3">Matter</th><th className="px-4 py-3">Legal Aid</th><th className="px-4 py-3">Court</th><th className="px-4 py-3">Proceedings</th><th className="px-4 py-3">Billing</th><th className="px-4 py-3">Documents</th><th className="px-4 py-3">Action</th></tr></thead>
               <tbody className="divide-y divide-slate-200">
-                {rows.map(({ client, matter, invoices: invoiceCount }) => <tr key={client.id}>
-                  <td className="px-4 py-3"><p className="font-semibold text-slate-950">{client.clientName}</p><p className="mt-1 text-xs text-slate-500">{matter?.intake.famNumber || "FAM number not supplied"}</p></td>
-                  <td className="px-4 py-3 text-slate-700">{client.legalAidNumber || "Not supplied"}</td>
-                  <td className="px-4 py-3 text-slate-700">{matter?.intake.courtLocation || "Not selected"}</td>
-                  <td className="px-4 py-3 text-slate-700">{matter?.intake.proceedingsType === "both" ? "Protection and Parenting" : matter?.intake.proceedingsType.replace(/_/g, " ") || "Not selected"}</td>
-                  <td className="px-4 py-3"><Badge label={matter?.status === "documents_generated" ? "Generated" : "Ready for review"} tone={matter?.status === "documents_generated" ? "green" : "blue"} /></td>
-                  <td className="px-4 py-3 text-slate-700">{invoiceCount} form{invoiceCount === 1 ? "" : "s"}</td>
-                  <td className="px-4 py-3"><Link href={`/clients/${client.id}`} className="font-semibold text-sky-700 hover:text-sky-900">Open matter</Link></td>
+                {rows.map(({ matter, invoices: matterInvoices, total }) => <tr key={matter.id}>
+                  <td className="px-4 py-3"><p className="font-semibold text-slate-950">{matter.clientName || matter.intake.applicant.fullName}</p><p className="mt-1 text-xs text-slate-500">{matter.intake.famNumber || "FAM number not supplied"}</p></td>
+                  <td className="px-4 py-3 text-slate-700">{matter.legalAidRequired ? matter.legalAidNumber || "Required - number not supplied" : "Not required"}</td>
+                  <td className="px-4 py-3 text-slate-700">{matter.intake.courtLocation || "Not selected"}</td>
+                  <td className="px-4 py-3 text-slate-700">{matter.intake.proceedingsType === "both" ? "Protection and Parenting" : matter.intake.proceedingsType.replace(/_/g, " ") || "Not selected"}</td>
+                  <td className="px-4 py-3 text-slate-700">{matterInvoices.length} record{matterInvoices.length === 1 ? "" : "s"} · ${total.toFixed(2)}</td>
+                  <td className="px-4 py-3"><Badge label={matter.status === "documents_generated" ? "Generated" : "Ready for review"} tone={matter.status === "documents_generated" ? "green" : "blue"} /></td>
+                  <td className="px-4 py-3"><Link href={`/new-client?matterId=${encodeURIComponent(matter.id)}`} className="font-semibold text-sky-700 hover:text-sky-900">Open matter</Link></td>
                 </tr>)}
                 {!rows.length ? <tr><td colSpan={7} className="px-4 py-12 text-center text-slate-500">No matters match this search.</td></tr> : null}
               </tbody>

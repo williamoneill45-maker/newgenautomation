@@ -17,6 +17,7 @@ export const demoMatter: MatterFile = {
   id: "matter-demo-thompson-roberts",
   clientName: "SARAH THOMPSON",
   legalAidNumber: "100100100",
+  legalAidRequired: true,
   status: "documents_generated",
   createdAt: `${daysAgo(3)}T09:00:00.000Z`,
   updatedAt: `${isoToday}T09:30:00.000Z`,

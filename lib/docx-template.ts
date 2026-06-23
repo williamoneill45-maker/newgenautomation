@@ -53,7 +53,15 @@ export type DocxMergeOptions = {
   paragraphInsertions?: Record<string, string[]>;
   literalTextReplacements?: Record<string, string>;
   continuationSections?: Array<{ heading: string; lines: string[]; pageBreak?: boolean }>;
+  imageAppendices?: Array<{
+    fileName: string;
+    contentType: "image/png" | "image/jpeg";
+    data: ArrayBuffer;
+    label?: string;
+  }>;
 };
+
+type DocxImageAppendix = NonNullable<DocxMergeOptions["imageAppendices"]>[number];
 
 function escapeXml(value: string): string {
   return value
@@ -287,6 +295,67 @@ function appendContinuationSections(
   const finalSectionIndex = xml.lastIndexOf("<w:sectPr");
   if (finalSectionIndex === -1) return xml.replace("</w:body>", `${paragraphs}</w:body>`);
   return `${xml.slice(0, finalSectionIndex)}${paragraphs}${xml.slice(finalSectionIndex)}`;
+}
+
+function getPngSize(bytes: Uint8Array): { width: number; height: number } | null {
+  if (bytes.length < 24) return null;
+  if (bytes[0] !== 0x89 || bytes[1] !== 0x50 || bytes[2] !== 0x4e || bytes[3] !== 0x47) return null;
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  return { width: view.getUint32(16), height: view.getUint32(20) };
+}
+
+function getJpegSize(bytes: Uint8Array): { width: number; height: number } | null {
+  if (bytes.length < 4 || bytes[0] !== 0xff || bytes[1] !== 0xd8) return null;
+  let offset = 2;
+  while (offset + 9 < bytes.length) {
+    if (bytes[offset] !== 0xff) {
+      offset += 1;
+      continue;
+    }
+    const marker = bytes[offset + 1];
+    const length = (bytes[offset + 2] << 8) + bytes[offset + 3];
+    if (length < 2) return null;
+    if (marker >= 0xc0 && marker <= 0xc3) {
+      return {
+        height: (bytes[offset + 5] << 8) + bytes[offset + 6],
+        width: (bytes[offset + 7] << 8) + bytes[offset + 8],
+      };
+    }
+    offset += 2 + length;
+  }
+  return null;
+}
+
+function imageSize(image: DocxImageAppendix): { width: number; height: number } {
+  const bytes = new Uint8Array(image.data);
+  return (image.contentType === "image/png" ? getPngSize(bytes) : getJpegSize(bytes)) ?? { width: 1200, height: 800 };
+}
+
+function fitImageEmu(image: DocxImageAppendix) {
+  const size = imageSize(image);
+  const maxWidth = 6.2 * 914400;
+  const maxHeight = 8.2 * 914400;
+  const ratio = Math.min(maxWidth / size.width, maxHeight / size.height);
+  return {
+    cx: Math.round(size.width * ratio),
+    cy: Math.round(size.height * ratio),
+  };
+}
+
+function imageParagraph(image: DocxImageAppendix, relId: string, index: number): string {
+  const { cx, cy } = fitImageEmu(image);
+  const name = escapeXml(image.fileName);
+  return `<w:p><w:pPr><w:spacing w:after="160"/><w:keepNext/></w:pPr><w:r><w:rPr><w:b/><w:sz w:val="20"/><w:szCs w:val="20"/></w:rPr><w:t xml:space="preserve">${escapeXml(image.label || "Court direction")}</w:t></w:r></w:p><w:p><w:pPr><w:spacing w:after="280"/><w:jc w:val="center"/></w:pPr><w:r><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0"><wp:extent cx="${cx}" cy="${cy}"/><wp:effectExtent l="0" t="0" r="0" b="0"/><wp:docPr id="${1000 + index}" name="${name}"/><wp:cNvGraphicFramePr><a:graphicFrameLocks xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" noChangeAspect="1"/></wp:cNvGraphicFramePr><a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:nvPicPr><pic:cNvPr id="${2000 + index}" name="${name}"/><pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip r:embed="${relId}" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill><pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${cx}" cy="${cy}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p>`;
+}
+
+function appendImageAppendicesToDocumentXml(xml: string, images: NonNullable<DocxMergeOptions["imageAppendices"]>): string {
+  if (!images.length) return xml;
+  const heading = '<w:p><w:r><w:br w:type="page"/></w:r></w:p><w:p><w:pPr><w:spacing w:after="240"/><w:jc w:val="center"/></w:pPr><w:r><w:rPr><w:b/><w:sz w:val="24"/><w:szCs w:val="24"/></w:rPr><w:t xml:space="preserve">Supporting Court Direction / Evidence</w:t></w:r></w:p>';
+  const paragraphs = images.map((image, index) => imageParagraph(image, `rIdNewgenEvidence${index + 1}`, index + 1)).join("");
+  const insertion = `${heading}${paragraphs}`;
+  const finalSectionIndex = xml.lastIndexOf("<w:sectPr");
+  if (finalSectionIndex === -1) return xml.replace("</w:body>", `${insertion}</w:body>`);
+  return `${xml.slice(0, finalSectionIndex)}${insertion}${xml.slice(finalSectionIndex)}`;
 }
 
 function applyTemplateTransformations(xml: string, options: DocxMergeOptions, isMainDocument = false): string {
@@ -729,6 +798,53 @@ function convertTemplateContentTypesToDocument(xml: string): string {
   );
 }
 
+function addImageDefaultsToContentTypes(xml: string, images: NonNullable<DocxMergeOptions["imageAppendices"]>): string {
+  let output = xml;
+  const needsPng = images.some((image) => image.contentType === "image/png") && !output.includes('Extension="png"');
+  const needsJpeg = images.some((image) => image.contentType === "image/jpeg") && !output.includes('Extension="jpg"') && !output.includes('Extension="jpeg"');
+  const additions = [
+    needsPng ? '<Default Extension="png" ContentType="image/png"/>' : "",
+    needsJpeg ? '<Default Extension="jpg" ContentType="image/jpeg"/><Default Extension="jpeg" ContentType="image/jpeg"/>' : "",
+  ].join("");
+  if (additions) output = output.replace("</Types>", `${additions}</Types>`);
+  return output;
+}
+
+function addImageRelationships(xml: string, images: NonNullable<DocxMergeOptions["imageAppendices"]>): string {
+  const additions = images.map((image, index) => {
+    const extension = image.contentType === "image/png" ? "png" : "jpg";
+    return `<Relationship Id="rIdNewgenEvidence${index + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/newgen-evidence-${index + 1}.${extension}"/>`;
+  }).join("");
+  return xml.replace("</Relationships>", `${additions}</Relationships>`);
+}
+
+async function appendImagesToDocxPackage(zip: JSZip, options: DocxMergeOptions): Promise<void> {
+  const images = options.imageAppendices ?? [];
+  if (!images.length) return;
+
+  const documentXml = await zip.file("word/document.xml")?.async("string");
+  if (documentXml) {
+    zip.file("word/document.xml", appendImageAppendicesToDocumentXml(documentXml, images));
+  }
+
+  const relationshipsPath = "word/_rels/document.xml.rels";
+  const existingRelationships = await zip.file(relationshipsPath)?.async("string");
+  zip.file(
+    relationshipsPath,
+    addImageRelationships(existingRelationships ?? '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"></Relationships>', images),
+  );
+
+  const contentTypes = await zip.file("[Content_Types].xml")?.async("string");
+  if (contentTypes) {
+    zip.file("[Content_Types].xml", addImageDefaultsToContentTypes(contentTypes, images));
+  }
+
+  images.forEach((image, index) => {
+    const extension = image.contentType === "image/png" ? "png" : "jpg";
+    zip.file(`word/media/newgen-evidence-${index + 1}.${extension}`, image.data);
+  });
+}
+
 export async function mergeDocxTemplate(
   template: ArrayBuffer,
   fields: MergeFields,
@@ -746,6 +862,8 @@ export async function mergeDocxTemplate(
       zip.file(path, mergePlaceholdersInXml(transformedXml, fields));
     }),
   );
+
+  await appendImagesToDocxPackage(zip, options);
 
   if (options.outputType === "document") {
     const contentTypes = zip.file("[Content_Types].xml");

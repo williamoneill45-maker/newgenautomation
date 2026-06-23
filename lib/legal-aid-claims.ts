@@ -224,3 +224,25 @@ export async function updateLegalAidClaim(input: {
   const [row] = (await response.json()) as ClaimRow[];
   return { status: "loaded", data: mapRow(row) };
 }
+
+export async function clearLegalAidClaims(): Promise<ClaimsResult<LegalAidClaim[]>> {
+  const { supabaseUrl, serviceKey, firmId, missing } = getSupabaseConfig();
+  if (missing.length) return { status: "not_configured", missing };
+  const response = await fetch(`${supabaseUrl}/rest/v1/legal_aid_claims?${new URLSearchParams({ firm_id: `eq.${firmId}` })}`, {
+    method: "DELETE",
+    headers: headers(serviceKey),
+  });
+  if (!response.ok) throw new Error(`Legal Aid claims clear failed with status ${response.status}.`);
+  return { status: "loaded", data: [] };
+}
+
+export async function deleteLegalAidClaim(id: string): Promise<ClaimsResult<LegalAidClaim[]>> {
+  const { supabaseUrl, serviceKey, firmId, missing } = getSupabaseConfig();
+  if (missing.length) return { status: "not_configured", missing };
+  const response = await fetch(`${supabaseUrl}/rest/v1/legal_aid_claims?${new URLSearchParams({ id: `eq.${id}`, firm_id: `eq.${firmId}` })}`, {
+    method: "DELETE",
+    headers: headers(serviceKey),
+  });
+  if (!response.ok) throw new Error(`Legal Aid claim delete failed with status ${response.status}.`);
+  return { status: "loaded", data: [] };
+}

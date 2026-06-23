@@ -129,6 +129,7 @@ export type MatterFile = {
   id: string;
   legalAidNumber: string;
   clientName: string;
+  legalAidRequired: boolean;
   status: MatterStatus;
   createdAt: string;
   updatedAt: string;
@@ -394,6 +395,7 @@ export function createEmptyMatter(): MatterFile {
     id: matterId,
     legalAidNumber: "",
     clientName: "",
+    legalAidRequired: true,
     status: "draft",
     createdAt: now,
     updatedAt: now,
