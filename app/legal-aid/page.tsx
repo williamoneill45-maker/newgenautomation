@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { ChangeEvent, useEffect, useMemo, useState } from "react";
+import { ChangeEvent, ClipboardEvent, DragEvent, useEffect, useMemo, useState } from "react";
 
 import {
   buildLegalAidReview,
@@ -19,6 +19,7 @@ import { courts, createEmptyMatter, type MatterFile } from "../../lib/matter";
 import { demoLegalAidApplications, demoMatter, isDemoEnvironment } from "../../lib/demo-data";
 
 type ReviewField = keyof LegalAidReview;
+type UploadKind = "incomeProof" | "signedPage";
 
 function updateReviewField(
   review: LegalAidReview,
@@ -61,6 +62,8 @@ export default function LegalAidPage() {
   const [savedApplications, setSavedApplications] = useState<LegalAidRecord[]>([]);
   const [isSaving, setIsSaving] = useState(false);
   const [notice, setNotice] = useState("");
+  const hasIncomeProof = Boolean(incomeProof);
+  const hasSignedPage = Boolean(signedPage);
 
   useEffect(() => {
     const storedRecent = readRecentMatters().filter((item) => (item.legalAidRequired ?? true) && isWithinLastWeek(item.updatedAt || item.createdAt));
@@ -280,8 +283,8 @@ export default function LegalAidPage() {
       ? "submitted"
       : isGenerated
       ? "generated"
-      : getLegalAidStatus(Boolean(incomeProof || application?.hasIncomeProof), Boolean(signedPage || application?.hasSignedPage)),
-    [application, incomeProof, signedPage, isGenerated],
+      : getLegalAidStatus(hasIncomeProof, hasSignedPage),
+    [application?.status, hasIncomeProof, hasSignedPage, isGenerated],
   );
 
   async function markSubmitted() {
@@ -290,55 +293,59 @@ export default function LegalAidPage() {
     if (saved) setNotice("Legal Aid application marked as submitted.");
   }
 
-  async function handleFileChange(
+  function handleFileChange(
     event: ChangeEvent<HTMLInputElement>,
     setter: (file: File | null) => void,
-    kind: "incomeProof" | "signedPage",
+    kind: UploadKind,
   ) {
     const file = event.target.files?.[0] ?? null;
-    setter(file);
+    stageUpload(file, setter, kind);
+    event.target.value = "";
+  }
+
+  function stageUpload(
+    file: File | null,
+    setter: (file: File | null) => void,
+    kind: UploadKind,
+  ) {
+    setNotice("");
+    setError("");
     setIsGenerated(false);
 
-    if (!file || !review) return;
+    if (!file) return;
 
-    const saved = await saveDraft(review);
-    if (!saved) return;
+    const fileName = file.name.toLowerCase();
+    const fileType = file.type.toLowerCase();
+    const isSupported =
+      fileType.includes("pdf") ||
+      fileType.includes("png") ||
+      fileType.includes("jpeg") ||
+      fileType.includes("jpg") ||
+      fileName.endsWith(".pdf") ||
+      fileName.endsWith(".png") ||
+      fileName.endsWith(".jpg") ||
+      fileName.endsWith(".jpeg");
 
-    setIsSaving(true);
-    setNotice("");
-
-    try {
-      const formData = new FormData();
-      formData.append("kind", kind);
-      formData.append("file", file);
-
-      const response = await fetch(`/api/legal-aid-applications/${encodeURIComponent(saved.id)}/upload`, {
-        method: "POST",
-        body: formData,
-      });
-      const payload = await response.json();
-
-      if (payload.status === "not_configured") {
-        setNotice(`Supabase is not configured yet: ${payload.missing.join(", ")}.`);
-        return;
-      }
-
-      if (!response.ok || payload.error) {
-        throw new Error(payload.error ?? "Unable to save Legal Aid upload.");
-      }
-
-      const nextApplication = payload.data as LegalAidRecord;
-      setApplication(nextApplication);
-      setSavedApplications((current) => {
-        const withoutSaved = current.filter((item) => item.id !== nextApplication.id);
-        return [nextApplication, ...withoutSaved];
-      });
-      setNotice(kind === "incomeProof" ? "Income proof saved. Signed page 5 can be uploaded later." : "Signed page 5 saved. Income proof can be uploaded later.");
-    } catch (caughtError) {
-      setNotice(caughtError instanceof Error ? caughtError.message : "Unable to save Legal Aid upload.");
-    } finally {
-      setIsSaving(false);
+    if (!isSupported) {
+      setError("Upload a PNG, JPG, or PDF file.");
+      return;
     }
+
+    setter(file);
+    setNotice(kind === "incomeProof" ? "Income proof staged for this session." : "Signed page 5 staged for this session.");
+  }
+
+  function getClipboardImageFile(event: ClipboardEvent<HTMLElement>, kind: UploadKind) {
+    for (const item of Array.from(event.clipboardData.items)) {
+      if (!item.type.startsWith("image/")) continue;
+      const blob = item.getAsFile();
+      if (!blob) continue;
+      const extension = item.type.includes("jpeg") ? "jpg" : "png";
+      return new File([blob], `${kind === "incomeProof" ? "income-proof" : "signed-page-5"}-${Date.now()}.${extension}`, {
+        type: item.type || "image/png",
+      });
+    }
+    return null;
   }
 
   async function generateLegalAidApplication() {
@@ -348,46 +355,6 @@ export default function LegalAidPage() {
     }
 
     const saved = await saveDraft(review);
-
-    if (saved?.hasIncomeProof && saved.hasSignedPage) {
-      setIsGenerating(true);
-      setError("");
-
-      try {
-        const formData = new FormData();
-        formData.append("applicationId", saved.id);
-
-        const response = await fetch("/api/generate-legal-aid", {
-          method: "POST",
-          body: formData,
-        });
-
-        if (!response.ok) {
-          const payload = await response.json();
-          throw new Error(payload.error ?? "Unable to generate Legal Aid application.");
-        }
-
-        const blob = await response.blob();
-        const disposition = response.headers.get("Content-Disposition") ?? "";
-        const fileNameMatch = disposition.match(/filename="([^"]+)"/);
-        const fileName = fileNameMatch?.[1] ?? "Legal Aid Application.pdf";
-        const url = window.URL.createObjectURL(blob);
-        const link = document.createElement("a");
-        link.href = url;
-        link.download = fileName;
-        document.body.appendChild(link);
-        link.click();
-        link.remove();
-        window.URL.revokeObjectURL(url);
-        setIsGenerated(true);
-        await loadSavedApplications();
-      } catch (caughtError) {
-        setError(caughtError instanceof Error ? caughtError.message : "Unable to generate Legal Aid application.");
-      } finally {
-        setIsGenerating(false);
-      }
-      return;
-    }
 
     if (!incomeProof) {
       setError("Income proof screenshot or scan is required.");
@@ -431,6 +398,10 @@ export default function LegalAidPage() {
       link.remove();
       window.URL.revokeObjectURL(url);
       setIsGenerated(true);
+      if (saved) {
+        await saveDraft(review, { ...saved, status: "generated" });
+        await loadSavedApplications();
+      }
     } catch (caughtError) {
       setError(caughtError instanceof Error ? caughtError.message : "Unable to generate Legal Aid application.");
     } finally {
@@ -576,17 +547,29 @@ export default function LegalAidPage() {
                     label="Income proof"
                     detail="Inserted after page 2."
                     file={incomeProof}
-                    savedFileName={application?.incomeProofFileName ?? ""}
-                    isSaved={Boolean(application?.hasIncomeProof)}
-                    onChange={(event) => void handleFileChange(event, setIncomeProof, "incomeProof")}
+                    onChange={(event) => handleFileChange(event, setIncomeProof, "incomeProof")}
+                    onDropFile={(file) => stageUpload(file, setIncomeProof, "incomeProof")}
+                    onPasteFile={(event) => {
+                      const file = getClipboardImageFile(event, "incomeProof");
+                      if (file) {
+                        event.preventDefault();
+                        stageUpload(file, setIncomeProof, "incomeProof");
+                      }
+                    }}
                   />
                   <UploadField
                     label="Signed client page 5"
                     detail="Replaces page 5."
                     file={signedPage}
-                    savedFileName={application?.signedPageFileName ?? ""}
-                    isSaved={Boolean(application?.hasSignedPage)}
-                    onChange={(event) => void handleFileChange(event, setSignedPage, "signedPage")}
+                    onChange={(event) => handleFileChange(event, setSignedPage, "signedPage")}
+                    onDropFile={(file) => stageUpload(file, setSignedPage, "signedPage")}
+                    onPasteFile={(event) => {
+                      const file = getClipboardImageFile(event, "signedPage");
+                      if (file) {
+                        event.preventDefault();
+                        stageUpload(file, setSignedPage, "signedPage");
+                      }
+                    }}
                   />
                 </div>
               </section>
@@ -598,7 +581,7 @@ export default function LegalAidPage() {
                 </p>
                 {status !== "submitted" ? <button
                   type="button"
-                  disabled={isGenerating || status === "generated" || !(incomeProof || application?.hasIncomeProof) || !(signedPage || application?.hasSignedPage)}
+                  disabled={isGenerating || status === "generated" || !incomeProof || !signedPage}
                   className="mt-5 inline-flex h-10 w-full items-center justify-center rounded-md bg-sky-600 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-sky-700 disabled:cursor-not-allowed disabled:bg-slate-300"
                   onClick={generateLegalAidApplication}
                 >
@@ -860,23 +843,37 @@ function UploadField({
   label,
   detail,
   file,
-  savedFileName,
-  isSaved,
   onChange,
+  onDropFile,
+  onPasteFile,
 }: {
   label: string;
   detail: string;
   file: File | null;
-  savedFileName: string;
-  isSaved: boolean;
   onChange: (event: ChangeEvent<HTMLInputElement>) => void;
+  onDropFile: (file: File | null) => void;
+  onPasteFile: (event: ClipboardEvent<HTMLElement>) => void;
 }) {
   const id = label.toLowerCase().replace(/\s+/g, "-");
+  const handleDrop = (event: DragEvent<HTMLLabelElement>) => {
+    event.preventDefault();
+    onDropFile(event.dataTransfer.files?.[0] ?? null);
+  };
 
   return (
-    <label className="block rounded-md border border-slate-200 p-3" htmlFor={id}>
+    <label
+      className="block rounded-md border border-slate-200 p-3 outline-none transition focus-within:border-sky-400 focus-within:ring-2 focus-within:ring-sky-100"
+      htmlFor={id}
+      tabIndex={0}
+      onDragOver={(event) => event.preventDefault()}
+      onDrop={handleDrop}
+      onPaste={onPasteFile}
+    >
       <span className="block text-sm font-semibold text-slate-950">{label}</span>
       <span className="mt-1 block text-xs leading-5 text-slate-500">{detail}</span>
+      <span className="mt-2 block rounded-md border border-dashed border-slate-300 bg-slate-50 px-3 py-2 text-xs font-medium text-slate-600">
+        Choose a file, drop it here, or paste a copied screenshot while this box is focused.
+      </span>
       <input
         id={id}
         type="file"
@@ -884,10 +881,9 @@ function UploadField({
         className="mt-3 block w-full text-sm text-slate-700 file:mr-3 file:rounded-md file:border-0 file:bg-sky-50 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-sky-700 hover:file:bg-sky-100"
         onChange={onChange}
       />
-      {file ? <span className="mt-2 block text-xs font-medium text-emerald-700">{file.name}</span> : null}
-      {isSaved ? (
+      {file ? (
         <span className="mt-2 block text-xs font-medium text-emerald-700">
-          Saved{savedFileName ? `: ${savedFileName}` : ""}
+          Staged for this session: {file.name}
         </span>
       ) : (
         <span className="mt-2 block text-xs font-medium text-amber-700">Pending</span>
