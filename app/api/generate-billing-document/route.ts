@@ -137,6 +137,13 @@ export async function POST(request: Request) {
     let oneDriveUrl = "";
     let oneDrivePath = "";
 
+    if (body.uploadToOneDrive && report.missingFields.length) {
+      return NextResponse.json(
+        { error: `The generated billing form still contains unresolved placeholders: ${report.missingFields.map((field) => `{{${field}}}`).join(", ")}.` },
+        { status: 422 },
+      );
+    }
+
     if (body.uploadToOneDrive) try {
       const upload = await uploadBillingDocumentToOneDrive(fileName, uploadBuffer, {
         clientName: body.record.clientName,
