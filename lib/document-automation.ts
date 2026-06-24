@@ -548,5 +548,5 @@ export function buildDocumentGenerationInput(
 }
 
 export function formatDocxPlaceholder(key: PlaceholderKey): string {
-  return `{{${key}}`;
+  return `{{${key}}}`;
 }
