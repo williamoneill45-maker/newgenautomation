@@ -2,7 +2,15 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 
 import { NextResponse } from "next/server";
-import { PDFDocument } from "pdf-lib";
+import {
+  drawObject,
+  PDFDocument,
+  PDFName,
+  popGraphicsState,
+  pushGraphicsState,
+  rotateInPlace,
+  translate,
+} from "pdf-lib";
 
 import {
   legalAidTemplatePath,
@@ -43,7 +51,6 @@ async function readTemplate(): Promise<Uint8Array> {
 
 function buildNarrative(review: LegalAidReview): string {
   return [
-    [review.courtLocation, review.proceedingsType].filter(Boolean).join(", "),
     [
       review.protectionOrderWording,
       review.abuseSummary,
@@ -80,6 +87,42 @@ function fillTextFields(pdfDoc: PDFDocument, review: LegalAidReview) {
   }
 
   form.updateFieldAppearances();
+}
+
+function flattenLegalAidForm(pdfDoc: PDFDocument) {
+  const form = pdfDoc.getForm();
+  const unsafeForm = form as unknown as {
+    findWidgetPage: (widget: unknown) => ReturnType<PDFDocument["getPage"]>;
+    findWidgetAppearanceRef: (field: unknown, widget: unknown) => unknown;
+  };
+
+  form.updateFieldAppearances();
+
+  for (const field of form.getFields()) {
+    const widgets = field.acroField.getWidgets();
+
+    for (const widget of widgets) {
+      try {
+        const page = unsafeForm.findWidgetPage(widget);
+        const appearanceRef = unsafeForm.findWidgetAppearanceRef(field, widget) as Parameters<typeof page.node.newXObject>[1];
+        const xObjectKey = page.node.newXObject("FlatWidget", appearanceRef);
+        const rectangle = widget.getRectangle();
+
+        page.pushOperators(
+          pushGraphicsState(),
+          translate(rectangle.x, rectangle.y),
+          ...rotateInPlace({ ...rectangle, rotation: 0 }),
+          drawObject(xObjectKey),
+          popGraphicsState(),
+        );
+      } catch {
+        // Some supplied Legal Aid PDF widgets reference pages that no longer exist.
+        // Those stale widgets are discarded when the AcroForm is removed below.
+      }
+    }
+  }
+
+  pdfDoc.catalog.delete(PDFName.of("AcroForm"));
 }
 
 async function fileToBytes(file: File | null): Promise<Uint8Array | null> {
@@ -123,7 +166,7 @@ async function insertPdfPages(
   index: number,
   bytes: Uint8Array,
   mode: "all" | "first",
-) {
+): Promise<number> {
   const sourcePdf = await PDFDocument.load(bytes, { ignoreEncryption: true });
   const sourceIndexes = mode === "first"
     ? [0]
@@ -133,6 +176,16 @@ async function insertPdfPages(
   copiedPages.forEach((page, offset) => {
     pdfDoc.insertPage(index + offset, page);
   });
+  return copiedPages.length;
+}
+
+function detectUploadType(file: UploadDescriptor, bytes: Uint8Array): "pdf" | "png" | "jpg" | "" {
+  const contentType = file.type.toLowerCase();
+  const fileName = file.name.toLowerCase();
+  if (contentType.includes("pdf") || fileName.endsWith(".pdf") || (bytes[0] === 0x25 && bytes[1] === 0x50 && bytes[2] === 0x44 && bytes[3] === 0x46)) return "pdf";
+  if (contentType.includes("png") || fileName.endsWith(".png") || (bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47)) return "png";
+  if (contentType.includes("jpeg") || contentType.includes("jpg") || fileName.endsWith(".jpg") || fileName.endsWith(".jpeg") || (bytes[0] === 0xff && bytes[1] === 0xd8)) return "jpg";
+  return "";
 }
 
 async function insertUpload(
@@ -141,28 +194,34 @@ async function insertUpload(
   file: UploadDescriptor,
   bytes: Uint8Array,
   kind: UploadKind,
-) {
-  const contentType = file.type.toLowerCase();
-  const fileName = file.name.toLowerCase();
+): Promise<number> {
+  const uploadType = detectUploadType(file, bytes);
 
-  if (contentType.includes("pdf") || fileName.endsWith(".pdf")) {
-    await insertPdfPages(pdfDoc, index, bytes, kind === "incomeProof" ? "all" : "first");
-    return;
+  if (uploadType === "pdf") {
+    return insertPdfPages(pdfDoc, index, bytes, kind === "incomeProof" ? "all" : "first");
   }
 
-  if (
-    contentType.includes("png") ||
-    contentType.includes("jpeg") ||
-    contentType.includes("jpg") ||
-    fileName.endsWith(".png") ||
-    fileName.endsWith(".jpg") ||
-    fileName.endsWith(".jpeg")
-  ) {
-    await insertImagePage(pdfDoc, index, bytes, contentType || fileName);
-    return;
+  if (uploadType === "png" || uploadType === "jpg") {
+    await insertImagePage(pdfDoc, index, bytes, uploadType === "png" ? "image/png" : "image/jpeg");
+    return 1;
   }
 
   throw new Error(`${file.name} must be a PNG, JPG, or PDF upload.`);
+}
+
+async function insertLegalAidUploads(
+  pdfDoc: PDFDocument,
+  incomeProofFile: UploadDescriptor,
+  incomeProofBytes: Uint8Array,
+  signedPageFile: UploadDescriptor,
+  signedPageBytes: Uint8Array,
+) {
+  const incomeInsertedPages = await insertUpload(pdfDoc, 2, incomeProofFile, incomeProofBytes, "incomeProof");
+  const originalSignedPageIndex = 4 + incomeInsertedPages;
+  if (pdfDoc.getPageCount() > originalSignedPageIndex) {
+    pdfDoc.removePage(originalSignedPageIndex);
+  }
+  await insertUpload(pdfDoc, originalSignedPageIndex, signedPageFile, signedPageBytes, "signedPage");
 }
 
 export async function POST(request: Request) {
@@ -199,6 +258,7 @@ export async function POST(request: Request) {
 
       const pdfDoc = await PDFDocument.load(await readTemplate(), { ignoreEncryption: true });
       fillTextFields(pdfDoc, application.review);
+      flattenLegalAidForm(pdfDoc);
 
       const incomeProofBytes = await downloadLegalAidFileFromSupabase(application.incomeProofPath);
       const signedPageBytes = await downloadLegalAidFileFromSupabase(application.signedPagePath);
@@ -211,9 +271,7 @@ export async function POST(request: Request) {
         type: "",
       };
 
-      await insertUpload(pdfDoc, 2, incomeProofFile, incomeProofBytes, "incomeProof");
-      pdfDoc.removePage(5);
-      await insertUpload(pdfDoc, 5, signedPageFile, signedPageBytes, "signedPage");
+      await insertLegalAidUploads(pdfDoc, incomeProofFile, incomeProofBytes, signedPageFile, signedPageBytes);
 
       const generatedAt = new Date().toISOString();
       await saveLegalAidApplicationToSupabase({
@@ -222,7 +280,7 @@ export async function POST(request: Request) {
         updatedAt: generatedAt,
       });
 
-      const buffer = await pdfDoc.save({ updateFieldAppearances: true });
+      const buffer = await pdfDoc.save({ updateFieldAppearances: false });
       const responseBody = buffer.buffer.slice(
         buffer.byteOffset,
         buffer.byteOffset + buffer.byteLength,
@@ -253,6 +311,7 @@ export async function POST(request: Request) {
     const review = JSON.parse(reviewPayload) as LegalAidReview;
     const pdfDoc = await PDFDocument.load(await readTemplate(), { ignoreEncryption: true });
     fillTextFields(pdfDoc, review);
+    flattenLegalAidForm(pdfDoc);
 
     const incomeProofBytes = await fileToBytes(incomeProof);
     const signedPageBytes = await fileToBytes(signedPage);
@@ -265,11 +324,9 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Signed client page 5 screenshot or scan is required." }, { status: 400 });
     }
 
-    await insertUpload(pdfDoc, 2, incomeProof, incomeProofBytes, "incomeProof");
-    pdfDoc.removePage(5);
-    await insertUpload(pdfDoc, 5, signedPage, signedPageBytes, "signedPage");
+    await insertLegalAidUploads(pdfDoc, incomeProof, incomeProofBytes, signedPage, signedPageBytes);
 
-    const buffer = await pdfDoc.save({ updateFieldAppearances: true });
+    const buffer = await pdfDoc.save({ updateFieldAppearances: false });
     const responseBody = buffer.buffer.slice(
       buffer.byteOffset,
       buffer.byteOffset + buffer.byteLength,
