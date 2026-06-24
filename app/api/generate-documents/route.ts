@@ -44,6 +44,14 @@ type GeneratedFile = {
   contentType: string;
 };
 
+function describeUnresolvedPlaceholders(report: DocumentValidationReport): string {
+  return report.documents
+    .flatMap((document) =>
+      document.report.missingFields.map((field) => `${document.output}: {{${field}}}`),
+    )
+    .join(", ");
+}
+
 async function readSourceTemplate(fileName: string): Promise<ArrayBuffer> {
   const templatePath = path.join(process.cwd(), "templates", fileName);
   const template = await readFile(templatePath);
@@ -274,6 +282,9 @@ export async function POST(request: Request) {
   if (body.uploadToOneDrive && !clientName.trim()) {
     oneDriveStatus = "failed";
     oneDriveError = "Client name is required before generated forms can be uploaded to OneDrive.";
+  } else if (body.uploadToOneDrive && validationReport.documents.some((document) => document.report.missingFields.length > 0)) {
+    oneDriveStatus = "failed";
+    oneDriveError = `Generated forms still contain unresolved placeholders and were not uploaded to OneDrive: ${describeUnresolvedPlaceholders(validationReport)}.`;
   } else if (body.uploadToOneDrive) {
     oneDrivePath = clientFolderPaths.formsFolderPath;
 
