@@ -401,6 +401,7 @@ export function buildMatterMergeFields(matter: MatterFile): MergeFields {
   const respondentName = intake.respondent.fullName.toLocaleUpperCase("en-NZ");
   const englishCourtName = court.english.toLocaleUpperCase("en-NZ");
   const maoriCourtName = court.maori.toLocaleUpperCase("mi-NZ");
+  const numberOfChildren = intake.children.length ? String(intake.children.length) : "";
 
   return normalizeMergeFields({
     APPLICANT_NAME: applicantName,
@@ -428,9 +429,20 @@ export function buildMatterMergeFields(matter: MatterFile): MergeFields {
     applicant_home_address: applicantAddress,
     applicant_name: applicantName,
     applicant_occupation: intake.applicant.occupation,
+    APPLICANT_MOBILE: intake.applicant.mobilePhone,
+    APPLICANT_PHONE: intake.applicant.mobilePhone,
+    APPLICANT_PHONE_NUMBER: intake.applicant.mobilePhone,
+    APPLICANT_EMAIL: intake.applicant.emailAddress,
+    applicant_mobile: intake.applicant.mobilePhone,
     applicant_phone_number: intake.applicant.mobilePhone,
     applicant_phone: intake.applicant.mobilePhone,
     applicant_email: intake.applicant.emailAddress,
+    EMAIL: intake.applicant.emailAddress,
+    MOBILE: intake.applicant.mobilePhone,
+    MOBILE_PHONE: intake.applicant.mobilePhone,
+    email: intake.applicant.emailAddress,
+    mobile: intake.applicant.mobilePhone,
+    mobile_phone: intake.applicant.mobilePhone,
     applicant_ethnicity: applicantEthnicity,
     applicant_ethnicity_other_value: applicantOtherEthnicity,
     applicant_ethnicity_nz_european: isEthnicity(intake.applicant.ethnicity, "New Zealand European"),
@@ -459,6 +471,14 @@ export function buildMatterMergeFields(matter: MatterFile): MergeFields {
     relationship_end_date: formatInputDateForForms(intake.relationship.relationshipEndDate),
     relationship_start_date: formatInputDateForForms(intake.relationship.deFactoRelationshipStart),
     start: formatInputDateForForms(intake.relationship.deFactoRelationshipStart),
+    NUMBER_OF_CHILDREN: numberOfChildren,
+    NUMBEROFCHILDREN: numberOfChildren,
+    NUMBEROFCHIDLREN: numberOfChildren,
+    NUMBER_OF_CHIDLREN: numberOfChildren,
+    number_of_children: numberOfChildren,
+    numberofchildren: numberOfChildren,
+    numberofchidlren: numberOfChildren,
+    number_of_chidlren: numberOfChildren,
     todays_date: today,
     respondent_age: respondentAge,
     respondent_dob: formatInputDateForForms(intake.respondent.dateOfBirth),
@@ -528,5 +548,5 @@ export function buildDocumentGenerationInput(
 }
 
 export function formatDocxPlaceholder(key: PlaceholderKey): string {
-  return `{{${key}}}`;
+  return `{{${key}}`;
 }
