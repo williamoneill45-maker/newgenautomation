@@ -4,11 +4,18 @@ import path from "node:path";
 import { NextResponse } from "next/server";
 import {
   drawObject,
+  PDFHexString,
   PDFDocument,
   PDFName,
+  type PDFPage,
+  type PDFFont,
+  type PDFRef,
+  PDFString,
   popGraphicsState,
   pushGraphicsState,
+  rgb,
   rotateInPlace,
+  StandardFonts,
   translate,
 } from "pdf-lib";
 
@@ -41,6 +48,30 @@ const textFieldMap: Record<string, keyof LegalAidReview> = {
   "Signature date lawyer": "dateToday",
 };
 
+function cleanReviewValue(value: string | undefined): string {
+  const trimmed = value?.trim() ?? "";
+  return /^\{\{[^{}]+\}\}$/.test(trimmed) ? "" : (value ?? "");
+}
+
+function sanitizeLegalAidReview(review: LegalAidReview): LegalAidReview {
+  return {
+    ...review,
+    clientName: cleanReviewValue(review.clientName),
+    dob: cleanReviewValue(review.dob),
+    homeAddress: cleanReviewValue(review.homeAddress),
+    lawyerPostalAddress: cleanReviewValue(review.lawyerPostalAddress),
+    mobilePhone: cleanReviewValue(review.mobilePhone),
+    email: cleanReviewValue(review.email),
+    numberOfChildren: cleanReviewValue(review.numberOfChildren),
+    courtLocation: cleanReviewValue(review.courtLocation),
+    proceedingsType: cleanReviewValue(review.proceedingsType),
+    protectionOrderWording: cleanReviewValue(review.protectionOrderWording),
+    parentingOrderWording: cleanReviewValue(review.parentingOrderWording),
+    abuseSummary: cleanReviewValue(review.abuseSummary),
+    dateToday: cleanReviewValue(review.dateToday),
+  };
+}
+
 function safeFileName(value: string): string {
   return value.replace(/[^A-Za-z0-9 ._-]/g, "").trim() || "Legal Aid Application";
 }
@@ -63,11 +94,123 @@ function buildNarrative(review: LegalAidReview): string {
     .join("\n\n");
 }
 
-function fillTextFields(pdfDoc: PDFDocument, review: LegalAidReview) {
-  const form = pdfDoc.getForm();
+function getLegalAidFieldValue(fieldName: string, review: LegalAidReview, combinedNarrative: string): string {
+  const reviewKey = textFieldMap[fieldName];
+  if (!reviewKey) return "";
+
+  if (fieldName === "Question 31") {
+    return [review.courtLocation, review.proceedingsType].filter(Boolean).join(", ");
+  }
+
+  if (fieldName === "Question 33") {
+    return combinedNarrative;
+  }
+
+  if (fieldName === "Question 6" && !review[reviewKey]?.trim()) {
+    return " ";
+  }
+
+  return review[reviewKey] ?? "";
+}
+
+function getAnnotationText(annotation: unknown, key: string): string {
+  const value = (annotation as { get: (name: PDFName) => unknown }).get(PDFName.of(key));
+  if (value instanceof PDFString || value instanceof PDFHexString) {
+    return value.decodeText();
+  }
+
+  return "";
+}
+
+function getAnnotationRectangle(annotation: unknown) {
+  const rectangle = (annotation as { lookup: (name: PDFName) => { asArray?: () => unknown[] } }).lookup(PDFName.of("Rect"));
+  const coordinates = rectangle.asArray?.().map((value) => Number(String(value))) ?? [];
+  if (coordinates.length !== 4 || coordinates.some((value) => Number.isNaN(value))) return null;
+
+  const [x1, y1, x2, y2] = coordinates;
+  return {
+    x: Math.min(x1, x2),
+    y: Math.min(y1, y2),
+    width: Math.abs(x2 - x1),
+    height: Math.abs(y2 - y1),
+  };
+}
+
+function drawWrappedText(page: PDFPage, font: PDFFont, text: string, rectangle: { x: number; y: number; width: number; height: number }) {
+  const fontSize = 10;
+  const lineHeight = 12;
+  const padding = 4;
+  const maxWidth = rectangle.width - padding * 2;
+  const lines = text
+    .split(/\r?\n/)
+    .flatMap((line) => {
+      const words = line.split(/\s+/).filter(Boolean);
+      if (!words.length) return [""];
+
+      return words.reduce<string[]>((wrapped, word) => {
+        const current = wrapped[wrapped.length - 1] ?? "";
+        const candidate = current ? `${current} ${word}` : word;
+        if (font.widthOfTextAtSize(candidate, fontSize) <= maxWidth || !current) {
+          wrapped[wrapped.length - 1] = candidate;
+        } else {
+          wrapped.push(word);
+        }
+        return wrapped;
+      }, [""]);
+    });
+
+  lines.slice(0, Math.max(1, Math.floor((rectangle.height - padding * 2) / lineHeight))).forEach((line, index) => {
+    if (!line.trim()) return;
+    page.drawText(line, {
+      x: rectangle.x + padding,
+      y: rectangle.y + rectangle.height - padding - fontSize - index * lineHeight,
+      size: fontSize,
+      font,
+      color: rgb(0, 0, 0),
+    });
+  });
+}
+
+async function fillVisibleLegalAidWidgets(pdfDoc: PDFDocument, review: LegalAidReview) {
+  const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
   const combinedNarrative = buildNarrative(review);
 
-  for (const [fieldName, reviewKey] of Object.entries(textFieldMap)) {
+  for (const page of pdfDoc.getPages()) {
+    const annotations = page.node.Annots();
+    if (!annotations) continue;
+
+    const annotationRefsToRemove: PDFRef[] = [];
+    for (let index = 0; index < annotations.size(); index += 1) {
+      const annotationRef = annotations.get(index) as PDFRef;
+      const annotation = pdfDoc.context.lookup(annotationRef);
+      const fieldName = getAnnotationText(annotation, "T");
+      if (!Object.prototype.hasOwnProperty.call(textFieldMap, fieldName)) continue;
+
+      const rectangle = getAnnotationRectangle(annotation);
+      if (!rectangle) continue;
+
+      const value = getLegalAidFieldValue(fieldName, review, combinedNarrative);
+      page.drawRectangle({
+        ...rectangle,
+        color: rgb(0.93, 0.96, 0.9),
+        borderColor: rgb(0.93, 0.96, 0.9),
+      });
+      drawWrappedText(page, font, value, rectangle);
+      annotationRefsToRemove.push(annotationRef);
+    }
+
+    for (const annotationRef of annotationRefsToRemove) {
+      page.node.removeAnnot(annotationRef);
+    }
+  }
+}
+
+function fillTextFields(pdfDoc: PDFDocument, review: LegalAidReview) {
+  const form = pdfDoc.getForm();
+  const safeReview = sanitizeLegalAidReview(review);
+  const combinedNarrative = buildNarrative(safeReview);
+
+  for (const [fieldName] of Object.entries(textFieldMap)) {
     let field;
     try {
       field = form.getTextField(fieldName);
@@ -75,15 +218,7 @@ function fillTextFields(pdfDoc: PDFDocument, review: LegalAidReview) {
       continue;
     }
 
-    const value = fieldName === "Question 31"
-      ? [review.courtLocation, review.proceedingsType].filter(Boolean).join(", ")
-      : fieldName === "Question 33"
-        ? combinedNarrative
-        : fieldName === "Question 6" && !review[reviewKey]?.trim()
-          ? " "
-          : review[reviewKey];
-
-    field.setText(value ?? "");
+    field.setText(getLegalAidFieldValue(fieldName, safeReview, combinedNarrative));
   }
 
   form.updateFieldAppearances();
@@ -107,6 +242,7 @@ function flattenLegalAidForm(pdfDoc: PDFDocument) {
         const appearanceRef = unsafeForm.findWidgetAppearanceRef(field, widget) as Parameters<typeof page.node.newXObject>[1];
         const xObjectKey = page.node.newXObject("FlatWidget", appearanceRef);
         const rectangle = widget.getRectangle();
+        const widgetRef = pdfDoc.context.getObjectRef(widget.dict);
 
         page.pushOperators(
           pushGraphicsState(),
@@ -115,11 +251,17 @@ function flattenLegalAidForm(pdfDoc: PDFDocument) {
           drawObject(xObjectKey),
           popGraphicsState(),
         );
+        if (widgetRef) {
+          page.node.removeAnnot(widgetRef);
+          pdfDoc.context.delete(widgetRef);
+        }
       } catch {
         // Some supplied Legal Aid PDF widgets reference pages that no longer exist.
         // Those stale widgets are discarded when the AcroForm is removed below.
       }
     }
+
+    pdfDoc.context.delete(field.ref);
   }
 
   pdfDoc.catalog.delete(PDFName.of("AcroForm"));
@@ -258,6 +400,7 @@ export async function POST(request: Request) {
 
       const pdfDoc = await PDFDocument.load(await readTemplate(), { ignoreEncryption: true });
       fillTextFields(pdfDoc, application.review);
+      await fillVisibleLegalAidWidgets(pdfDoc, sanitizeLegalAidReview(application.review));
       flattenLegalAidForm(pdfDoc);
 
       const incomeProofBytes = await downloadLegalAidFileFromSupabase(application.incomeProofPath);
@@ -311,6 +454,7 @@ export async function POST(request: Request) {
     const review = JSON.parse(reviewPayload) as LegalAidReview;
     const pdfDoc = await PDFDocument.load(await readTemplate(), { ignoreEncryption: true });
     fillTextFields(pdfDoc, review);
+    await fillVisibleLegalAidWidgets(pdfDoc, sanitizeLegalAidReview(review));
     flattenLegalAidForm(pdfDoc);
 
     const incomeProofBytes = await fileToBytes(incomeProof);
