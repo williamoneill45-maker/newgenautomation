@@ -147,4 +147,3 @@ export function getLegalAidStatus(hasIncomeProof: boolean, hasSignedPage: boolea
   if (!hasSignedPage) return "pending_signed_page";
   return "ready_to_generate";
 }
-

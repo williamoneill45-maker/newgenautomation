@@ -245,4 +245,3 @@ export const form33AManagementRules: Form33AManagementRule[] = [
     howToFix: "Keep testing court examples. If the mileage total placeholder changes again, update this placeholder list and the merge field.",
   },
 ];
-

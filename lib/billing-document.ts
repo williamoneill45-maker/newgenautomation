@@ -774,4 +774,3 @@ export function buildBillingMergeFields(record: BillingRecord): MergeFields {
 
   return withSnakeCaseAliases(fields);
 }
-

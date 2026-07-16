@@ -125,7 +125,7 @@ export async function POST(request: Request) {
       ...(travelCourt
         ? {
             literalTextReplacements: {
-              "Travel â€“ Time â€“ necessary": `Travel â€“ Time â€“ necessary to ${travelCourt.toLocaleUpperCase("en-NZ")}`,
+              "Travel – Time – necessary": `Travel – Time – necessary to ${travelCourt.toLocaleUpperCase("en-NZ")}`,
             },
           }
         : {}),
@@ -189,4 +189,3 @@ export async function POST(request: Request) {
     );
   }
 }
-

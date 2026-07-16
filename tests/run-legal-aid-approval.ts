@@ -42,4 +42,3 @@ await mkdir(outputDir, { recursive: true });
 const outputPath = path.join(outputDir, "Legal Aid Application - WILLIAM ONEILL.pdf");
 await writeFile(outputPath, Buffer.from(await response.arrayBuffer()));
 console.log(outputPath);
-

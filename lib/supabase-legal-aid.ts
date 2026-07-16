@@ -244,4 +244,3 @@ export async function downloadLegalAidFileFromSupabase(path: string): Promise<Ui
 
   return new Uint8Array(await response.arrayBuffer());
 }
-
