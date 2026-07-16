@@ -63,6 +63,13 @@ export default function DocumentDownloadPanel() {
     { label: "Police Information Sheet", status: bundleStatus(Boolean(matter), generated) },
     { label: "Lawyer Certificate", status: bundleStatus(Boolean(matter), generated) },
     { label: "Family Violence Affidavit", status: bundleStatus(protection, generated) },
+    { label: "Letter to Court confirming legal aid", status: bundleStatus(Boolean(matter), generated) },
+    { label: "Letter to Court filing documents", status: bundleStatus(Boolean(matter), generated) },
+    { label: "Letter to Court filing DV applications", status: bundleStatus(Boolean(matter), generated) },
+    { label: "Letter to MFI", status: bundleStatus(Boolean(matter), generated) },
+    { label: "Police Email", status: bundleStatus(Boolean(matter), generated) },
+    { label: "Registrar List Submissions", status: bundleStatus(Boolean(matter), generated) },
+    { label: "Confidential Address Applicant Information Sheet", status: bundleStatus(Boolean(matter), generated) },
     { label: "Legal Aid Application", status: "Awaiting Requirements" },
     { label: "Billing forms", status: "Awaiting Requirements" },
   ];

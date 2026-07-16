@@ -62,4 +62,46 @@ export const standardDocxTemplates: SourceTemplateDefinition[] = [
     sourceFileName: "Domestic Violence Affidavit.docx",
     outputFileName: "08 Domestic Violence Affidavit.docx",
   },
+  {
+    id: "msd_police_information_request",
+    title: "Letter to Court confirming legal aid",
+    sourceFileName: "Letter - Court confirming legal aid.docx",
+    outputFileName: "09 Letter to Court confirming legal aid.docx",
+  },
+  {
+    id: "msd_police_information_request",
+    title: "Letter to Court filing documents",
+    sourceFileName: "Letter - Court filing documents.docx",
+    outputFileName: "10 Letter to Court filing documents.docx",
+  },
+  {
+    id: "msd_police_information_request",
+    title: "Letter to Court filing DV applications",
+    sourceFileName: "Letter - Court filing DV applications.docx",
+    outputFileName: "11 Letter to Court filing DV applications.docx",
+  },
+  {
+    id: "msd_police_information_request",
+    title: "Letter to MFI",
+    sourceFileName: "Letter - MFI service.docx",
+    outputFileName: "12 Letter to MFI.docx",
+  },
+  {
+    id: "msd_police_information_request",
+    title: "Police Email",
+    sourceFileName: "Police Email.docx",
+    outputFileName: "13 Police Email.docx",
+  },
+  {
+    id: "msd_police_information_request",
+    title: "Registrar List Submissions",
+    sourceFileName: "Registrar List Submissions.docx",
+    outputFileName: "14 Registrar List Submissions.docx",
+  },
 ];
+
+export const confidentialAddressInformationSheet = {
+  title: "Confidential Address Applicant Information Sheet",
+  sourceFileName: "Confidential Address Applicant Information Sheet.pdf",
+  outputFileName: "15 Confidential Address Applicant Information Sheet.pdf",
+} as const;

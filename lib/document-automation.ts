@@ -402,14 +402,30 @@ export function buildMatterMergeFields(matter: MatterFile): MergeFields {
   const englishCourtName = court.english.toLocaleUpperCase("en-NZ");
   const maoriCourtName = court.maori.toLocaleUpperCase("mi-NZ");
   const numberOfChildren = intake.children.length ? String(intake.children.length) : "";
+  const applicantLastName = intake.applicant.fullName.trim().split(/\s+/).at(-1) ?? "";
+  const respondentLastName = intake.respondent.fullName.trim().split(/\s+/).at(-1) ?? "";
+  const applicantSubject = intake.applicant.gender === "M" ? "he" : intake.applicant.gender === "F" ? "she" : "they";
 
   return normalizeMergeFields({
     APPLICANT_NAME: applicantName,
+    applicant_full_name: intake.applicant.fullName,
+    applicant_full_name_upper: applicantName,
+    applicant_last_name: applicantLastName,
+    applicant_last_name_upper: applicantLastName.toLocaleUpperCase("en-NZ"),
+    applicant_dob_long: formatInputDateLong(intake.applicant.dateOfBirth),
+    applicant_pronoun_subject_cap: applicantSubject[0].toUpperCase() + applicantSubject.slice(1),
     APPLICANT_FIRST_NAME: getFirstName(applicantName),
     RESPONDENT_NAME: respondentName,
+    respondent_full_name: intake.respondent.fullName,
+    respondent_full_name_upper: respondentName,
+    respondent_last_name: respondentLastName,
+    respondent_last_name_upper: respondentLastName.toLocaleUpperCase("en-NZ"),
     APPLICANT_ADDRESS: applicantAddress,
     RESPONDENT_ADDRESS: intake.respondent.homeAddress,
     COURT_LOCATION: englishCourtName,
+    court_location_short: intake.courtLocation.replace(/\s+Court$/i, "").trim(),
+    fam_number: intake.famNumber,
+    legal_aid_number: matter.legalAidNumber,
     CHILD_1_NAME: firstChild?.fullName.toLocaleUpperCase("en-NZ"),
     CHILD_1_DOB: formatInputDateForForms(firstChild?.dateOfBirth ?? ""),
     CHILD_1_AGE: childAge,
@@ -460,6 +476,7 @@ export function buildMatterMergeFields(matter: MatterFile): MergeFields {
     ...buildChildMergeFields(fourthChild, 4, applicantName, respondentName),
     court_location: `${englishCourtName} | ${maoriCourtName}`,
     date_today: today,
+    date_today_long: new Intl.DateTimeFormat("en-NZ", { day: "numeric", month: "long", year: "numeric" }).format(todayDate),
     "date_today ": today,
     Date_today: today,
     existing_child_orders: intake.proceedings.existingOrdersRelatingToChildren,
