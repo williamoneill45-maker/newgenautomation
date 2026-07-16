@@ -300,15 +300,36 @@ function paragraphWithRuns(paragraph: string, runs: Array<{ text: string; bold?:
   return paragraph.replace(/(<w:p\b[^>]*>)[\s\S]*?<\/w:p>/, `$1${pPr}${runXml}</w:p>`);
 }
 
+function replaceStandaloneApplicantPreservingLayout(paragraph: string, applicantName: string): string {
+  return paragraph.replace(/<w:r\b[\s\S]*?<\/w:r>/g, (run) => {
+    const runText = readTextNodes(run).map((node) => node.text).join("").trim();
+    if (runText !== "Applicant") return run;
+    let updated = run.replace(/(<w:t\b[^>]*>)[\s\S]*?(<\/w:t>)/, `$1${escapeXml(applicantName)}$2`);
+    if (/<w:rPr\b/.test(updated)) {
+      updated = updated.replace(/<w:rPr\b[^>]*>/, (tag) => `${tag}<w:b/><w:bCs/>`);
+    } else {
+      updated = updated.replace(/<w:r\b[^>]*>/, (tag) => `${tag}<w:rPr><w:b/><w:bCs/></w:rPr>`);
+    }
+    return updated;
+  });
+}
+
 function applyAffidavitFormatting(
   xml: string,
   formatting: NonNullable<DocxMergeOptions["affidavitFormatting"]>,
 ): string {
+  let standaloneApplicantCount = 0;
   return xml.replace(/<w:p\b[\s\S]*?<\/w:p>/g, (paragraph) => {
     const text = readTextNodes(paragraph).map((node) => node.text).join("");
     const trimmed = text.trim();
     if (trimmed === "Applicant") {
-      return paragraphWithRuns(paragraph, [{ text: formatting.applicantName, bold: true }]);
+      standaloneApplicantCount += 1;
+      // The first occurrence is the italic party-role label on the cover page.
+      // The second is the signature caption and must retain its leading tabs so
+      // the applicant's name remains directly beneath the signature line.
+      return standaloneApplicantCount === 1
+        ? paragraph
+        : replaceStandaloneApplicantPreservingLayout(paragraph, formatting.applicantName);
     }
     if (trimmed.startsWith("AFFIRMED at ")) {
       return paragraphWithRuns(paragraph, [
