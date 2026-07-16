@@ -39,7 +39,7 @@ function childDescription(child: Child): string {
   return [
     name,
     dob ? `born ${dob}` : "",
-    nickname ? `(â€œ${nickname}â€)` : "",
+    nickname ? `(“${nickname}”)` : "",
   ].filter(Boolean).join(", ");
 }
 
@@ -108,8 +108,8 @@ export function buildStandardAffidavitContent(matter: MatterFile): StandardAffid
     : `WITHOUT NOTICE APPLICATION FOR ${(orderLabels[0] || "PROTECTION ORDER").toUpperCase()}`;
 
   const applicationIntro = orderLabels.length > 1
-    ? `I am applying without notice for ${formatList(orderLabels.map(withIndefiniteArticle))} against ${respondentName} (â€œthe Respondentâ€).`
-    : `I am applying without notice for ${withIndefiniteArticle(orderLabels[0] || "Protection Order")} against ${respondentName} (â€œthe Respondentâ€).`;
+    ? `I am applying without notice for ${formatList(orderLabels.map(withIndefiniteArticle))} against ${respondentName} (“the Respondent”).`
+    : `I am applying without notice for ${withIndefiniteArticle(orderLabels[0] || "Protection Order")} against ${respondentName} (“the Respondent”).`;
 
   const childrenParagraphs = children.length
     ? [`The Respondent and I are the parents of the following ${children.length === 1 ? "child" : "children"}: ${children.map(childDescription).join("; ")}.`]
@@ -118,7 +118,7 @@ export function buildStandardAffidavitContent(matter: MatterFile): StandardAffid
   const parentingParagraphs = includeParentingProposal
     ? [
         "I seek a Parenting Order granting me day-to-day care. I have always had a greater role and responsibility in providing day-to-day care. I want this arrangement to continue.",
-        `I seek an interim Parenting Order granting the Respondent supervised contact with ${formattedChildNames}. I am concerned about ${formattedChildNames}â€™s safety in the Respondentâ€™s unsupervised care because:  (i) ${formattedChildNames} ${children.length === 1 ? "has" : "have"} been exposed to the Respondentâ€™s violence towards me and ${children.length === 1 ? "has" : "have"} been affected by the abuse ${children.length === 1 ? "the child has" : "they have"} witnessed.  (ii) I am concerned that the Respondent is unable to control his anger and does not realise that his behaviour is abusive.  (iii) I want to be sure that ${formattedChildNames} ${children.length === 1 ? "is" : "are"} safe and ${children.length === 1 ? "is" : "are"} returned to me at the end of any contact. I am concerned that without an order the Respondent may refuse to return ${formattedChildNames}.`,
+        `I seek an interim Parenting Order granting the Respondent supervised contact with ${formattedChildNames}. I am concerned about ${formattedChildNames}’s safety in the Respondent’s unsupervised care because:  (i) ${formattedChildNames} ${children.length === 1 ? "has" : "have"} been exposed to the Respondent’s violence towards me and ${children.length === 1 ? "has" : "have"} been affected by the abuse ${children.length === 1 ? "the child has" : "they have"} witnessed.  (ii) I am concerned that the Respondent is unable to control his anger and does not realise that his behaviour is abusive.  (iii) I want to be sure that ${formattedChildNames} ${children.length === 1 ? "is" : "are"} safe and ${children.length === 1 ? "is" : "are"} returned to me at the end of any contact. I am concerned that without an order the Respondent may refuse to return ${formattedChildNames}.`,
         "I propose that contact be supervised by a Professional Contact Provider.",
       ].flatMap((paragraph) => paragraph.split(/\s{2,}(?=\([ivx]+\))/i))
         .map((paragraph) => paragraph
@@ -165,7 +165,7 @@ export function buildStandardAffidavitContent(matter: MatterFile): StandardAffid
       : [],
     withoutNoticeSafetyFactors: hasProtectionOrder
       ? [
-          "I am very fearful for my safety and also the childrenâ€™s safety.",
+          "I am very fearful for my safety and also the children’s safety.",
           "I believe that if the Respondent knew that I was applying for this Order, I may suffer further physical abuse and/or psychological abuse.",
         ]
       : [],
@@ -176,4 +176,3 @@ export function buildStandardAffidavitContent(matter: MatterFile): StandardAffid
     ordersSoughtParagraphs,
   };
 }
-

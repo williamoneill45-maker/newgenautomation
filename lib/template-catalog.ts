@@ -63,4 +63,3 @@ export const standardDocxTemplates: SourceTemplateDefinition[] = [
     outputFileName: "08 Domestic Violence Affidavit.docx",
   },
 ];
-

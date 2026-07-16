@@ -258,4 +258,3 @@ export function validateStructuredBillingRecord(record: BillingRecord): string[]
   if (selection.travelTimeSelected && !record.draft.travel?.court) errors.push("Select a supported court for Travel Time.");
   return errors;
 }
-

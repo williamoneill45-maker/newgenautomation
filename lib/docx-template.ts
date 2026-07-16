@@ -202,7 +202,7 @@ function repeatChildParagraphs(
       {
         child_3_name: `child_${childNumber}_name`,
         child_3_dob: `child_${childNumber}_dob`,
-        "(â€œchild_3_nicknameâ€)": `(â€œchild_${childNumber}_nicknameâ€)`,
+        "(“child_3_nickname”)": `(“child_${childNumber}_nickname”)`,
       },
     )).join("");
 
@@ -441,13 +441,13 @@ function applyTemplateTransformations(xml: string, options: DocxMergeOptions, is
   if (isMainDocument && options.normalizeBillingJudgeDirectionsRow) {
     output = output.replace(/<w:tr\b[\s\S]*?<\/w:tr>/g, (row) => {
       const text = readTextNodes(row).map((node) => node.text).join("");
-      if (!/Complying with\s+Judge[â€™']s directions/i.test(text)) return row;
+      if (!/Complying with\s+Judge[’']s directions/i.test(text)) return row;
       let normalized = row.replace(
         /<w:trPr\b[^>]*>/,
         (tag) => `${tag}<w:cantSplit/>`,
       );
       normalized = normalized.replace(
-        /(<w:p\b[^>]*>[\s\S]*?<w:pPr\b[^>]*>)[\s\S]*?(<\/w:pPr>[\s\S]*?Complying with\s+Judge[â€™']s directions)/i,
+        /(<w:p\b[^>]*>[\s\S]*?<w:pPr\b[^>]*>)[\s\S]*?(<\/w:pPr>[\s\S]*?Complying with\s+Judge[’']s directions)/i,
         `$1<w:pStyle w:val="Details"/>$2`,
       );
       let cellIndex = 0;
@@ -994,4 +994,3 @@ export async function mergeDocxTemplate(
     },
   };
 }
-
