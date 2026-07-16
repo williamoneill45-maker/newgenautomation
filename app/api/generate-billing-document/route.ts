@@ -116,11 +116,16 @@ export async function POST(request: Request) {
     const { buffer, report } = await mergeDocxTemplate(sourceTemplate, fields, {
       outputType: "document",
       normalizeBillingJudgeDirectionsRow: true,
+      billingFormValues: {
+        dateCompleted: new Intl.DateTimeFormat("en-NZ", { day: "2-digit", month: "2-digit", year: "numeric" }).format(new Date()),
+        invoiceType: body.record.draft.structuredSelection?.invoiceType ?? "interim",
+        mileageRate: "1.20",
+      },
       imageAppendices: (body.evidenceImages ?? []).map(decodeDataUrl),
       ...(travelCourt
         ? {
             literalTextReplacements: {
-              "Travel – Time – necessary": `Travel – Time – necessary to ${travelCourt.toLocaleUpperCase("en-NZ")}`,
+              "Travel â€“ Time â€“ necessary": `Travel â€“ Time â€“ necessary to ${travelCourt.toLocaleUpperCase("en-NZ")}`,
             },
           }
         : {}),
@@ -184,3 +189,4 @@ export async function POST(request: Request) {
     );
   }
 }
+

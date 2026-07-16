@@ -2,7 +2,7 @@ import type { Form33AManagementRule } from "./form33a-rules";
 
 export const form32BFeeRules = {
   gstRate: 0.15,
-  mileageRatePerKm: 1.17,
+  mileageRatePerKm: 1.20,
   fixedFees: {
     preHearingMatters: 620,
     complyingJudgesDirections: 190,
@@ -218,3 +218,4 @@ export const form32BManagementRules: Form32BManagementRule[] = [
     howToFix: "Test a pre-hearing conference prompt and confirm PHC row fills.",
   },
 ];
+

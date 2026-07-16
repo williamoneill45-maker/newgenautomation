@@ -1,5 +1,5 @@
-import type { MatterFile } from "./matter";
-import { formatDateForForms } from "./document-automation";
+import type { MatterFile } from "./matter.ts";
+import { formatDateForForms } from "./document-automation.ts";
 
 export const legalAidMatterStorageKey = "newgenautomation:draftMatter";
 export const recentMattersStorageKey = "newgenautomation:recentMatters";
@@ -15,6 +15,7 @@ export type LegalAidStatus =
 export type LegalAidReview = {
   matterId: string;
   clientName: string;
+  title?: string;
   dob: string;
   homeAddress: string;
   lawyerPostalAddress: string;
@@ -54,9 +55,9 @@ export type LegalAidPendingSummary = Pick<
 export const legalAidTemplatePath = "templates/Legal Aid Template.pdf";
 
 export const confidentialLawyerPostalAddress = [
-  "C/o Example Family Law",
-  "PO Box 1000",
-  "Auckland",
+  "c/o Natalie Quirke",
+  "PO Box 25-977",
+  "St Heliers 1070",
 ].join(", ");
 
 export const protectionOrderStandardWording =
@@ -123,8 +124,11 @@ export function buildLegalAidReview(matter: MatterFile): LegalAidReview {
   return {
     matterId: matter.id,
     clientName: matter.intake.applicant.fullName || matter.clientName,
+    title: matter.intake.applicant.title === "Custom"
+      ? (matter.intake.applicant.customTitle ?? "").trim()
+      : (matter.intake.applicant.title ?? ""),
     dob: formatInputDate(matter.intake.applicant.dateOfBirth),
-    homeAddress: isConfidentialAddress ? "Confidential Address" : matter.intake.applicant.homeAddress,
+    homeAddress: isConfidentialAddress ? confidentialLawyerPostalAddress : matter.intake.applicant.homeAddress,
     lawyerPostalAddress: isConfidentialAddress ? confidentialLawyerPostalAddress : "",
     mobilePhone: matter.intake.applicant.mobilePhone,
     email: matter.intake.applicant.emailAddress,
@@ -143,3 +147,4 @@ export function getLegalAidStatus(hasIncomeProof: boolean, hasSignedPage: boolea
   if (!hasSignedPage) return "pending_signed_page";
   return "ready_to_generate";
 }
+

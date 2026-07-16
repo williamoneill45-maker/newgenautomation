@@ -73,6 +73,7 @@ export type StructuredBillingInput = {
   legalAidNumber: string;
   matterName?: string;
   invoiceNumber: string;
+  invoiceType: "interim" | "final";
   selectedWorkItemIds: BillingWorkItemId[];
   detailsByItem: Partial<Record<BillingWorkItemId, BillingItemDetails>>;
   agentHearingType?: "judicial_conference" | "formal_proof" | "defended_hearing";
@@ -207,6 +208,7 @@ export function createStructuredBillingRecord(input: StructuredBillingInput): Bi
         additionalFactorSection: input.additionalFactorSection,
         travelTimeSelected: input.travelTimeSelected,
         mileageSelected: input.mileageSelected,
+        invoiceType: input.invoiceType,
       },
     },
     evidence: [],
@@ -237,7 +239,7 @@ export function getBillingPreviewRows(record: BillingRecord): BillingPreviewRow[
   if ((record.draft.travel?.travelTimeValue ?? 0) > 0) additionalRows.push({ label: "Travel time", quantity: record.draft.travel?.travelTimeValue ?? 0, unit: 63, total: (record.draft.travel?.travelTimeValue ?? 0) * 63 });
   if (record.draft.parking > 0) additionalRows.push({ label: "Parking", quantity: 1, unit: record.draft.parking, total: record.draft.parking });
   if (record.draft.officeDisbursements > 0) additionalRows.push({ label: "Other disbursements", quantity: 1, unit: record.draft.officeDisbursements, total: record.draft.officeDisbursements });
-  if ((record.draft.travel?.mileageValue ?? 0) > 0) additionalRows.push({ label: "Mileage (no GST)", quantity: record.draft.travel?.mileageValue ?? 0, unit: 1.17, total: (record.draft.travel?.mileageValue ?? 0) * 1.17 });
+  if ((record.draft.travel?.mileageValue ?? 0) > 0) additionalRows.push({ label: "Mileage (no GST)", quantity: record.draft.travel?.mileageValue ?? 0, unit: 1.20, total: (record.draft.travel?.mileageValue ?? 0) * 1.20 });
   return [...workRows, ...additionalRows];
 }
 
@@ -258,3 +260,4 @@ export function validateStructuredBillingRecord(record: BillingRecord): string[]
   if (selection.travelTimeSelected && !record.draft.travel?.court) errors.push("Select a supported court for Travel Time.");
   return errors;
 }
+

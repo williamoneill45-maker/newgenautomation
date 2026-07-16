@@ -98,6 +98,7 @@ export type BillingDraft = {
     additionalFactorSection?: "applications_orders" | "pre_hearing" | "defended_hearing";
     travelTimeSelected: boolean;
     mileageSelected: boolean;
+    invoiceType?: "interim" | "final";
   };
 };
 
@@ -161,10 +162,10 @@ export const travelReferences: TravelReference[] = [
   {
     code: "MANUKAU_COURT",
     court: "Manukau Court",
-    travelTimeBillingRow: "Travel – Time – necessary",
+    travelTimeBillingRow: "Travel â€“ Time â€“ necessary",
     travelTimeValue: 1,
     returnTravelTime: "1 hour",
-    mileageBillingRow: "Travel – Personal car – necessary – @ $1.17 per km",
+    mileageBillingRow: "Travel â€“ Personal car â€“ necessary â€“ @ $1.20 per km (as per policy). There is no GST on mileage.",
     mileageValue: 38,
     returnDistance: "38km",
     returnKm: 38,
@@ -174,10 +175,10 @@ export const travelReferences: TravelReference[] = [
   {
     code: "AUCKLAND_COURT",
     court: "Auckland Court",
-    travelTimeBillingRow: "Travel – Time – necessary",
+    travelTimeBillingRow: "Travel â€“ Time â€“ necessary",
     travelTimeValue: 1,
     returnTravelTime: "1 hour",
-    mileageBillingRow: "Travel – Personal car – necessary – @ $1.17 per km",
+    mileageBillingRow: "Travel â€“ Personal car â€“ necessary â€“ @ $1.20 per km (as per policy). There is no GST on mileage.",
     mileageValue: 20,
     returnDistance: "20km",
     returnKm: 20,
@@ -187,10 +188,10 @@ export const travelReferences: TravelReference[] = [
   {
     code: "NORTH_SHORE_COURT",
     court: "North Shore Court",
-    travelTimeBillingRow: "Travel – Time – necessary",
+    travelTimeBillingRow: "Travel â€“ Time â€“ necessary",
     travelTimeValue: 1.5,
     returnTravelTime: "1.5 hours",
-    mileageBillingRow: "Travel – Personal car – necessary – @ $1.17 per km",
+    mileageBillingRow: "Travel â€“ Personal car â€“ necessary â€“ @ $1.20 per km (as per policy). There is no GST on mileage.",
     mileageValue: 57.2,
     returnDistance: "57.2km",
     returnKm: 57.2,
@@ -200,10 +201,10 @@ export const travelReferences: TravelReference[] = [
   {
     code: "WAITAKERE_COURT",
     court: "Waitakere Court",
-    travelTimeBillingRow: "Travel – Time – necessary",
+    travelTimeBillingRow: "Travel â€“ Time â€“ necessary",
     travelTimeValue: 1.5,
     returnTravelTime: "1.5 hours",
-    mileageBillingRow: "Travel – Personal car – necessary – @ $1.17 per km",
+    mileageBillingRow: "Travel â€“ Personal car â€“ necessary â€“ @ $1.20 per km (as per policy). There is no GST on mileage.",
     mileageValue: 49,
     returnDistance: "49km",
     returnKm: 49,
@@ -603,3 +604,4 @@ export function toBillingRecordRow(record: BillingRecord): BillingRecordRow {
     updated_at: record.updatedAt,
   };
 }
+

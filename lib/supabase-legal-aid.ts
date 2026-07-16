@@ -4,7 +4,7 @@ import {
   type LegalAidRecord,
   type LegalAidReview,
   type LegalAidStatus,
-} from "./legal-aid";
+} from "./legal-aid.ts";
 
 const legalAidBucket = "legal-aid-uploads";
 
@@ -244,3 +244,4 @@ export async function downloadLegalAidFileFromSupabase(path: string): Promise<Ui
 
   return new Uint8Array(await response.arrayBuffer());
 }
+

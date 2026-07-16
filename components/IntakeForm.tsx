@@ -514,6 +514,8 @@ export default function IntakeForm() {
       <Card title="Applicant Details">
         <div className="grid gap-5 md:grid-cols-2">
           <Field label="Full Name" value={matter.intake.applicant.fullName} onChange={(value) => setPartyValue("applicant", "fullName", value)} required />
+          <SelectField label="Title" value={matter.intake.applicant.title ?? ""} onChange={(value) => setPartyValue("applicant", "title", value)} placeholder="Select title" options={["Mr", "Mrs", "Ms", "Miss", "Mx", "Custom"]} />
+          {matter.intake.applicant.title === "Custom" ? <Field label="Custom title" value={matter.intake.applicant.customTitle ?? ""} onChange={(value) => setPartyValue("applicant", "customTitle", value)} /> : null}
           <Field label="Date of Birth" type="date" value={matter.intake.applicant.dateOfBirth} onChange={(value) => setPartyValue("applicant", "dateOfBirth", value)} />
           <SelectField label="Gender" value={matter.intake.applicant.gender ?? ""} onChange={(value) => setPartyValue("applicant", "gender", value)} placeholder="Select" options={["F", "M"]} />
           <Field label="Occupation" value={matter.intake.applicant.occupation} onChange={(value) => setPartyValue("applicant", "occupation", value)} />
@@ -614,3 +616,4 @@ export default function IntakeForm() {
     </div>
   );
 }
+

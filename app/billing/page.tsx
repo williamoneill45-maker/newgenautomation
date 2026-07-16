@@ -77,7 +77,7 @@ function writeBillingClients(clients: BillingClientProfile[]) {
 function matterLabel(matter?: MatterFile, fallbackClient = ""): string {
   if (!matter) return fallbackClient ? `${fallbackClient} billing matter` : "Billing matter";
   const proceeding = matter.intake.proceedingsType ? matter.intake.proceedingsType.replace(/_/g, " ") : "matter";
-  return `${matter.clientName || fallbackClient || "Client"} – ${proceeding}`;
+  return `${matter.clientName || fallbackClient || "Client"} â€“ ${proceeding}`;
 }
 
 function uniqueSuggestions(matters: MatterFile[], clients: BillingClientProfile[], search: string): BillingSuggestion[] {
@@ -89,7 +89,7 @@ function uniqueSuggestions(matters: MatterFile[], clients: BillingClientProfile[
     byKey.set(`matter:${matter.id}`, {
       key: `matter:${matter.id}`,
       label: matter.clientName || "Unnamed matter",
-      detail: [matter.intake.famNumber, matter.legalAidNumber, matter.status.replace(/_/g, " ")].filter(Boolean).join(" · ") || "Matter profile",
+      detail: [matter.intake.famNumber, matter.legalAidNumber, matter.status.replace(/_/g, " ")].filter(Boolean).join(" Â· ") || "Matter profile",
       clientName: matter.clientName,
       legalAidNumber: matter.legalAidNumber,
       famNumber: matter.intake.famNumber,
@@ -113,7 +113,7 @@ function uniqueSuggestions(matters: MatterFile[], clients: BillingClientProfile[
     byKey.set(key, {
       key,
       label: client.clientName || "Unnamed client",
-      detail: [client.famNumber, client.legalAidNumber, "Billing profile"].filter(Boolean).join(" · "),
+      detail: [client.famNumber, client.legalAidNumber, "Billing profile"].filter(Boolean).join(" Â· "),
       clientName: client.clientName,
       legalAidNumber: client.legalAidNumber,
       famNumber: client.famNumber,
@@ -136,7 +136,7 @@ async function fileToDataUrl(file: File): Promise<string> {
 
 export default function BillingPage() {
   return (
-    <Suspense fallback={<main className="min-h-screen bg-slate-50 p-8 text-sm text-slate-600">Loading billing…</main>}>
+    <Suspense fallback={<main className="min-h-screen bg-slate-50 p-8 text-sm text-slate-600">Loading billingâ€¦</main>}>
       <BillingPageContent />
     </Suspense>
   );
@@ -151,6 +151,7 @@ function BillingPageContent() {
   const [selectedMatterId, setSelectedMatterId] = useState(isDemoEnvironment ? demoMatter.id : "");
   const [selectedClientId, setSelectedClientId] = useState("");
   const [createClaimRecord, setCreateClaimRecord] = useState(true);
+  const [invoiceType, setInvoiceType] = useState<"interim" | "final">("interim");
   const [selectedWorkItemIds, setSelectedWorkItemIds] = useState<BillingWorkItemId[]>(isDemoEnvironment ? ["32-pre-hearing-matters"] : []);
   const [detailsByItem, setDetailsByItem] = useState<Partial<Record<BillingWorkItemId, BillingItemDetails>>>({});
   const [agentHearingType, setAgentHearingType] = useState<StructuredBillingInput["agentHearingType"]>();
@@ -252,6 +253,7 @@ function BillingPageContent() {
     matterName,
     legalAidNumber,
     invoiceNumber: makeInvoiceNumber(formType, clientName),
+    invoiceType,
     selectedWorkItemIds,
     detailsByItem,
     agentHearingType,
@@ -272,7 +274,7 @@ function BillingPageContent() {
     } catch {
       return null;
     }
-  }, [formType, clientName, matterName, legalAidNumber, selectedWorkItemIds, detailsByItem, agentHearingType, additionalFactorSection, travelTimeSelected, mileageSelected, travelCourt, parking, officeDisbursements, optionalWordingNotes, wordingOverrides]);
+  }, [formType, clientName, matterName, legalAidNumber, invoiceType, selectedWorkItemIds, detailsByItem, agentHearingType, additionalFactorSection, travelTimeSelected, mileageSelected, travelCourt, parking, officeDisbursements, optionalWordingNotes, wordingOverrides]);
 
   useEffect(() => {
     setEditableWording(previewRecord?.draft.standardWording ?? "");
@@ -468,129 +470,7 @@ function BillingPageContent() {
       const link = document.createElement("a");
       link.href = url;
       link.download = fileName;
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      URL.revokeObjectURL(url);
-
-      const totals = calculateBillingTotals(record);
-      const evidenceFiles: BillingEvidenceFile[] = evidenceImages.map((item) => ({
-        label: item.label,
-        fileName: item.fileName,
-        storagePath: "",
-        uploadedAt: new Date().toISOString(),
-        contentType: item.contentType,
-        dataUrl: item.dataUrl,
-        insertedIntoBillingForm: true,
-      }));
-      const invoice: StoredBillingInvoice = {
-        id: record.id,
-        clientId: matter.id,
-        clientName: record.clientName,
-        legalAidNumber: record.legalAidNumber,
-        famNumber,
-        invoiceNumber: record.invoiceNumber,
-        invoiceTotal: totals.total,
-        formType: record.formType,
-        status: "generated",
-        missingEvidence: [],
-        evidenceFiles,
-        billingRecord: record,
-        oneDriveUrl: decodeURIComponent(response.headers.get("X-OneDrive-Url") ?? ""),
-        oneDrivePath: decodeURIComponent(response.headers.get("X-OneDrive-Path") ?? ""),
-        generatedFileName: fileName,
-        generatedAt: new Date().toISOString(),
-      };
-      await persistInvoice(invoice);
-
-      let claimNotice = "";
-      if (createClaimRecord) {
-        const claimResponse = await fetch("/api/legal-aid-claims", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            claimId: invoice.invoiceNumber,
-            clientName: invoice.clientName,
-            legalAidNumber: invoice.legalAidNumber,
-            matterName: matterLabel(matter, invoice.clientName),
-            formType,
-            amountClaimed: totals.total,
-            dateGenerated: today,
-            lifecycleStatus: "Generated",
-          }),
-        });
-        const claimPayload = await claimResponse.json().catch(() => null);
-        if (!claimResponse.ok || claimPayload?.status !== "loaded") {
-          throw new Error(claimPayload?.error ?? "The form was generated, but its register payment record could not be saved.");
-        }
-        claimNotice = " A payment record was added to the Billing Register.";
-      }
-
-      setGeneratedRecord(record);
-      setGeneratedInvoiceId(invoice.id);
-      setGenerationNotice(`Generated ${fileName}.${claimNotice} Open the Billing Register to inspect, regenerate, mark paid, or delete it.`);
-    } catch (error) {
-      setGenerationError(error instanceof Error ? error.message : "Unable to generate the billing form.");
-    } finally {
-      setIsGenerating(false);
-    }
-  }
-
-  async function saveGeneratedToOneDrive() {
-    if (!generatedRecord) return;
-    setIsSavingToOneDrive(true);
-    setGenerationError("");
-    try {
-      const response = await fetch("/api/generate-billing-document", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ record: generatedRecord, reviewed: true, uploadToOneDrive: true, evidenceImages }),
-      });
-      if (!response.ok) {
-        const payload = await response.json().catch(() => null) as { error?: string } | null;
-        throw new Error(payload?.error ?? "Unable to save the form to OneDrive.");
-      }
-      const storageStatus = response.headers.get("X-OneDrive-Status");
-      if (storageStatus !== "uploaded") throw new Error("OneDrive is configured, but the form was not uploaded.");
-      const oneDriveUrl = decodeURIComponent(response.headers.get("X-OneDrive-Url") ?? "");
-      const oneDrivePath = decodeURIComponent(response.headers.get("X-OneDrive-Path") ?? "");
-      const storedInvoices = readLocal<StoredBillingInvoice>(billingInvoicesStorageKey);
-      const nextInvoices = storedInvoices.map((invoice) => invoice.id === generatedRecord.id ? {
-        ...invoice,
-        status: "onedrive_uploaded" as const,
-        oneDriveUrl,
-        oneDrivePath,
-      } : invoice);
-      window.localStorage.setItem(billingInvoicesStorageKey, JSON.stringify(nextInvoices));
-      const updated = nextInvoices.find((invoice) => invoice.id === generatedRecord.id);
-      if (updated) await persistInvoice(updated);
-      setGenerationNotice(`Saved the generated Form${generatedRecord.formType} to OneDrive${oneDrivePath ? ` at ${oneDrivePath}` : ""}.`);
-    } catch (error) {
-      setGenerationError(error instanceof Error ? error.message : "Unable to save the form to OneDrive.");
-    } finally {
-      setIsSavingToOneDrive(false);
-    }
-  }
-
-  return (
-    <main className="min-h-screen bg-slate-50">
-      <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
-        <div className="mb-6 flex items-center justify-between gap-4">
-          <Link href="/" className="text-sm font-medium text-sky-700 hover:text-sky-900">Back to dashboard</Link>
-          <Link href="/billing/register" className="text-sm font-semibold text-sky-700 hover:text-sky-900">Billing Register</Link>
-        </div>
-
-        <header className="mb-6 border-b border-slate-200 pb-5">
-          <p className="text-sm font-semibold uppercase tracking-wide text-sky-700">Legal aid billing</p>
-          <h1 className="mt-2 text-3xl font-semibold text-slate-950">Structured Billing</h1>
-          <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-600">Select the work completed. Fees, GST, totals, wording, and Word placeholders are calculated automatically.</p>
-        </header>
-
-        <section className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_460px]">
-          <div className="space-y-6">
-            <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-form">
-              <h2 className="text-lg font-semibold text-slate-950">1. Client and form</h2>
-              <div className="mt-4 grid gap-4 sm:grid-cols-3">
+      document.body.appendChild(l…1435 tokens truncated…4 grid gap-4 sm:grid-cols-3">
                 <div className="sm:col-span-1">
                   <TextField label="Client name" value={clientName} onChange={changeClientName} />
                   {clientName.trim() && suggestions.length ? (
@@ -620,11 +500,22 @@ function BillingPageContent() {
                   ))}
                 </div>
               </fieldset>
+              <fieldset className="mt-5">
+                <legend className="text-sm font-medium text-slate-700">Invoice type</legend>
+                <div className="mt-2 grid grid-cols-2 gap-3">
+                  {(["interim", "final"] as const).map((value) => (
+                    <label key={value} className={invoiceType === value ? "flex h-11 cursor-pointer items-center justify-center rounded-md border border-sky-500 bg-sky-50 font-semibold text-sky-800" : "flex h-11 cursor-pointer items-center justify-center rounded-md border border-slate-300 bg-white font-semibold text-slate-700"}>
+                      <input className="sr-only" type="radio" name="invoice-type" checked={invoiceType === value} onChange={() => setInvoiceType(value)} />
+                      {value === "interim" ? "Interim invoice" : "Final invoice"}
+                    </label>
+                  ))}
+                </div>
+              </fieldset>
             </section>
 
             <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-form">
               <h2 className="text-lg font-semibold text-slate-950">2. Work completed</h2>
-              <p className="mt-2 text-sm text-slate-600">Selections—not keyword detection—control the billing rows.</p>
+              <p className="mt-2 text-sm text-slate-600">Selectionsâ€”not keyword detectionâ€”control the billing rows.</p>
               <div className="mt-5 space-y-6">
                 {Object.entries(groupedItems).map(([group, items]) => (
                   <fieldset key={group}>
@@ -679,14 +570,14 @@ function BillingPageContent() {
               <h2 className="text-lg font-semibold text-slate-950">4. Travel, disbursements and evidence</h2>
               <div className="mt-4 grid gap-3 sm:grid-cols-2">
                 <CheckField label="Travel time" checked={travelTimeSelected} onChange={setTravelTimeSelected} detail="$63 per hour; GST applies" />
-                <CheckField label="Mileage" checked={mileageSelected} onChange={setMileageSelected} detail="$1.17 per km; no GST" />
+                <CheckField label="Mileage" checked={mileageSelected} onChange={setMileageSelected} detail="$1.20 per km; no GST" />
               </div>
               {travelTimeSelected ? <div className="mt-4 max-w-md"><SelectField label="Court" value={travelCourt} options={travelReferences.map((court) => court.court)} onChange={setTravelCourt} />{selectedTravelReference ? <p className="mt-2 text-sm text-slate-600">Travel to {selectedTravelReference.court}, return. Return travel: {selectedTravelReference.returnTravelTime}; return distance: {selectedTravelReference.returnDistance}.</p> : null}</div> : null}
               <div className="mt-4 grid gap-4 sm:grid-cols-2">
                 <NumberField label="Parking amount" value={parking} onChange={setParking} />
                 <NumberField label="Other disbursement amount" value={officeDisbursements} onChange={setOfficeDisbursements} />
               </div>
-              <label className="mt-4 block text-sm font-medium text-slate-700">Optional wording notes<textarea className="mt-2 min-h-24 w-full rounded-md border border-slate-300 px-3 py-2 text-sm" value={optionalWordingNotes} onChange={(event) => setOptionalWordingNotes(event.target.value)} placeholder="Optional only—work-item selection remains the source of truth." /></label>
+              <label className="mt-4 block text-sm font-medium text-slate-700">Optional wording notes<textarea className="mt-2 min-h-24 w-full rounded-md border border-slate-300 px-3 py-2 text-sm" value={optionalWordingNotes} onChange={(event) => setOptionalWordingNotes(event.target.value)} placeholder="Optional onlyâ€”work-item selection remains the source of truth." /></label>
 
               <div className="mt-5 rounded-md border border-slate-200 bg-slate-50 p-4">
                 <label className="block text-sm font-semibold text-slate-900">Court direction / supporting screenshot</label>
@@ -714,7 +605,7 @@ function BillingPageContent() {
               <span><span className="block font-semibold text-slate-900">Track payment in Billing Register</span><span className="mt-1 block text-xs leading-5 text-slate-500">Creates the payment fields for this generated form so it can be marked sent, part paid, paid, or overdue later.</span></span>
             </label>
             <button type="button" disabled={isGenerating || !previewRecord} onClick={generateDocument} className="inline-flex h-12 w-full items-center justify-center rounded-md bg-sky-600 px-4 text-sm font-semibold text-white shadow-sm hover:bg-sky-700 disabled:cursor-not-allowed disabled:bg-slate-300">{isGenerating ? "Generating..." : `Generate Form${formType}`}</button>
-            {generatedRecord && oneDriveConfigured ? <button type="button" disabled={isSavingToOneDrive} onClick={() => void saveGeneratedToOneDrive()} className="inline-flex h-11 w-full items-center justify-center rounded-md border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50">{isSavingToOneDrive ? "Saving…" : "Save generated form to OneDrive"}</button> : null}
+            {generatedRecord && oneDriveConfigured ? <button type="button" disabled={isSavingToOneDrive} onClick={() => void saveGeneratedToOneDrive()} className="inline-flex h-11 w-full items-center justify-center rounded-md border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50">{isSavingToOneDrive ? "Savingâ€¦" : "Save generated form to OneDrive"}</button> : null}
             {generatedInvoiceId ? <Link href={`/billing/register?record=${encodeURIComponent(generatedInvoiceId)}`} className="inline-flex h-11 w-full items-center justify-center rounded-md border border-sky-200 bg-sky-50 px-4 text-sm font-semibold text-sky-800 hover:bg-sky-100">Open in Billing Register</Link> : null}
             {generationError ? <p className="rounded-md bg-red-50 p-3 text-sm font-medium text-red-700">{generationError}</p> : null}
             {generationNotice ? <p className="rounded-md bg-emerald-50 p-3 text-sm font-medium text-emerald-800">{generationNotice}</p> : null}
@@ -744,3 +635,4 @@ function SelectField({ label, value, options, optionLabels = {}, onChange }: { l
 function NumberField({ label, value, onChange }: { label: string; value: number; onChange: (value: number) => void }) { return <label className="block text-sm font-medium text-slate-700">{label}<div className="relative mt-2"><span className="absolute left-3 top-2.5 text-sm text-slate-500">$</span><input type="number" min="0" step="0.01" className="h-10 w-full rounded-md border border-slate-300 pl-7 pr-3 text-sm" value={value || ""} onChange={(event) => onChange(Number(event.target.value) || 0)} /></div></label>; }
 function CheckField({ label, checked, onChange, detail }: { label: string; checked: boolean; onChange: (value: boolean) => void; detail: string }) { return <label className={checked ? "flex cursor-pointer gap-3 rounded-md border border-sky-300 bg-sky-50 p-3" : "flex cursor-pointer gap-3 rounded-md border border-slate-200 p-3"}><input type="checkbox" className="mt-0.5 h-4 w-4 rounded border-slate-300 text-sky-600" checked={checked} onChange={(event) => onChange(event.target.checked)} /><span><span className="block text-sm font-medium text-slate-900">{label}</span><span className="text-xs text-slate-500">{detail}</span></span></label>; }
 function Total({ label, value, strong = false }: { label: string; value: number; strong?: boolean }) { return <div className={strong ? "flex justify-between border-t border-slate-200 pt-3 text-base font-semibold text-slate-950" : "flex justify-between text-slate-700"}><dt>{label}</dt><dd>${value.toFixed(2)}</dd></div>; }
+

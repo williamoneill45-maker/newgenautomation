@@ -85,6 +85,7 @@ export const approvedBillingPlaceholderKeys = [
   "1p/30 m",
   "1p/30m*jca",
   "x*$1.17",
+  "x*$1.20",
   "x*$63.00",
   "x*$67.00",
   "x*$140.00",
@@ -746,6 +747,7 @@ export function buildBillingMergeFields(record: BillingRecord): MergeFields {
     travel_time: formatNumber(draft.travel?.travelTimeValue),
     tt_total: formatMoney(record.formType === "32B" ? form32BAmounts.travelTimeAmount : form33AAmounts.travelTimeAmount),
     "x*$1.17": formatMoney(record.formType === "32B" ? form32BAmounts.totalMileage : form33AAmounts.totalMileage),
+    "x*$1.20": formatMoney(record.formType === "32B" ? form32BAmounts.totalMileage : form33AAmounts.totalMileage),
     "x*$63.00": formatMoney(record.formType === "32B" ? form32BAmounts.travelTimeAmount : form33AAmounts.travelTimeAmount),
     "x*$67.00": [
       "",
@@ -772,3 +774,4 @@ export function buildBillingMergeFields(record: BillingRecord): MergeFields {
 
   return withSnakeCaseAliases(fields);
 }
+

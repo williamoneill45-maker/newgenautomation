@@ -56,6 +56,11 @@ export type DocxMergeOptions = {
   affidavitFormatting?: { applicantName: string; childNames: string[] };
   parentingApplicantName?: string;
   normalizeBillingJudgeDirectionsRow?: boolean;
+  billingFormValues?: {
+    dateCompleted: string;
+    invoiceType: "interim" | "final";
+    mileageRate: string;
+  };
   continuationSections?: Array<{ heading: string; lines: string[]; pageBreak?: boolean }>;
   imageAppendices?: Array<{
     fileName: string;
@@ -202,7 +207,7 @@ function repeatChildParagraphs(
       {
         child_3_name: `child_${childNumber}_name`,
         child_3_dob: `child_${childNumber}_dob`,
-        "(“child_3_nickname”)": `(“child_${childNumber}_nickname”)`,
+        "(â€œchild_3_nicknameâ€)": `(â€œchild_${childNumber}_nicknameâ€)`,
       },
     )).join("");
 
@@ -441,7 +446,7 @@ function fitImageEmu(image: DocxImageAppendix) {
 function imageParagraph(image: DocxImageAppendix, relId: string, index: number): string {
   const { cx, cy } = fitImageEmu(image);
   const name = escapeXml(image.fileName);
-  return `<w:p><w:pPr><w:spacing w:after="160"/><w:keepNext/></w:pPr><w:r><w:rPr><w:b/><w:sz w:val="20"/><w:szCs w:val="20"/></w:rPr><w:t xml:space="preserve">${escapeXml(image.label || "Court direction")}</w:t></w:r></w:p><w:p><w:pPr><w:spacing w:after="280"/><w:jc w:val="center"/></w:pPr><w:r><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0"><wp:extent cx="${cx}" cy="${cy}"/><wp:effectExtent l="0" t="0" r="0" b="0"/><wp:docPr id="${1000 + index}" name="${name}"/><wp:cNvGraphicFramePr><a:graphicFrameLocks xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" noChangeAspect="1"/></wp:cNvGraphicFramePr><a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:nvPicPr><pic:cNvPr id="${2000 + index}" name="${name}"/><pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip r:embed="${relId}" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill><pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${cx}" cy="${cy}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p>`;
+  return `<w:p><w:pPr><w:spacing w:after="160"/><w:keepNext/></w:pPr><w:r><w:rPr><w:b/><w:sz w:val="20"/><w:szCs w:val="20"/></w:rPr><w:t xml:space="preserve">${escapeXml(image.label || "Court direction")}</w:t></w:r></w:p><w:p><w:pPr><w:spacing w:after="280"/><w:jc w:val="center"/></w:pPr><w:r><w:drawing><wp:inline xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" distT="0" distB="0" distL="0" distR="0"><wp:extent cx="${cx}" cy="${cy}"/><wp:effectExtent l="0" t="0" r="0" b="0"/><wp:docPr id="${1000 + index}" name="${name}"/><wp:cNvGraphicFramePr><a:graphicFrameLocks xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" noChangeAspect="1"/></wp:cNvGraphicFramePr><a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:nvPicPr><pic:cNvPr id="${2000 + index}" name="${name}"/><pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip r:embed="${relId}" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill><pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${cx}" cy="${cy}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p>`;
 }
 
 function appendImageAppendicesToDocumentXml(xml: string, images: NonNullable<DocxMergeOptions["imageAppendices"]>): string {
@@ -454,21 +459,46 @@ function appendImageAppendicesToDocumentXml(xml: string, images: NonNullable<Doc
   return `${xml.slice(0, finalSectionIndex)}${insertion}${xml.slice(finalSectionIndex)}`;
 }
 
+function setBookmarkText(xml: string, bookmarkName: string, value: string): string {
+  const pattern = new RegExp(
+    `(<w:bookmarkStart\\b(?=[^>]*w:name="${escapeRegExp(bookmarkName)}")(?=[^>]*w:id="([^"]+)")[^>]*/>)[\\s\\S]*?(<w:bookmarkEnd\\b[^>]*w:id="\\2"[^>]*/>)`,
+  );
+  const run = value
+    ? `<w:r><w:t xml:space="preserve">${escapeXml(value)}</w:t></w:r>`
+    : "";
+  return xml.replace(pattern, `$1${run}$3`);
+}
+
 function applyTemplateTransformations(xml: string, options: DocxMergeOptions, isMainDocument = false): string {
   let output = xml;
+  if (isMainDocument && options.billingFormValues) {
+    const values = options.billingFormValues;
+    output = setBookmarkText(output, "DateCompleted", values.dateCompleted);
+    output = setBookmarkText(output, "InterimInvoice", values.invoiceType === "interim" ? "X" : "");
+    output = setBookmarkText(output, "FinalInvoice", values.invoiceType === "final" ? "X" : "");
+    output = setBookmarkText(output, "TravelRate2", values.mileageRate);
+    output = output.replace(/1\.17 per km/g, `${values.mileageRate} per km`);
+    // Some 33A templates keep the old rate immediately after the TravelRate2
+    // bookmark as well as inside it. Once the bookmark is populated this would
+    // render as "$1.201.20". Keep the bookmark value and remove the duplicate.
+    output = output.replace(
+      /(<w:bookmarkEnd\b[^>]*\/>)(<w:r\b[^>]*>)<w:t\b[^>]*>(?:1\.20)? per km/g,
+      '$1$2<w:t xml:space="preserve"> per km',
+    );
+  }
   if (isMainDocument && options.removeFirstExplicitPageBreak) {
     output = output.replace(/<w:br w:type="page"\s*\/>/, "");
   }
   if (isMainDocument && options.normalizeBillingJudgeDirectionsRow) {
     output = output.replace(/<w:tr\b[\s\S]*?<\/w:tr>/g, (row) => {
       const text = readTextNodes(row).map((node) => node.text).join("");
-      if (!/Complying with\s+Judge[’']s directions/i.test(text)) return row;
+      if (!/Complying with\s+Judge[â€™']s directions/i.test(text)) return row;
       let normalized = row.replace(
         /<w:trPr\b[^>]*>/,
         (tag) => `${tag}<w:cantSplit/>`,
       );
       normalized = normalized.replace(
-        /(<w:p\b[^>]*>[\s\S]*?<w:pPr\b[^>]*>)[\s\S]*?(<\/w:pPr>[\s\S]*?Complying with\s+Judge[’']s directions)/i,
+        /(<w:p\b[^>]*>[\s\S]*?<w:pPr\b[^>]*>)[\s\S]*?(<\/w:pPr>[\s\S]*?Complying with\s+Judge[â€™']s directions)/i,
         `$1<w:pStyle w:val="Details"/>$2`,
       );
       let cellIndex = 0;
@@ -1015,3 +1045,4 @@ export async function mergeDocxTemplate(
     },
   };
 }
+

@@ -1,6 +1,6 @@
 export const form33AFeeRules = {
   gstRate: 0.15,
-  mileageRatePerKm: 1.17,
+  mileageRatePerKm: 1.20,
   fixedFees: {
     formalProofPreparation: 140,
     formalProofHearingPerHalfHour: 67,
@@ -245,3 +245,4 @@ export const form33AManagementRules: Form33AManagementRule[] = [
     howToFix: "Keep testing court examples. If the mileage total placeholder changes again, update this placeholder list and the merge field.",
   },
 ];
+

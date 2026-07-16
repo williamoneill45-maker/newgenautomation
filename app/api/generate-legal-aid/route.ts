@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 
-import { NextResponse } from "next/server";
+import { NextResponse } from "next/server.js";
 import {
   drawObject,
   PDFHexString,
@@ -22,12 +22,12 @@ import {
 import {
   legalAidTemplatePath,
   type LegalAidReview,
-} from "../../../lib/legal-aid";
+} from "../../../lib/legal-aid.ts";
 import {
   downloadLegalAidFileFromSupabase,
   getLegalAidApplicationFromSupabase,
   saveLegalAidApplicationToSupabase,
-} from "../../../lib/supabase-legal-aid";
+} from "../../../lib/supabase-legal-aid.ts";
 
 export const runtime = "nodejs";
 
@@ -56,6 +56,7 @@ function cleanReviewValue(value: string | undefined): string {
 function sanitizeLegalAidReview(review: LegalAidReview): LegalAidReview {
   return {
     ...review,
+    title: cleanReviewValue(review.title),
     clientName: cleanReviewValue(review.clientName),
     dob: cleanReviewValue(review.dob),
     homeAddress: cleanReviewValue(review.homeAddress),
@@ -70,6 +71,23 @@ function sanitizeLegalAidReview(review: LegalAidReview): LegalAidReview {
     abuseSummary: cleanReviewValue(review.abuseSummary),
     dateToday: cleanReviewValue(review.dateToday),
   };
+}
+
+function drawLegalAidTitle(pdfDoc: PDFDocument, review: LegalAidReview, font: PDFFont) {
+  const page = pdfDoc.getPage(0);
+  const checkboxX: Record<string, number> = { Miss: 244, Ms: 304, Mrs: 364, Mr: 424 };
+  const title = review.title ?? "";
+  // The Ministry PDF visually defaults to Miss. Cover that mark before placing
+  // the applicant's explicit intake title so the exported PDF shows one title.
+  page.drawRectangle({ x: 241, y: 608, width: 18, height: 18, color: rgb(0.93, 0.96, 0.9) });
+  const x = checkboxX[title];
+  if (typeof x === "number") {
+    page.drawText("X", { x, y: 612, size: 10, font, color: rgb(0, 0, 0) });
+    return;
+  }
+  if (title) {
+    page.drawText(title, { x: 198, y: 612, size: 10, font, color: rgb(0, 0, 0) });
+  }
 }
 
 function safeFileName(value: string): string {
@@ -210,6 +228,12 @@ function fillTextFields(pdfDoc: PDFDocument, review: LegalAidReview) {
   const safeReview = sanitizeLegalAidReview(review);
   const combinedNarrative = buildNarrative(safeReview);
 
+  try {
+    form.getCheckBox("title 1").uncheck();
+  } catch {
+    // Older copies of the template may not expose the default title widget.
+  }
+
   for (const [fieldName] of Object.entries(textFieldMap)) {
     let field;
     try {
@@ -235,6 +259,14 @@ function flattenLegalAidForm(pdfDoc: PDFDocument) {
 
   for (const field of form.getFields()) {
     const widgets = field.acroField.getWidgets();
+
+    if (field.getName() === "title 1") {
+      for (const widget of widgets) {
+        const widgetRef = pdfDoc.context.getObjectRef(widget.dict);
+        if (widgetRef) pdfDoc.getPage(0).node.removeAnnot(widgetRef);
+      }
+      continue;
+    }
 
     for (const widget of widgets) {
       try {
@@ -402,6 +434,7 @@ export async function POST(request: Request) {
       fillTextFields(pdfDoc, application.review);
       await fillVisibleLegalAidWidgets(pdfDoc, sanitizeLegalAidReview(application.review));
       flattenLegalAidForm(pdfDoc);
+      drawLegalAidTitle(pdfDoc, sanitizeLegalAidReview(application.review), await pdfDoc.embedFont(StandardFonts.Helvetica));
 
       const incomeProofBytes = await downloadLegalAidFileFromSupabase(application.incomeProofPath);
       const signedPageBytes = await downloadLegalAidFileFromSupabase(application.signedPagePath);
@@ -456,6 +489,7 @@ export async function POST(request: Request) {
     fillTextFields(pdfDoc, review);
     await fillVisibleLegalAidWidgets(pdfDoc, sanitizeLegalAidReview(review));
     flattenLegalAidForm(pdfDoc);
+    drawLegalAidTitle(pdfDoc, sanitizeLegalAidReview(review), await pdfDoc.embedFont(StandardFonts.Helvetica));
 
     const incomeProofBytes = await fileToBytes(incomeProof);
     const signedPageBytes = await fileToBytes(signedPage);
@@ -492,3 +526,4 @@ export async function POST(request: Request) {
     );
   }
 }
+

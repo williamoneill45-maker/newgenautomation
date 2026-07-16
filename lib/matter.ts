@@ -43,9 +43,9 @@ export function normalizeProceedingsType(value: string): ProceedingsType {
 
 export const ethnicities = [
   "New Zealand European",
-  "Māori",
+  "MÄori",
   "Samoan",
-  "Cook Island Māori",
+  "Cook Island MÄori",
   "Tongan",
   "Niuean",
   "Chinese",
@@ -63,6 +63,8 @@ export type Party = {
   id: string;
   matterId: string;
   role: PartyRole;
+  title?: "" | "Mr" | "Mrs" | "Ms" | "Miss" | "Mx" | "Custom";
+  customTitle?: string;
   fullName: string;
   dateOfBirth: string;
   gender: "" | "F" | "M";
@@ -230,7 +232,7 @@ export const placeholderKeys = [
   "child_1_ethnicity_other",
   "child_1_name",
   "child_1_nickname",
-  "(“child_1_nickname”)",
+  "(â€œchild_1_nicknameâ€)",
   "date_today",
   "date_today ",
   "Date_today",
@@ -279,7 +281,7 @@ export const placeholderKeys = [
   "child_2_living_with",
   "child_2_name",
   "child_2_nickname",
-  "(“child_2_nickname”)",
+  "(â€œchild_2_nicknameâ€)",
   "child_2_relationship_to_applicant",
   "child_2_relationship_to_respondent",
   "child_3_age",
@@ -302,7 +304,7 @@ export const placeholderKeys = [
   "child_3_living_with",
   "child_3_name",
   "child_3_nickname",
-  "(“child_3_nickname”)",
+  "(â€œchild_3_nicknameâ€)",
   "child_3_relationship_to_applicant",
   "child_3_relationship_to_respondent",
   "child_4_age",
@@ -318,7 +320,7 @@ export const placeholderKeys = [
   "child_4_living_with",
   "child_4_name",
   "child_4_nickname",
-  "(“child_4_nickname”)",
+  "(â€œchild_4_nicknameâ€)",
   "child_4_relationship_to_applicant",
   "child_4_relationship_to_respondent",
   "court_location",
@@ -355,6 +357,8 @@ export function createEmptyParty(role: PartyRole, matterId: string): Party {
     id: `${role}-primary`,
     matterId,
     role,
+    title: "",
+    customTitle: "",
     fullName: "",
     dateOfBirth: "",
     gender: "",
@@ -427,3 +431,4 @@ export function createEmptyMatter(): MatterFile {
     },
   };
 }
+
