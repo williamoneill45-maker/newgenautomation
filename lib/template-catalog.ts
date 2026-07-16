@@ -10,9 +10,15 @@ export type SourceTemplateDefinition = {
 export const standardDocxTemplates: SourceTemplateDefinition[] = [
   {
     id: "information_sheet",
-    title: "Information Sheet",
+    title: "Information Sheet (COCA)",
     sourceFileName: "Information Sheet Final 1.docx",
-    outputFileName: "01 Information Sheet.docx",
+    outputFileName: "Information Sheet (COCA).docx",
+  },
+  {
+    id: "information_sheet",
+    title: "Information Sheet (FV)",
+    sourceFileName: "Information Sheet Final 1.docx",
+    outputFileName: "Information Sheet (FV).docx",
   },
   {
     id: "confidential_address_application",
@@ -52,8 +58,9 @@ export const standardDocxTemplates: SourceTemplateDefinition[] = [
   },
   {
     id: "domestic_violence_affidavit",
-    title: "Family Violence Affidavit",
+    title: "Domestic Violence Affidavit",
     sourceFileName: "Domestic Violence Affidavit.docx",
-    outputFileName: "08 Family Violence Affidavit.docx",
+    outputFileName: "08 Domestic Violence Affidavit.docx",
   },
 ];
+

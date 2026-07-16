@@ -2,22 +2,22 @@ import { access, readFile } from "node:fs/promises";
 import path from "node:path";
 
 import JSZip from "jszip";
-import { NextResponse } from "next/server";
+import { NextResponse } from "next/server.js";
 
 import {
   buildTemplateMergeFields,
   getInformationSheetEthnicityCheckboxes,
-} from "../../../lib/document-automation";
-import { buildAdditionalChildLines } from "../../../lib/child-continuation";
-import { mergeDocxTemplate, type DocxMergeReport } from "../../../lib/docx-template";
-import type { MatterFile } from "../../../lib/matter";
-import { getOneDriveClientFolderPaths, uploadFileToOneDrive, type OneDriveUploadResult } from "../../../lib/onedrive";
+} from "../../../lib/document-automation.ts";
+import { buildAdditionalChildLines } from "../../../lib/child-continuation.ts";
+import { mergeDocxTemplate, type DocxMergeReport } from "../../../lib/docx-template.ts";
+import type { MatterFile } from "../../../lib/matter.ts";
+import { getOneDriveClientFolderPaths, uploadFileToOneDrive, type OneDriveUploadResult } from "../../../lib/onedrive.ts";
 import {
   buildStandardAffidavitContent,
   isParentingOrderSought,
   isProtectionOrderSought,
-} from "../../../lib/standard-affidavit";
-import { standardDocxTemplates } from "../../../lib/template-catalog";
+} from "../../../lib/standard-affidavit.ts";
+import { standardDocxTemplates } from "../../../lib/template-catalog.ts";
 
 export const runtime = "nodejs";
 
@@ -74,6 +74,14 @@ function safeFileName(value: string): string {
   return value.replace(/[^A-Za-z0-9 ._-]/g, "").trim().replace(/\s+/g, "_") || "Client";
 }
 
+function datedOutputFileName(fileName: string, date = new Date()): string {
+  if (!fileName.startsWith("Information Sheet (")) return fileName;
+  const stamp = new Intl.DateTimeFormat("en-NZ", {
+    day: "2-digit", month: "2-digit", year: "2-digit",
+  }).format(date).replace(/\//g, ".");
+  return fileName.replace(/\.docx$/i, ` ${stamp}.docx`);
+}
+
 export async function POST(request: Request) {
   const body = (await request.json()) as {
     matter?: MatterFile;
@@ -112,6 +120,7 @@ export async function POST(request: Request) {
   const affidavitContent = buildStandardAffidavitContent(body.matter);
 
   for (const templateDefinition of standardDocxTemplates) {
+    const outputFileName = datedOutputFileName(templateDefinition.outputFileName);
     const conditionalSkip =
       (templateDefinition.id === "confidential_address_application" && !body.matter.intake.applicant.isAddressConfidential)
       || (templateDefinition.id === "parenting_order_application" && !hasParentingOrder)
@@ -153,7 +162,7 @@ export async function POST(request: Request) {
         : {}),
       ...(templateDefinition.id === "domestic_violence_affidavit"
         ? {
-            Applicant_Name: "Applicant",
+            Applicant_Name: typeof fields.APPLICANT_NAME === "string" ? fields.APPLICANT_NAME : "",
             English_court_name: typeof fields.English_court_name === "string" ? fields.English_court_name.toUpperCase() : "",
             Maori_court_name: typeof fields.Maori_court_name === "string" ? fields.Maori_court_name.toUpperCase() : "",
             affidavit_application_title: affidavitContent.applicationTitle,
@@ -202,11 +211,32 @@ export async function POST(request: Request) {
     }
 
     const { buffer, report } = await mergeDocxTemplate(sourceTemplate, templateFields, {
+      ...(templateDefinition.id === "confidential_address_application"
+        ? { removeFirstExplicitPageBreak: true }
+        : {}),
       ...(templateDefinition.id === "parenting_order_application"
         ? {
+            literalTextReplacements: {
+              "I {{APPLICANT_FIRST_NAME}},": "I {{APPLICANT_NAME}},",
+            },
+          }
+        : {}),
+      ...(templateDefinition.id === "protection_order_application"
+        ? {
+            literalTextReplacements: {
+              "{{RESPONDENT_NAME}} - currently working with Shine.": "{{APPLICANT_NAME}} - currently working with Shine.",
+            },
+          }
+        : {}),
+      ...(templateDefinition.id === "parenting_order_application"
+        ? {
+            parentingApplicantName: body.matter.intake.applicant.fullName.toLocaleUpperCase("en-NZ"),
             childCount: Math.min(body.matter.intake.children.length, 3),
             repeatChildParagraphsThrough: body.matter.intake.children.length,
           }
+        : {}),
+      ...(templateDefinition.id === "information_sheet"
+        ? { childCount: Math.min(body.matter.intake.children.length, 3) }
         : {}),
       ...(templateDefinition.id === "information_sheet" && body.matter.intake.children.length > 3
         ? {
@@ -226,6 +256,10 @@ export async function POST(request: Request) {
         : {}),
       ...(templateDefinition.id === "domestic_violence_affidavit"
         ? {
+            affidavitFormatting: {
+              applicantName: body.matter.intake.applicant.fullName.toLocaleUpperCase("en-NZ"),
+              childNames: body.matter.intake.children.map((child) => child.fullName.toLocaleUpperCase("en-NZ")),
+            },
             paragraphInsertions: {
               children_blurb: affidavitContent.childrenParagraphs,
               protection_facts_heading: affidavitContent.protectionFactsHeading,
@@ -250,15 +284,15 @@ export async function POST(request: Request) {
       );
     }
 
-    bundle.file(templateDefinition.outputFileName, buffer);
+    bundle.file(outputFileName, buffer);
     generatedFiles.push({
-      fileName: templateDefinition.outputFileName,
+      fileName: outputFileName,
       buffer,
       contentType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     });
     validationReport.documents.push({
       template: templateDefinition.sourceFileName,
-      output: templateDefinition.outputFileName,
+      output: outputFileName,
       title: templateDefinition.title,
       report,
     });
@@ -347,3 +381,4 @@ export async function POST(request: Request) {
     },
   });
 }
+

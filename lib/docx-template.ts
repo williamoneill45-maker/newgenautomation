@@ -52,6 +52,10 @@ export type DocxMergeOptions = {
   informationSheetEthnicityCheckboxes?: [boolean[], boolean[]];
   paragraphInsertions?: Record<string, string[]>;
   literalTextReplacements?: Record<string, string>;
+  removeFirstExplicitPageBreak?: boolean;
+  affidavitFormatting?: { applicantName: string; childNames: string[] };
+  parentingApplicantName?: string;
+  normalizeBillingJudgeDirectionsRow?: boolean;
   continuationSections?: Array<{ heading: string; lines: string[]; pageBreak?: boolean }>;
   imageAppendices?: Array<{
     fileName: string;
@@ -198,7 +202,7 @@ function repeatChildParagraphs(
       {
         child_3_name: `child_${childNumber}_name`,
         child_3_dob: `child_${childNumber}_dob`,
-        "(“child_3_nickname”)": `(“child_${childNumber}_nickname”)`,
+        "(â€œchild_3_nicknameâ€)": `(â€œchild_${childNumber}_nicknameâ€)`,
       },
     )).join("");
 
@@ -273,8 +277,79 @@ function insertRepeatedParagraphs(
     if (!values) return paragraph;
 
     return values
-      .map((value) => replaceParagraphText(paragraph, value.trim()))
+      .map((value) => {
+        const populated = replaceParagraphText(paragraph, value.trim());
+        if (!/^\([ivx]+\)/i.test(value.trim())) return populated;
+        return populated
+          .replace(/<w:numPr\b[\s\S]*?<\/w:numPr>/g, "")
+          .replace(/<w:pStyle\b[^>]*\/>/g, "")
+          .replace(
+            /<w:pPr\b[^>]*>/,
+            (tag) => `${tag}<w:spacing w:before="120" w:after="120" w:line="360" w:lineRule="auto"/><w:ind w:left="720" w:firstLine="0"/>`,
+          );
+      })
       .join("");
+  });
+}
+
+function paragraphWithRuns(paragraph: string, runs: Array<{ text: string; bold?: boolean }>): string {
+  const pPr = paragraph.match(/<w:pPr\b[\s\S]*?<\/w:pPr>/)?.[0] ?? "";
+  const runXml = runs.map(({ text, bold }) =>
+    `<w:r><w:rPr>${bold ? "<w:b/><w:bCs/>" : ""}</w:rPr><w:t xml:space="preserve">${escapeXml(text)}</w:t></w:r>`,
+  ).join("");
+  return paragraph.replace(/(<w:p\b[^>]*>)[\s\S]*?<\/w:p>/, `$1${pPr}${runXml}</w:p>`);
+}
+
+function applyAffidavitFormatting(
+  xml: string,
+  formatting: NonNullable<DocxMergeOptions["affidavitFormatting"]>,
+): string {
+  return xml.replace(/<w:p\b[\s\S]*?<\/w:p>/g, (paragraph) => {
+    const text = readTextNodes(paragraph).map((node) => node.text).join("");
+    const trimmed = text.trim();
+    if (trimmed === "Applicant") {
+      return paragraphWithRuns(paragraph, [{ text: formatting.applicantName, bold: true }]);
+    }
+    if (trimmed.startsWith("AFFIRMED at ")) {
+      return paragraphWithRuns(paragraph, [
+        { text: "AFFIRMED", bold: true },
+        { text: text.slice(text.indexOf(" at ")) },
+      ]);
+    }
+    if (trimmed.startsWith(`I, ${formatting.applicantName} of `)) {
+      const start = text.indexOf(formatting.applicantName);
+      return paragraphWithRuns(paragraph, [
+        { text: text.slice(0, start) },
+        { text: formatting.applicantName, bold: true },
+        { text: text.slice(start + formatting.applicantName.length) },
+      ]);
+    }
+    const childName = formatting.childNames.find((name) => name && text.includes(name));
+    if (childName && text.includes("born")) {
+      const start = text.indexOf(childName);
+      return paragraphWithRuns(paragraph, [
+        { text: text.slice(0, start) },
+        { text: childName, bold: true },
+        { text: text.slice(start + childName.length) },
+      ]);
+    }
+    if (trimmed.startsWith("I am applying without notice for ")) {
+      return paragraph.replace(/<w:pPr\b[^>]*>/, (tag) => `${tag}<w:spacing w:after="240"/>`);
+    }
+    return paragraph;
+  });
+}
+
+function applyParentingFormatting(xml: string, applicantName: string): string {
+  return xml.replace(/<w:p\b[\s\S]*?<\/w:p>/g, (paragraph) => {
+    const text = readTextNodes(paragraph).map((node) => node.text).join("");
+    const nameStart = text.indexOf(applicantName);
+    if (nameStart === -1 || !text.trim().startsWith(`I ${applicantName},`)) return paragraph;
+    return paragraphWithRuns(paragraph, [
+      { text: text.slice(0, nameStart) },
+      { text: applicantName, bold: true },
+      { text: text.slice(nameStart + applicantName.length) },
+    ]);
   });
 }
 
@@ -360,6 +435,34 @@ function appendImageAppendicesToDocumentXml(xml: string, images: NonNullable<Doc
 
 function applyTemplateTransformations(xml: string, options: DocxMergeOptions, isMainDocument = false): string {
   let output = xml;
+  if (isMainDocument && options.removeFirstExplicitPageBreak) {
+    output = output.replace(/<w:br w:type="page"\s*\/>/, "");
+  }
+  if (isMainDocument && options.normalizeBillingJudgeDirectionsRow) {
+    output = output.replace(/<w:tr\b[\s\S]*?<\/w:tr>/g, (row) => {
+      const text = readTextNodes(row).map((node) => node.text).join("");
+      if (!/Complying with\s+Judge[â€™']s directions/i.test(text)) return row;
+      let normalized = row.replace(
+        /<w:trPr\b[^>]*>/,
+        (tag) => `${tag}<w:cantSplit/>`,
+      );
+      normalized = normalized.replace(
+        /(<w:p\b[^>]*>[\s\S]*?<w:pPr\b[^>]*>)[\s\S]*?(<\/w:pPr>[\s\S]*?Complying with\s+Judge[â€™']s directions)/i,
+        `$1<w:pStyle w:val="Details"/>$2`,
+      );
+      let cellIndex = 0;
+      normalized = normalized.replace(/<w:tc\b[\s\S]*?<\/w:tc>/g, (cell) => {
+        const paragraphStyle = cellIndex < 2 ? "Details" : "DetailsFlushRight";
+        cellIndex += 1;
+        return cell.replace(
+          /<w:p(\s[^>]*)?>(?:<w:pPr\b[\s\S]*?<\/w:pPr>)?/,
+          (_paragraph, attributes = "") =>
+            `<w:p${attributes}><w:pPr><w:pStyle w:val="${paragraphStyle}"/></w:pPr>`,
+        );
+      });
+      return normalized;
+    });
+  }
   if (typeof options.childCount === "number") {
     output = removeUnusedChildBlocks(output, options.childCount);
   }
@@ -859,7 +962,15 @@ export async function mergeDocxTemplate(
     Object.entries(xmlFiles).map(async ([path, xml]) => {
       const transformedXml = applyTemplateTransformations(xml, options, path === "word/document.xml");
       replacedPlaceholders += countReplaceablePlaceholdersInXml(transformedXml, fields);
-      zip.file(path, mergePlaceholdersInXml(transformedXml, fields));
+      const mergedXml = mergePlaceholdersInXml(transformedXml, fields);
+      let formattedXml = mergedXml;
+      if (path === "word/document.xml" && options.affidavitFormatting) {
+        formattedXml = applyAffidavitFormatting(formattedXml, options.affidavitFormatting);
+      }
+      if (path === "word/document.xml" && options.parentingApplicantName) {
+        formattedXml = applyParentingFormatting(formattedXml, options.parentingApplicantName);
+      }
+      zip.file(path, formattedXml);
     }),
   );
 
@@ -883,3 +994,4 @@ export async function mergeDocxTemplate(
     },
   };
 }
+

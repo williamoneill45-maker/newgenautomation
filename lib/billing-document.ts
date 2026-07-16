@@ -1,11 +1,11 @@
-import type { MergeFields, MergeFieldTextValue } from "./document-automation";
+import type { MergeFields, MergeFieldTextValue } from "./document-automation.ts";
 import {
   billingTemplatePaths,
   type BillingFormType,
   type BillingRecord,
-} from "./billing-automation";
-import { form32BFeeRules } from "./form32b-rules";
-import { form33AFeeRules } from "./form33a-rules";
+} from "./billing-automation.ts";
+import { form32BFeeRules } from "./form32b-rules.ts";
+import { form33AFeeRules } from "./form33a-rules.ts";
 
 export const approvedBillingPlaceholderKeys = [
   "BILLING_RECORD_ID",
@@ -668,11 +668,13 @@ export function buildBillingMergeFields(record: BillingRecord): MergeFields {
     DPO: formatMoney(form33AAmounts.defendedProtectionOrder),
     PHM: formatMoney(form32BAmounts.preHearingMatters),
     CJD: formatMoney(form32BAmounts.complyingJudgesDirections),
-    CJD_QTY: form32BAmounts.complyingJudgesDirections ? "1" : "",
-    CJD_UNIT: form32BAmounts.complyingJudgesDirections
+    // This template row has a narrow third placeholder that is not a usable
+    // amount box. Put $190 in the two normal boxes and leave that cell empty.
+    CJD_QTY: form32BAmounts.complyingJudgesDirections
       ? formatMoney(form32BFeeRules.fixedFees.complyingJudgesDirections)
       : "",
-    CJD_TOTAL: formatMoney(form32BAmounts.complyingJudgesDirections),
+    CJD_UNIT: formatMoney(form32BAmounts.complyingJudgesDirections),
+    CJD_TOTAL: "",
     AF_PHM: formatMoney(form32BAmounts.additionalFactorsPreHearingMatters),
     IA_QTY: form32BAmounts.instructingAgent ? "1" : "",
     IA_UNIT: form32BAmounts.instructingAgent
@@ -770,3 +772,4 @@ export function buildBillingMergeFields(record: BillingRecord): MergeFields {
 
   return withSnakeCaseAliases(fields);
 }
+

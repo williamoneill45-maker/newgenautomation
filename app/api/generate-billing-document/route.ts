@@ -1,18 +1,18 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 
-import { NextResponse } from "next/server";
+import { NextResponse } from "next/server.js";
 import JSZip from "jszip";
 
 import {
   billingTemplateDefinitions,
   buildBillingMergeFields,
   calculateBillingTotals,
-} from "../../../lib/billing-document";
-import { mergeDocxTemplate } from "../../../lib/docx-template";
-import type { BillingRecord } from "../../../lib/billing-automation";
-import { validateStructuredBillingRecord } from "../../../lib/billing-selection";
-import { uploadBillingDocumentToOneDrive } from "../../../lib/onedrive";
+} from "../../../lib/billing-document.ts";
+import { mergeDocxTemplate } from "../../../lib/docx-template.ts";
+import type { BillingRecord } from "../../../lib/billing-automation.ts";
+import { validateStructuredBillingRecord } from "../../../lib/billing-selection.ts";
+import { uploadBillingDocumentToOneDrive } from "../../../lib/onedrive.ts";
 
 export const runtime = "nodejs";
 
@@ -115,11 +115,12 @@ export async function POST(request: Request) {
       : "";
     const { buffer, report } = await mergeDocxTemplate(sourceTemplate, fields, {
       outputType: "document",
+      normalizeBillingJudgeDirectionsRow: true,
       imageAppendices: (body.evidenceImages ?? []).map(decodeDataUrl),
       ...(travelCourt
         ? {
             literalTextReplacements: {
-              "Travel – Time – necessary": `Travel – Time – necessary to ${travelCourt.toLocaleUpperCase("en-NZ")}`,
+              "Travel â€“ Time â€“ necessary": `Travel â€“ Time â€“ necessary to ${travelCourt.toLocaleUpperCase("en-NZ")}`,
             },
           }
         : {}),
@@ -183,3 +184,4 @@ export async function POST(request: Request) {
     );
   }
 }
+

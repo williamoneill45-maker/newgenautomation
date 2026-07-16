@@ -4,7 +4,7 @@ import {
   type BillingCategory,
   type BillingFormType,
   type BillingRecord,
-} from "./billing-automation";
+} from "./billing-automation.ts";
 
 export type BillingWorkItemId =
   | "32-pre-hearing-matters"
@@ -111,13 +111,12 @@ export function validateStructuredBillingInput(input: StructuredBillingInput): s
   definitions.filter((item) => item.requiresAttendance).forEach((item) => {
     const details = input.detailsByItem[item.id];
     if (!details?.date) errors.push(`${item.label}: select the billing date.`);
-    if (!details?.court) errors.push(`${item.label}: select the court.`);
     if (!details?.startTime || !details?.endTime) errors.push(`${item.label}: enter the start and end time.`);
     else if (!calculateAttendanceHours(details.startTime, details.endTime)) errors.push(`${item.label}: the end time must be after the start time.`);
   });
   if (input.selectedWorkItemIds.includes("33-instructing-agent") && !input.agentHearingType) errors.push("Select the hearing type attended by the agent.");
   if (input.selectedWorkItemIds.includes("33-additional-factors") && !input.additionalFactorSection) errors.push("Select the section for the additional factors.");
-  if ((input.travelTimeSelected || input.mileageSelected) && !input.travelCourt) errors.push("Select the court for travel and mileage.");
+  if (input.travelTimeSelected && !input.travelCourt) errors.push("Select the court for Travel Time.");
   if (input.parking < 0 || input.officeDisbursements < 0) errors.push("Disbursement amounts cannot be negative.");
   return errors;
 }
@@ -146,7 +145,7 @@ export function createStructuredBillingRecord(input: StructuredBillingInput): Bi
   const firstAttendance = workItems.find((item) => item.attendanceHours > 0) ?? workItems[0];
   const categories = Array.from(new Set(definitions.map((item) => item.category)));
   const travelReference = travelReferences.find((reference) => reference.court === input.travelCourt);
-  const travel = travelReference && (input.travelTimeSelected || input.mileageSelected)
+  const travel = travelReference && input.travelTimeSelected
     ? {
         ...travelReference,
         travelTimeBillingRow: input.travelTimeSelected ? travelReference.travelTimeBillingRow : "",
@@ -157,7 +156,7 @@ export function createStructuredBillingRecord(input: StructuredBillingInput): Bi
         mileageValue: input.mileageSelected ? travelReference.mileageValue : 0,
         returnKm: input.mileageSelected ? travelReference.returnKm : 0,
         returnDistance: input.mileageSelected ? travelReference.returnDistance : "",
-        progressResultsWording: `${input.travelTimeSelected ? "Travel time" : ""}${input.travelTimeSelected && input.mileageSelected ? " and " : ""}${input.mileageSelected ? "mileage" : ""} to ${travelReference.court.toLocaleUpperCase("en-NZ")} return`,
+        progressResultsWording: `Travel to ${travelReference.court.replace(/\s+Court$/i, "")} Court, return.`,
       }
     : undefined;
   const standardWording = [
@@ -189,7 +188,7 @@ export function createStructuredBillingRecord(input: StructuredBillingInput): Bi
       categoryLabel: definitions[0]?.label ?? "Billing item",
       categories,
       categoryLabels: definitions.map((item) => item.label),
-      court: firstAttendance?.court || input.travelCourt,
+      court: input.travelTimeSelected ? input.travelCourt : "",
       date: firstAttendance?.date || new Date().toISOString().slice(0, 10),
       startTime: firstAttendance?.startTime ?? "",
       endTime: firstAttendance?.endTime ?? "",
@@ -250,12 +249,13 @@ export function validateStructuredBillingRecord(record: BillingRecord): string[]
   selection.workItems.forEach((item) => {
     const definition = billingWorkItems.find((candidate) => candidate.id === item.id);
     if (!definition?.requiresAttendance) return;
-    if (!item.date || !item.court || !item.startTime || !item.endTime || item.attendanceHours <= 0) {
-      errors.push(`${item.label}: date, court, start time, and end time are required.`);
+    if (!item.date || !item.startTime || !item.endTime || item.attendanceHours <= 0) {
+      errors.push(`${item.label}: date, start time, and end time are required.`);
     }
   });
   if (selection.workItems.some((item) => item.id === "33-instructing-agent") && !selection.agentHearingType) errors.push("Select the agent hearing type.");
   if (selection.workItems.some((item) => item.id === "33-additional-factors") && !selection.additionalFactorSection) errors.push("Select the additional-factor section.");
-  if ((selection.travelTimeSelected || selection.mileageSelected) && !record.draft.travel?.court) errors.push("Select a supported court for travel.");
+  if (selection.travelTimeSelected && !record.draft.travel?.court) errors.push("Select a supported court for Travel Time.");
   return errors;
 }
+
