@@ -98,6 +98,42 @@ export const standardDocxTemplates: SourceTemplateDefinition[] = [
     sourceFileName: "Registrar List Submissions.docx",
     outputFileName: "14 Registrar List Submissions.docx",
   },
+  {
+    id: "court_legal_aid_confirmation_letter",
+    title: "Ltr to Court Confirming Legal Aid",
+    sourceFileName: "court-letters/Ltr to Court Confirming Legal Aid.doc",
+    outputFileName: "09 Ltr to Court Confirming Legal Aid.doc",
+  },
+  {
+    id: "court_filing_documents_letter",
+    title: "Ltr to Court Filing Docs",
+    sourceFileName: "court-letters/Ltr to Court Filing Docs.doc",
+    outputFileName: "10 Ltr to Court Filing Docs.doc",
+  },
+  {
+    id: "court_filing_dv_applications_letter",
+    title: "Ltr to Court Filing DV Applications",
+    sourceFileName: "court-letters/Ltr to Court Filing DV Applications.doc",
+    outputFileName: "11 Ltr to Court Filing DV Applications.doc",
+  },
+  {
+    id: "mfi_service_letter",
+    title: "Ltr to MFI",
+    sourceFileName: "court-letters/Ltr to MFI.doc",
+    outputFileName: "12 Ltr to MFI.doc",
+  },
+  {
+    id: "police_information_request_email",
+    title: "Police Email",
+    sourceFileName: "court-letters/Police Email.doc",
+    outputFileName: "13 Police Email.doc",
+  },
+  {
+    id: "registrar_list_submissions",
+    title: "Registrar List Submissions",
+    sourceFileName: "court-letters/Registrar List Submissions.doc",
+    outputFileName: "14 Registrar List Submissions.doc",
+  },
 ];
 
 export const confidentialAddressInformationSheet = {

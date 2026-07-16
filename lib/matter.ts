@@ -147,6 +147,12 @@ export const documentTypes = [
   "legal_aid_application",
   "family_court_lawyer_certificate",
   "msd_police_information_request",
+  "court_legal_aid_confirmation_letter",
+  "court_filing_documents_letter",
+  "court_filing_dv_applications_letter",
+  "mfi_service_letter",
+  "police_information_request_email",
+  "registrar_list_submissions",
 ] as const;
 
 export type DocumentType = (typeof documentTypes)[number];
