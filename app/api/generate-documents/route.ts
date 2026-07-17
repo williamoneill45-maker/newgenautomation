@@ -23,7 +23,6 @@ import {
 } from "../../../lib/standard-affidavit.ts";
 import { standardDocxTemplates } from "../../../lib/template-catalog.ts";
 import { confidentialAddressInformationSheet } from "../../../lib/template-catalog.ts";
-import { completeConfidentialAddressInformationSheet } from "../../../lib/confidential-address-information-sheet.ts";
 
 export const runtime = "nodejs";
 
@@ -308,36 +307,47 @@ export async function POST(request: Request) {
     });
   }
 
-  if (!(await templateExists(confidentialAddressInformationSheet.sourceFileName))) {
-    return NextResponse.json(
-      { error: "The Confidential Address Applicant Information Sheet source PDF is missing from /templates." },
-      { status: 500 },
+  if (body.matter.intake.applicant.isAddressConfidential) {
+    if (!(await templateExists(confidentialAddressInformationSheet.sourceFileName))) {
+      return NextResponse.json(
+        { error: "The Confidential Address Applicant Information Sheet source PDF is missing from /templates." },
+        { status: 500 },
+      );
+    }
+    const { completeConfidentialAddressInformationSheet } = await import(
+      "../../../lib/confidential-address-information-sheet.ts"
     );
-  }
-  const completedConfidentialAddressSheet = await completeConfidentialAddressInformationSheet(
-    await readSourceTemplate(confidentialAddressInformationSheet.sourceFileName),
-    body.matter,
-  );
-  bundle.file(confidentialAddressInformationSheet.outputFileName, completedConfidentialAddressSheet);
-  generatedFiles.push({
-    fileName: confidentialAddressInformationSheet.outputFileName,
-    buffer: completedConfidentialAddressSheet,
-    contentType: "application/pdf",
-  });
-  validationReport.documents.push({
-    template: confidentialAddressInformationSheet.sourceFileName,
-    output: confidentialAddressInformationSheet.outputFileName,
-    title: confidentialAddressInformationSheet.title,
-    report: {
-      placeholders: [], missingFields: [], unusedFields: [], replacedPlaceholders: 0,
-      structure: {
-        samePackageFileList: true,
-        unchangedNonTemplateFiles: true,
-        onlyPlaceholderTextChanged: true,
-        changedXmlFiles: [],
+    const completedConfidentialAddressSheet = await completeConfidentialAddressInformationSheet(
+      await readSourceTemplate(confidentialAddressInformationSheet.sourceFileName),
+      body.matter,
+    );
+    bundle.file(confidentialAddressInformationSheet.outputFileName, completedConfidentialAddressSheet);
+    generatedFiles.push({
+      fileName: confidentialAddressInformationSheet.outputFileName,
+      buffer: completedConfidentialAddressSheet,
+      contentType: "application/pdf",
+    });
+    validationReport.documents.push({
+      template: confidentialAddressInformationSheet.sourceFileName,
+      output: confidentialAddressInformationSheet.outputFileName,
+      title: confidentialAddressInformationSheet.title,
+      report: {
+        placeholders: [], missingFields: [], unusedFields: [], replacedPlaceholders: 0,
+        structure: {
+          samePackageFileList: true,
+          unchangedNonTemplateFiles: true,
+          onlyPlaceholderTextChanged: true,
+          changedXmlFiles: [],
+        },
       },
-    },
-  });
+    });
+  } else {
+    validationReport.skippedDocuments.push({
+      template: confidentialAddressInformationSheet.sourceFileName,
+      title: confidentialAddressInformationSheet.title,
+      reason: "This document is not required because the applicant address is not confidential.",
+    });
+  }
 
   if (validationReport.documents.length === 0) {
     return NextResponse.json(

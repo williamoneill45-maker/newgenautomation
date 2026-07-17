@@ -69,7 +69,7 @@ export default function DocumentDownloadPanel() {
     { label: "Ltr to MFI", status: bundleStatus(Boolean(matter), generated) },
     { label: "Police Email", status: bundleStatus(Boolean(matter), generated) },
     { label: "Registrar List Submissions", status: bundleStatus(Boolean(matter), generated) },
-    { label: "Confidential Address Applicant Information Sheet", status: bundleStatus(Boolean(matter), generated) },
+    { label: "Confidential Address Applicant Information Sheet", status: bundleStatus(Boolean(matter?.intake.applicant.isAddressConfidential), generated) },
     { label: "Legal Aid Application", status: "Awaiting Requirements" },
     { label: "Billing forms", status: "Awaiting Requirements" },
   ];

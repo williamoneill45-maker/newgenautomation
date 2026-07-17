@@ -15,7 +15,6 @@ export default function NewClientPage() {
             Back to dashboard
           </Link>
         </div>
-        <DocumentDownloadPanel />
         <Suspense fallback={<div className="rounded-lg border border-slate-200 bg-white p-5 text-sm text-slate-600 shadow-form">Loading matter intake…</div>}>
           <IntakeForm />
         </Suspense>
