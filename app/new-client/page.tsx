@@ -19,6 +19,9 @@ export default function NewClientPage() {
         <Suspense fallback={<div className="rounded-lg border border-slate-200 bg-white p-5 text-sm text-slate-600 shadow-form">Loading matter intake…</div>}>
           <IntakeForm />
         </Suspense>
+        <div className="mt-6">
+          <DocumentDownloadPanel />
+        </div>
         <section className="mt-6 rounded-lg border border-slate-200 bg-white p-5 shadow-form">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
