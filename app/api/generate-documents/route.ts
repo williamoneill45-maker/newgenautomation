@@ -10,6 +10,10 @@ import {
 } from "../../../lib/document-automation.ts";
 import { buildAdditionalChildLines } from "../../../lib/child-continuation.ts";
 import { mergeDocxTemplate, type DocxMergeReport } from "../../../lib/docx-template.ts";
+import {
+  buildLegacyDocMergeFields,
+  mergeLegacyDocTemplate,
+} from "../../../lib/legacy-doc-template.ts";
 import type { MatterFile } from "../../../lib/matter.ts";
 import { getOneDriveClientFolderPaths, uploadFileToOneDrive, type OneDriveUploadResult } from "../../../lib/onedrive.ts";
 import {
@@ -186,11 +190,15 @@ export async function POST(request: Request) {
         : {}),
     };
     if (!templateDefinition.sourceFileName.toLowerCase().endsWith(".docx")) {
-      bundle.file(templateDefinition.outputFileName, sourceTemplate);
+      const { buffer, report: legacyReport } = mergeLegacyDocTemplate(
+        sourceTemplate,
+        buildLegacyDocMergeFields(body.matter),
+      );
+      bundle.file(templateDefinition.outputFileName, buffer);
       generatedFiles.push({
         fileName: templateDefinition.outputFileName,
-        buffer: sourceTemplate,
-        contentType: "application/octet-stream",
+        buffer,
+        contentType: "application/msword",
       });
       validationReport.documents.push({
         template: templateDefinition.sourceFileName,
@@ -200,7 +208,7 @@ export async function POST(request: Request) {
           placeholders: [],
           missingFields: [],
           unusedFields: [],
-          replacedPlaceholders: 0,
+          replacedPlaceholders: legacyReport.replacedPlaceholders,
           structure: {
             samePackageFileList: true,
             unchangedNonTemplateFiles: true,
