@@ -33,14 +33,22 @@ function formatToday(): string {
   }).format(new Date());
 }
 
+export function formatTodayLong(): string {
+  return new Intl.DateTimeFormat("en-NZ", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  }).format(new Date());
+}
+
 function encodeFixedWidth(value: string, byteLength: number, encoding: BufferEncoding): Buffer {
   if (encoding === "utf16le") {
     const unitLength = byteLength / 2;
-    const fixed = value.length > unitLength ? value.slice(0, unitLength) : value.padEnd(unitLength, " ");
+    const fixed = value.length > unitLength ? value.slice(0, unitLength) : value.padEnd(unitLength, "\u200B");
     return Buffer.from(fixed, "utf16le");
   }
 
-  const output = Buffer.alloc(byteLength, 0x20);
+  const output = Buffer.alloc(byteLength, 0x00);
   Buffer.from(value, encoding).copy(output, 0, 0, byteLength);
   return output;
 }
@@ -55,6 +63,37 @@ function replaceNeedle(buffer: Buffer, needle: Buffer, value: string, encoding: 
   }
 
   return replaced;
+}
+
+function replaceSequentialNeedles(
+  buffer: Buffer,
+  placeholders: Array<{ placeholder: string; value: LegacyMergeValue }>,
+): number {
+  const matches = placeholders.flatMap(({ placeholder, value }) =>
+    (["utf16le", "latin1"] as const).flatMap((encoding) => {
+      const needle = Buffer.from(placeholder, encoding);
+      const values = Array.isArray(value) ? value : [value];
+      const matchesForEncoding: Array<{
+        offset: number;
+        byteLength: number;
+        encoding: BufferEncoding;
+        values: string[];
+      }> = [];
+      let offset = buffer.indexOf(needle);
+      while (offset !== -1) {
+        matchesForEncoding.push({ offset, byteLength: needle.length, encoding, values });
+        offset = buffer.indexOf(needle, offset + needle.length);
+      }
+      return matchesForEncoding;
+    }),
+  ).sort((left, right) => left.offset - right.offset);
+
+  matches.forEach((match, index) => {
+    const replacement = match.values[Math.min(index, match.values.length - 1)] ?? "";
+    encodeFixedWidth(replacement, match.byteLength, match.encoding).copy(buffer, match.offset);
+  });
+
+  return matches.length;
 }
 
 function replaceLegacyPlaceholder(
@@ -87,11 +126,13 @@ function encodeMixedLegacyText(
   unicodeUnitLength: number,
   latinUnitLength: number,
 ): Buffer {
-  const unicodeText = value.slice(0, unicodeUnitLength).padEnd(unicodeUnitLength, " ");
-  const latinText = value.slice(unicodeUnitLength).slice(0, latinUnitLength).padEnd(latinUnitLength, " ");
+  const unicodeText = value.slice(0, unicodeUnitLength).padEnd(unicodeUnitLength, "\u200B");
+  const latinValue = value.slice(unicodeUnitLength).slice(0, latinUnitLength);
+  const latinText = Buffer.alloc(latinUnitLength, 0x00);
+  Buffer.from(latinValue, "latin1").copy(latinText, 0, 0, latinUnitLength);
   return Buffer.concat([
     Buffer.from(unicodeText, "utf16le"),
-    Buffer.from(latinText, "latin1"),
+    latinText,
   ]);
 }
 
@@ -119,7 +160,7 @@ export type LegacyDocMergeReport = {
   missingPlaceholders: string[];
 };
 
-export function buildLegacyDocMergeFields(matter: MatterFile): Record<string, LegacyMergeValue> {
+function buildCourtLetterValues(matter: MatterFile) {
   const applicantName = clean(matter.intake.applicant.fullName || matter.clientName);
   const respondentName = clean(matter.intake.respondent.fullName);
   const applicantNameUpper = applicantName.toLocaleUpperCase("en-NZ");
@@ -134,6 +175,37 @@ export function buildLegacyDocMergeFields(matter: MatterFile): Record<string, Le
     ? "Confidential Address"
     : clean(matter.intake.applicant.homeAddress);
   const respondentAddress = clean(matter.intake.respondent.homeAddress);
+
+  return {
+    applicantName,
+    respondentName,
+    applicantNameUpper,
+    respondentNameUpper,
+    applicantLastName,
+    respondentLastName,
+    applicantLastNameUpper,
+    respondentLastNameUpper,
+    applicantLastNameLower,
+    respondentLastNameLower,
+    applicantAddress,
+    respondentAddress,
+  };
+}
+
+export function buildLegacyDocMergeFields(matter: MatterFile): Record<string, LegacyMergeValue> {
+  const {
+    applicantName,
+    applicantNameUpper,
+    respondentNameUpper,
+    applicantLastName,
+    respondentLastName,
+    applicantLastNameUpper,
+    respondentLastNameUpper,
+    applicantLastNameLower,
+    respondentLastNameLower,
+    applicantAddress,
+    respondentAddress,
+  } = buildCourtLetterValues(matter);
   const today = formatToday();
 
   return {
@@ -154,6 +226,10 @@ export function buildLegacyDocMergeFields(matter: MatterFile): Record<string, Le
     "{{Appliant_name_bold_capitals }}": applicantNameUpper,
     "{{Applicant_name_bold_captals}}": applicantNameUpper,
     "{{Respondnet_name_bold_capital}}": respondentNameUpper,
+    "{{respondent_address)),{{occupation}}": [
+      respondentAddress,
+      clean(matter.intake.respondent.occupation),
+    ].filter(Boolean).join(", "),
     "{{occupation}}": [
       clean(matter.intake.applicant.occupation),
       clean(matter.intake.respondent.occupation),
@@ -164,6 +240,53 @@ export function buildLegacyDocMergeFields(matter: MatterFile): Record<string, Le
     "{{applicant_phone_number}}": clean(matter.intake.applicant.mobilePhone),
     "{{date_format_dd/mm/yyyy}}": today,
     "{{date_format-dd/mm/yyyy}}": today,
+    "13 March 2026": formatTodayLong(),
+    "__legacy_formtext_values": [formatTodayLong().slice(0, 8), ""],
+  };
+}
+
+export function buildCourtLetterDocxMergeFields(matter: MatterFile): Record<string, LegacyMergeValue> {
+  const {
+    applicantName,
+    applicantNameUpper,
+    respondentNameUpper,
+    applicantLastName,
+    respondentLastName,
+    applicantLastNameUpper,
+    respondentLastNameUpper,
+    applicantLastNameLower,
+    respondentLastNameLower,
+    applicantAddress,
+    respondentAddress,
+  } = buildCourtLetterValues(matter);
+
+  return {
+    Applciant_surname: applicantLastName,
+    Applciant_lastname: applicantLastName,
+    applicant_last_name: applicantLastName,
+    Applicant_last_name: applicantLastName,
+    Applicant_last_name_lowercase: applicantLastNameLower,
+    Respondent_last_name_lowercase: respondentLastNameLower,
+    applicant_fullname: applicantName,
+    Appli_lastname_bold_captals: applicantLastNameUpper,
+    Resp_lastname_bold_captals: respondentLastNameUpper,
+    App_lastname_bold_captals: applicantLastNameUpper,
+    Res_lastname_bold_captals: respondentLastNameUpper,
+    Applicant_lastname_bold_captals: applicantLastNameUpper,
+    Respondent_lastname_bold_captals: respondentLastNameUpper,
+    Appliant_name_bold_capitals: applicantNameUpper,
+    Applicant_name_bold_captals: applicantNameUpper,
+    Respondnet_name_bold_capital: respondentNameUpper,
+    occupation: [
+      clean(matter.intake.applicant.occupation),
+      clean(matter.intake.respondent.occupation),
+    ],
+    "dd/month/yyyy": formatInputDateLong(matter.intake.applicant.dateOfBirth),
+    applicants_address: applicantAddress,
+    "respondent_address))": respondentAddress,
+    applicant_phone_number: clean(matter.intake.applicant.mobilePhone),
+    "date_format_dd/mm/yyyy": formatToday(),
+    "date_format-dd/mm/yyyy": formatToday(),
   };
 }
 
@@ -174,8 +297,13 @@ export function mergeLegacyDocTemplate(
   const output = Buffer.from(template);
   const missingPlaceholders: string[] = [];
   let replacedPlaceholders = 0;
+  const formTextValues = fields.__legacy_formtext_values;
 
   for (const [placeholder, value] of Object.entries(fields)) {
+    if (placeholder === "__legacy_formtext_values") {
+      continue;
+    }
+
     if (placeholder === "__mixed_applicant_lastname_bold_captals") {
       const replaced = replaceMixedLegacyPlaceholder(output, Array.isArray(value) ? value[0] ?? "" : value);
       replacedPlaceholders += replaced;
@@ -193,6 +321,11 @@ export function mergeLegacyDocTemplate(
   }
 
   // Clean up any empty legacy Word form-field remnants without changing layout.
+  if (formTextValues) {
+    replacedPlaceholders += replaceSequentialNeedles(output, [
+      { placeholder: "FORMTEXT", value: formTextValues },
+    ]);
+  }
   replacedPlaceholders += replaceNeedle(output, Buffer.from("FORMTEXT", "utf16le"), "", "utf16le");
   replacedPlaceholders += replaceNeedle(output, Buffer.from("FORMTEXT", "latin1"), "", "latin1");
 

@@ -92,12 +92,6 @@ export const standardDocxTemplates: SourceTemplateDefinition[] = [
     sourceFileName: "court-letters/Police Email.doc",
     outputFileName: "13 Police Email.doc",
   },
-  {
-    id: "registrar_list_submissions",
-    title: "Registrar List Submissions",
-    sourceFileName: "court-letters/Registrar List Submissions.doc",
-    outputFileName: "14 Registrar List Submissions.doc",
-  },
 ];
 
 export const confidentialAddressInformationSheet = {
