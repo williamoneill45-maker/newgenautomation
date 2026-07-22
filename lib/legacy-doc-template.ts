@@ -44,11 +44,11 @@ export function formatTodayLong(): string {
 function encodeFixedWidth(value: string, byteLength: number, encoding: BufferEncoding): Buffer {
   if (encoding === "utf16le") {
     const unitLength = byteLength / 2;
-    const fixed = value.length > unitLength ? value.slice(0, unitLength) : value.padEnd(unitLength, "\u200B");
+    const fixed = value.length > unitLength ? value.slice(0, unitLength) : value.padEnd(unitLength, " ");
     return Buffer.from(fixed, "utf16le");
   }
 
-  const output = Buffer.alloc(byteLength, 0x00);
+  const output = Buffer.alloc(byteLength, 0x20);
   Buffer.from(value, encoding).copy(output, 0, 0, byteLength);
   return output;
 }
@@ -126,9 +126,9 @@ function encodeMixedLegacyText(
   unicodeUnitLength: number,
   latinUnitLength: number,
 ): Buffer {
-  const unicodeText = value.slice(0, unicodeUnitLength).padEnd(unicodeUnitLength, "\u200B");
+  const unicodeText = value.slice(0, unicodeUnitLength).padEnd(unicodeUnitLength, " ");
   const latinValue = value.slice(unicodeUnitLength).slice(0, latinUnitLength);
-  const latinText = Buffer.alloc(latinUnitLength, 0x00);
+  const latinText = Buffer.alloc(latinUnitLength, 0x20);
   Buffer.from(latinValue, "latin1").copy(latinText, 0, 0, latinUnitLength);
   return Buffer.concat([
     Buffer.from(unicodeText, "utf16le"),
