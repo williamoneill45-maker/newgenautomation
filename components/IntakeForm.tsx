@@ -174,6 +174,16 @@ function readBillingClients(): BillingClientProfile[] {
   }
 }
 
+function activateMatter(matter: MatterFile) {
+  window.localStorage.setItem(legalAidMatterStorageKey, JSON.stringify(matter));
+  const existing = readRecentMatters();
+  window.localStorage.setItem(
+    recentMattersStorageKey,
+    JSON.stringify([matter, ...existing.filter((item) => item.id !== matter.id)].slice(0, 100)),
+  );
+  window.dispatchEvent(new CustomEvent("newgen:matter-saved"));
+}
+
 export default function IntakeForm() {
   const searchParams = useSearchParams();
   const [matter, setMatter] = useState<MatterFile>(() => isDemoEnvironment ? structuredClone(demoMatter) : createEmptyMatter());
@@ -399,7 +409,7 @@ export default function IntakeForm() {
     const localMatter = readRecentMatters().find((item) => item.id === matterId);
     if (localMatter) {
       setMatter(localMatter);
-      window.localStorage.setItem(legalAidMatterStorageKey, JSON.stringify(localMatter));
+      activateMatter(localMatter);
       return;
     }
 
@@ -409,7 +419,7 @@ export default function IntakeForm() {
         const remoteMatter = payload?.status === "loaded" ? payload.data?.find((item) => item.id === matterId) : null;
         if (remoteMatter) {
           setMatter(remoteMatter);
-          window.localStorage.setItem(legalAidMatterStorageKey, JSON.stringify(remoteMatter));
+          activateMatter(remoteMatter);
         }
       })
       .catch(() => undefined);

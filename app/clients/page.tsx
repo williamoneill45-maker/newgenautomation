@@ -28,6 +28,62 @@ function writeMatters(matters: MatterFile[]) {
   window.localStorage.setItem(recentMattersStorageKey, JSON.stringify(matters.slice(0, 100)));
 }
 
+function matterCompleteness(matter: MatterFile): number {
+  return [
+    matter.clientName,
+    matter.legalAidNumber,
+    matter.intake.famNumber,
+    matter.intake.courtLocation,
+    matter.intake.proceedingsType,
+    matter.intake.applicant.fullName,
+    matter.intake.applicant.dateOfBirth,
+    matter.intake.applicant.homeAddress,
+    matter.intake.applicant.mobilePhone,
+    matter.intake.respondent.fullName,
+    matter.intake.respondent.dateOfBirth,
+    matter.intake.respondent.homeAddress,
+    matter.intake.relationship.deFactoRelationshipStart,
+    matter.intake.relationship.relationshipEndDate,
+    matter.intake.proceedings.previousApplications,
+    matter.intake.proceedings.existingOrdersBetweenParties,
+    matter.intake.proceedings.existingOrdersRelatingToChildren,
+    matter.intake.domesticViolenceNotes.history,
+    matter.intake.domesticViolenceNotes.recentEvents,
+    ...matter.intake.selectedApplications,
+    ...matter.intake.children.flatMap((child) => [
+      child.fullName,
+      child.dateOfBirth,
+      child.livingWithName,
+      child.applicantRelationshipToChild,
+      child.respondentRelationshipToChild,
+    ]),
+  ].filter((value) => String(value ?? "").trim()).length;
+}
+
+function mergeMatters(localMatters: MatterFile[], remoteMatters: MatterFile[]): MatterFile[] {
+  const byId = new Map<string, MatterFile>();
+  for (const matter of [...remoteMatters, ...localMatters]) {
+    const existing = byId.get(matter.id);
+    if (!existing) {
+      byId.set(matter.id, matter);
+      continue;
+    }
+
+    const existingScore = matterCompleteness(existing);
+    const matterScore = matterCompleteness(matter);
+    byId.set(
+      matter.id,
+      matterScore >= existingScore
+        ? { ...existing, ...matter, intake: { ...existing.intake, ...matter.intake } }
+        : { ...matter, ...existing, intake: { ...matter.intake, ...existing.intake } },
+    );
+  }
+
+  return [...byId.values()].sort((left, right) =>
+    new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime(),
+  );
+}
+
 function csvCells(line: string): string[] {
   const cells: string[] = [];
   let current = "";
@@ -84,8 +140,11 @@ export default function MattersPage() {
       .then((response) => response.ok ? response.json() : null)
       .then((payload: { status?: string; data?: MatterFile[] } | null) => {
         if (payload?.status === "loaded" && payload.data?.length) {
-          setMatters(payload.data);
-          writeMatters(payload.data);
+          setMatters((current) => {
+            const merged = mergeMatters(current.length ? current : localMatters, payload.data ?? []);
+            writeMatters(merged);
+            return merged;
+          });
         }
       })
       .catch(() => undefined);
