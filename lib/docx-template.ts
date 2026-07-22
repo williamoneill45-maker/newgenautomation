@@ -53,7 +53,12 @@ export type DocxMergeOptions = {
   paragraphInsertions?: Record<string, string[]>;
   literalTextReplacements?: Record<string, string>;
   removeFirstExplicitPageBreak?: boolean;
-  affidavitFormatting?: { applicantName: string; childNames: string[] };
+  affidavitFormatting?: {
+    applicantName: string;
+    respondentName: string;
+    childNames: string[];
+    includeCareOfChildrenLegislation?: boolean;
+  };
   parentingApplicantName?: string;
   normalizeBillingJudgeDirectionsRow?: boolean;
   billingFormValues?: {
@@ -293,6 +298,15 @@ function insertRepeatedParagraphs(
             (tag) => `${tag}<w:spacing w:before="120" w:after="120" w:line="360" w:lineRule="auto"/><w:ind w:left="720" w:firstLine="0"/>`,
           );
       })
+      .map((populated) => {
+        if (key !== "parenting_blurb") return populated;
+        const populatedText = readTextNodes(populated).map((node) => node.text).join("").trim();
+        if (/^\([ivx]+\)/i.test(populatedText) || /<w:numPr\b/.test(populated)) return populated;
+        return populated.replace(
+          /<w:pPr\b[^>]*>/,
+          (tag) => `${tag}<w:numPr><w:ilvl w:val="0"/><w:numId w:val="0"/></w:numPr>`,
+        );
+      })
       .join("");
   });
 }
@@ -327,6 +341,15 @@ function applyAffidavitFormatting(
   return xml.replace(/<w:p\b[\s\S]*?<\/w:p>/g, (paragraph) => {
     const text = readTextNodes(paragraph).map((node) => node.text).join("");
     const trimmed = text.trim();
+    if (
+      formatting.includeCareOfChildrenLegislation &&
+      trimmed === "(Family Violence Act 2018 Sections 60 and 75)"
+    ) {
+      return replaceParagraphText(
+        paragraph,
+        "(Family Violence Act 2018 Sections 60 and 75)\n(Ss 48 and 49, Care of Children Act 2004).",
+      );
+    }
     if (trimmed === "Applicant") {
       standaloneApplicantCount += 1;
       // The first occurrence is the italic party-role label on the cover page.
@@ -341,6 +364,9 @@ function applyAffidavitFormatting(
         { text: "AFFIRMED", bold: true },
         { text: text.slice(text.indexOf(" at ")) },
       ]);
+    }
+    if (trimmed.startsWith("Affirmed this ")) {
+      return paragraphWithRuns(paragraph, [{ text, bold: true }]);
     }
     if (trimmed.startsWith(`I, ${formatting.applicantName} of `)) {
       const start = text.indexOf(formatting.applicantName);
@@ -360,7 +386,14 @@ function applyAffidavitFormatting(
       ]);
     }
     if (trimmed.startsWith("I am applying without notice for ")) {
-      return paragraph.replace(/<w:pPr\b[^>]*>/, (tag) => `${tag}<w:spacing w:after="240"/>`);
+      const start = text.indexOf(formatting.respondentName);
+      const spacedParagraph = paragraph.replace(/<w:pPr\b[^>]*>/, (tag) => `${tag}<w:spacing w:after="240"/>`);
+      if (start === -1) return spacedParagraph;
+      return paragraphWithRuns(spacedParagraph, [
+        { text: text.slice(0, start) },
+        { text: formatting.respondentName, bold: true },
+        { text: text.slice(start + formatting.respondentName.length) },
+      ]);
     }
     return paragraph;
   });

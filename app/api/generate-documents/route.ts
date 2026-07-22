@@ -267,7 +267,9 @@ export async function POST(request: Request) {
         ? {
             affidavitFormatting: {
               applicantName: body.matter.intake.applicant.fullName.toLocaleUpperCase("en-NZ"),
+              respondentName: body.matter.intake.respondent.fullName.toLocaleUpperCase("en-NZ"),
               childNames: body.matter.intake.children.map((child) => child.fullName.toLocaleUpperCase("en-NZ")),
+              includeCareOfChildrenLegislation: hasParentingOrder,
             },
             paragraphInsertions: {
               children_blurb: affidavitContent.childrenParagraphs,

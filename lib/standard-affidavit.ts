@@ -32,6 +32,14 @@ function formatList(values: string[]): string {
   return `${cleanValues.slice(0, -1).join(", ")}, and ${cleanValues.at(-1)}`;
 }
 
+function childFirstName(child: Child): string {
+  return firstName(child.fullName) || clean(child.fullName);
+}
+
+function possessive(value: string): string {
+  return value.endsWith("s") ? `${value}’` : `${value}’s`;
+}
+
 function childDescription(child: Child): string {
   const name = clean(child.fullName).toLocaleUpperCase("en-NZ");
   const dob = formatInputDateLong(child.dateOfBirth);
@@ -87,7 +95,8 @@ export function buildStandardAffidavitContent(matter: MatterFile): StandardAffid
   const respondentName = clean(matter.intake.respondent.fullName).toLocaleUpperCase("en-NZ") || "the Respondent";
   const children = matter.intake.children
     .filter((child) => clean(child.fullName));
-  const formattedChildNames = "the children";
+  const formattedChildNames = formatList(children.map(childFirstName)) || "the children";
+  const childIsSingle = children.length === 1;
   const selectedOrderLabels = matter.intake.selectedApplications
     .map((application) => orderLabel(application, matter.intake.otherApplicationDetails))
     .filter(Boolean);
@@ -117,16 +126,13 @@ export function buildStandardAffidavitContent(matter: MatterFile): StandardAffid
 
   const parentingParagraphs = includeParentingProposal
     ? [
-        "I seek a Parenting Order granting me day-to-day care. I have always had a greater role and responsibility in providing day-to-day care. I want this arrangement to continue.",
-        `I seek an interim Parenting Order granting the Respondent supervised contact with ${formattedChildNames}. I am concerned about ${formattedChildNames}’s safety in the Respondent’s unsupervised care because:  (i) ${formattedChildNames} ${children.length === 1 ? "has" : "have"} been exposed to the Respondent’s violence towards me and ${children.length === 1 ? "has" : "have"} been affected by the abuse ${children.length === 1 ? "the child has" : "they have"} witnessed.  (ii) I am concerned that the Respondent is unable to control his anger and does not realise that his behaviour is abusive.  (iii) I want to be sure that ${formattedChildNames} ${children.length === 1 ? "is" : "are"} safe and ${children.length === 1 ? "is" : "are"} returned to me at the end of any contact. I am concerned that without an order the Respondent may refuse to return ${formattedChildNames}.`,
-        "I propose that contact be supervised by a Professional Contact Provider.",
-      ].flatMap((paragraph) => paragraph.split(/\s{2,}(?=\([ivx]+\))/i))
-        .map((paragraph) => paragraph
-          .replace(/the children has/g, "the children have")
-          .replace(/the child has/g, "they have")
-          .replace(/the children is/g, "the children are")
-          .replace(/and has been affected/g, "and have been affected")
-          .replace(/and is returned/g, "and are returned"))
+        `I seek a Parenting Order granting me day to day care of ${formattedChildNames}. I have always had a greater role and responsibility in providing day to day care to ${formattedChildNames}. I want this arrangement to continue and for ${formattedChildNames} to remain in my day to day care.`,
+        `I seek an interim Parenting Order granting the Respondent supervised contact with ${formattedChildNames}. I am concerned about ${possessive(formattedChildNames)} safety in the Respondent’s unsupervised care because:`,
+        `(i)\t${formattedChildNames} ${childIsSingle ? "has" : "have"} been exposed to the Respondent’s violence towards me and ${childIsSingle ? "has" : "have"} been affected by the abuse ${childIsSingle ? "he has" : "they have"} witnessed.`,
+        "(ii)\tI am concerned that the Respondent is unable to control his anger and does not realise that his behaviour is abusive.",
+        `(iii)\tI want to be sure that ${formattedChildNames} ${childIsSingle ? "is" : "are"} safe and ${childIsSingle ? "is" : "are"} returned to me at the end of any contact. I am concerned that without an order the Respondent may refuse to return ${formattedChildNames}.`,
+        "I propose that the contact be supervised by a Professional Contact Provider.",
+      ]
     : [];
 
   const orders: string[] = [];
@@ -170,7 +176,7 @@ export function buildStandardAffidavitContent(matter: MatterFile): StandardAffid
         ]
       : [],
     parentingHeading: includeParentingProposal
-      ? ["MY PROPOSAL FOR DAY-TO-DAY CARE AND CONTACT"]
+      ? ["MY PROPOSAL FOR DAY TO DAY CARE AND CONTACT"]
       : [],
     parentingParagraphs,
     ordersSoughtParagraphs,
