@@ -20,6 +20,10 @@ function readLocal<T>(key: string): T[] {
   }
 }
 
+function writeLocalMatters(matters: MatterFile[]) {
+  window.localStorage.setItem(recentMattersStorageKey, JSON.stringify(matters.slice(0, 100)));
+}
+
 function overdue(claim: LegalAidClaim): boolean {
   if (!claim.dateSent || claim.outstandingAmount <= 0 || claim.lifecycleStatus === "Paid") return false;
   const age = Date.now() - new Date(`${claim.dateSent}T00:00:00+12:00`).getTime();
@@ -38,9 +42,15 @@ export default function Dashboard() {
     setInvoices(readLocal<StoredBillingInvoice>(billingInvoicesStorageKey));
 
     void Promise.all([
-      fetch("/api/legal-aid-applications", { cache: "no-store" }).then((response) => response.ok ? response.json() : null),
-      fetch("/api/legal-aid-claims", { cache: "no-store" }).then((response) => response.ok ? response.json() : null),
-    ]).then(([legalAidPayload, claimsPayload]) => {
+      fetch("/api/matters", { cache: "no-store", credentials: "same-origin" }).then((response) => response.ok ? response.json() : null).catch(() => null),
+      fetch("/api/legal-aid-applications", { cache: "no-store" }).then((response) => response.ok ? response.json() : null).catch(() => null),
+      fetch("/api/legal-aid-claims", { cache: "no-store" }).then((response) => response.ok ? response.json() : null).catch(() => null),
+    ]).then(([mattersPayload, legalAidPayload, claimsPayload]) => {
+      if (mattersPayload?.status === "loaded" && Array.isArray(mattersPayload.data)) {
+        const mergedMatters = [...loadedMatters, ...mattersPayload.data].filter((matter, index, all) => all.findIndex((item) => item.id === matter.id) === index);
+        setMatters(mergedMatters.length ? mergedMatters : isDemoEnvironment ? [demoMatter] : []);
+        writeLocalMatters(mergedMatters);
+      }
       const loadedLegalAid = legalAidPayload?.status === "loaded" ? legalAidPayload.data as LegalAidRecord[] : [];
       const loadedClaims = claimsPayload?.status === "loaded" ? claimsPayload.data as LegalAidClaim[] : [];
       setLegalAid(loadedLegalAid.length ? loadedLegalAid : isDemoEnvironment ? demoLegalAidApplications : []);

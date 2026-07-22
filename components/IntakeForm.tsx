@@ -26,6 +26,12 @@ import {
 } from "../lib/billing-storage";
 import { demoMatter, isDemoEnvironment } from "../lib/demo-data";
 
+type SharedSavePayload = {
+  status?: string;
+  missing?: string[];
+  error?: string;
+};
+
 type FieldProps = {
   label: string;
   value: string;
@@ -182,6 +188,19 @@ function activateMatter(matter: MatterFile) {
     JSON.stringify([matter, ...existing.filter((item) => item.id !== matter.id)].slice(0, 100)),
   );
   window.dispatchEvent(new CustomEvent("newgen:matter-saved"));
+}
+
+function sharedSaveStatus(responseStatus: number, payload: SharedSavePayload | null): string {
+  if (responseStatus === 401) {
+    return "Matter saved in this browser only. Log in on this Vercel link before saving if it needs to appear on other links.";
+  }
+  if (payload?.status === "not_configured") {
+    return `Matter saved in this browser only. Shared matter storage is not configured (${payload.missing?.join(", ") || "missing Supabase settings"}).`;
+  }
+  if (payload?.error) {
+    return `Matter saved in this browser only. Shared matter storage failed: ${payload.error}`;
+  }
+  return "Matter saved in this browser only. Shared matter storage could not be reached.";
 }
 
 export default function IntakeForm() {
@@ -372,19 +391,27 @@ export default function IntakeForm() {
       );
 
       try {
-        await fetch("/api/matters", {
+        const matterResponse = await fetch("/api/matters", {
           method: "POST",
+          credentials: "same-origin",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ matter, clientId: profile.id }),
-        }).catch(() => undefined);
+        });
+        const matterPayload = await matterResponse.json().catch(() => null) as SharedSavePayload | null;
+        const sharedMatterSaved = matterResponse.ok && matterPayload?.status === "saved";
+        const sharedMatterWarning = sharedMatterSaved ? "" : sharedSaveStatus(matterResponse.status, matterPayload);
 
-        await fetch("/api/billing-clients", {
+        const billingResponse = await fetch("/api/billing-clients", {
           method: "POST",
+          credentials: "same-origin",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(profile),
         });
+        if (!billingResponse.ok) {
+          throw new Error("Matter saved locally, but the billing client could not be saved to shared storage.");
+        }
 
-        if (!options.quiet) setSaveStatus("Matter saved. Choose a storage action separately when the documents are ready.");
+        if (!options.quiet) setSaveStatus(sharedMatterWarning || "Matter saved to shared storage. Choose a storage action separately when the documents are ready.");
         return profile;
       } catch (error) {
         if (!options.quiet) {

@@ -15,6 +15,13 @@ import { demoMatter, isDemoEnvironment } from "../../lib/demo-data";
 import { recentMattersStorageKey } from "../../lib/legal-aid";
 import { createEmptyMatter, normalizeProceedingsType, type MatterFile } from "../../lib/matter";
 
+type MattersPayload = {
+  status?: string;
+  data?: MatterFile[];
+  missing?: string[];
+  error?: string;
+};
+
 function read<T>(key: string): T[] {
   try {
     const raw = window.localStorage.getItem(key);
@@ -26,6 +33,34 @@ function read<T>(key: string): T[] {
 
 function writeMatters(matters: MatterFile[]) {
   window.localStorage.setItem(recentMattersStorageKey, JSON.stringify(matters.slice(0, 100)));
+}
+
+function sharedMatterStorageMessage(responseStatus: number, payload: MattersPayload | null): string {
+  if (responseStatus === 401) {
+    return "Log in on this Vercel link to load and save shared matters. Anything saved before login is only stored in this browser.";
+  }
+  if (payload?.status === "not_configured") {
+    return `Shared matter storage is not configured on this deployment (${payload.missing?.join(", ") || "missing Supabase settings"}). Matters saved here stay in this browser only.`;
+  }
+  if (payload?.error) {
+    return `Shared matter storage failed: ${payload.error}`;
+  }
+  return "Shared matter storage could not be reached. Matters shown here may only be saved in this browser.";
+}
+
+async function saveMatterToSharedStorage(matter: MatterFile): Promise<boolean> {
+  try {
+    const response = await fetch("/api/matters", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ matter }),
+    });
+    const payload = await response.json().catch(() => null) as MattersPayload | null;
+    return response.ok && payload?.status === "saved";
+  } catch {
+    return false;
+  }
 }
 
 function matterCompleteness(matter: MatterFile): number {
@@ -136,9 +171,16 @@ export default function MattersPage() {
     const localMatters = read<MatterFile>(recentMattersStorageKey);
     setMatters(localMatters.length ? localMatters : isDemoEnvironment ? [demoMatter] : []);
     setInvoices(read<StoredBillingInvoice>(billingInvoicesStorageKey));
-    void fetch("/api/matters")
-      .then((response) => response.ok ? response.json() : null)
-      .then((payload: { status?: string; data?: MatterFile[] } | null) => {
+    void fetch("/api/matters", { cache: "no-store", credentials: "same-origin" })
+      .then(async (response) => {
+        const payload = await response.json().catch(() => null) as MattersPayload | null;
+        if (!response.ok || payload?.status === "not_configured") {
+          setNotice(sharedMatterStorageMessage(response.status, payload));
+          return null;
+        }
+        return payload;
+      })
+      .then((payload) => {
         if (payload?.status === "loaded" && payload.data?.length) {
           setMatters((current) => {
             const merged = mergeMatters(current.length ? current : localMatters, payload.data ?? []);
@@ -147,7 +189,9 @@ export default function MattersPage() {
           });
         }
       })
-      .catch(() => undefined);
+      .catch(() => {
+        setNotice(sharedMatterStorageMessage(0, null));
+      });
   }, []);
 
   async function importCsv(event: ChangeEvent<HTMLInputElement>) {
@@ -184,13 +228,12 @@ export default function MattersPage() {
       JSON.stringify([...importedClients, ...existingClients.filter((client) => !importedClients.some((item) => item.clientName === client.clientName))]),
     );
 
-    await Promise.all(imported.map((matter) => fetch("/api/matters", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ matter }),
-    }).catch(() => undefined)));
+    const sharedResults = await Promise.all(imported.map((matter) => saveMatterToSharedStorage(matter)));
+    const sharedFailures = sharedResults.filter((saved) => !saved).length;
 
-    setNotice(`${imported.length} matter${imported.length === 1 ? "" : "s"} imported.`);
+    setNotice(sharedFailures
+      ? `${imported.length} matter${imported.length === 1 ? "" : "s"} imported into this browser. ${sharedFailures} did not save to shared matter storage, so they will not appear on a different Vercel link until shared storage is available.`
+      : `${imported.length} matter${imported.length === 1 ? "" : "s"} imported and saved to shared matter storage.`);
     event.target.value = "";
   }
 
@@ -210,6 +253,7 @@ export default function MattersPage() {
       matter.intake.respondent.fullName,
     ].some((value) => value.toLowerCase().includes(search));
   }), [matters, invoices, query]);
+  const noticeIsWarning = /browser|failed|Log in|not configured|could not/i.test(notice);
 
   return (
     <main className="min-h-screen bg-slate-50">
@@ -228,7 +272,7 @@ export default function MattersPage() {
             <Link href="/new-client" className="inline-flex h-10 items-center justify-center rounded-md bg-sky-600 px-4 text-sm font-semibold text-white hover:bg-sky-700">Create New Matter</Link>
           </div>
         </header>
-        {notice ? <p className="mt-4 rounded-md bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-800">{notice}</p> : null}
+        {notice ? <p className={`mt-4 rounded-md px-3 py-2 text-sm font-medium ${noticeIsWarning ? "bg-amber-50 text-amber-900" : "bg-emerald-50 text-emerald-800"}`}>{notice}</p> : null}
         <section className="mt-6 rounded-lg border border-slate-200 bg-white p-5 shadow-form">
           <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
             <h2 className="text-lg font-semibold text-slate-950">All matters</h2>
