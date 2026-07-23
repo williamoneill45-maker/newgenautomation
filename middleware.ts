@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { authCookieName, authSessionValue } from "./lib/auth-gate";
 
-const publicPaths = new Set(["/login", "/api/login", "/api/logout"]);
+const publicPaths = new Set(["/login", "/api/login", "/api/logout", "/api/heartbeat"]);
 
 function isPublicAsset(pathname: string): boolean {
   return (
@@ -39,4 +39,3 @@ export function middleware(request: NextRequest) {
 export const config = {
   matcher: ["/((?!.*\\..*).*)"],
 };
-

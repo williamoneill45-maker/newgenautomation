@@ -64,25 +64,11 @@ alter table public.billing_clients add column if not exists required_document_on
 alter table public.billing_clients add column if not exists required_document_two_uploaded boolean not null default false;
 
 alter table public.billing_clients enable row level security;
-
-create policy "billing_clients_select_authenticated"
-on public.billing_clients
-for select
-to authenticated
-using (true);
-
-create policy "billing_clients_insert_authenticated"
-on public.billing_clients
-for insert
-to authenticated
-with check (true);
-
-create policy "billing_clients_update_authenticated"
-on public.billing_clients
-for update
-to authenticated
-using (true)
-with check (true);
+drop policy if exists "billing_clients_select_authenticated" on public.billing_clients;
+drop policy if exists "billing_clients_insert_authenticated" on public.billing_clients;
+drop policy if exists "billing_clients_update_authenticated" on public.billing_clients;
+revoke all on table public.billing_clients from anon, authenticated;
+grant select, insert, update, delete on table public.billing_clients to service_role;
 
 create table if not exists public.billing_invoices (
   id text primary key,
@@ -118,25 +104,9 @@ create index if not exists billing_invoices_client_idx on public.billing_invoice
 alter table public.billing_invoices enable row level security;
 revoke all on table public.billing_invoices from anon, authenticated;
 grant select, insert, update, delete on table public.billing_invoices to service_role;
-
-create policy "billing_invoices_select_authenticated"
-on public.billing_invoices
-for select
-to authenticated
-using (true);
-
-create policy "billing_invoices_insert_authenticated"
-on public.billing_invoices
-for insert
-to authenticated
-with check (true);
-
-create policy "billing_invoices_update_authenticated"
-on public.billing_invoices
-for update
-to authenticated
-using (true)
-with check (true);
+drop policy if exists "billing_invoices_select_authenticated" on public.billing_invoices;
+drop policy if exists "billing_invoices_insert_authenticated" on public.billing_invoices;
+drop policy if exists "billing_invoices_update_authenticated" on public.billing_invoices;
 
 create table if not exists public.legal_aid_applications (
   id text primary key,
@@ -157,25 +127,11 @@ create table if not exists public.legal_aid_applications (
 );
 
 alter table public.legal_aid_applications enable row level security;
-
-create policy "legal_aid_applications_select_authenticated"
-on public.legal_aid_applications
-for select
-to authenticated
-using (true);
-
-create policy "legal_aid_applications_insert_authenticated"
-on public.legal_aid_applications
-for insert
-to authenticated
-with check (true);
-
-create policy "legal_aid_applications_update_authenticated"
-on public.legal_aid_applications
-for update
-to authenticated
-using (true)
-with check (true);
+drop policy if exists "legal_aid_applications_select_authenticated" on public.legal_aid_applications;
+drop policy if exists "legal_aid_applications_insert_authenticated" on public.legal_aid_applications;
+drop policy if exists "legal_aid_applications_update_authenticated" on public.legal_aid_applications;
+revoke all on table public.legal_aid_applications from anon, authenticated;
+grant select, insert, update, delete on table public.legal_aid_applications to service_role;
 
 insert into storage.buckets (id, name, public)
 values ('legal-aid-uploads', 'legal-aid-uploads', false)
