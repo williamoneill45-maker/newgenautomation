@@ -151,11 +151,13 @@ function BillingPageContent() {
   const [selectedMatterId, setSelectedMatterId] = useState(isDemoEnvironment ? demoMatter.id : "");
   const [selectedClientId, setSelectedClientId] = useState("");
   const [createClaimRecord, setCreateClaimRecord] = useState(true);
+  const [invoiceNumberOverride, setInvoiceNumberOverride] = useState("");
   const [invoiceType, setInvoiceType] = useState<"interim" | "final">("interim");
   const [selectedWorkItemIds, setSelectedWorkItemIds] = useState<BillingWorkItemId[]>(isDemoEnvironment ? ["32-pre-hearing-matters"] : []);
   const [detailsByItem, setDetailsByItem] = useState<Partial<Record<BillingWorkItemId, BillingItemDetails>>>({});
   const [agentHearingType, setAgentHearingType] = useState<StructuredBillingInput["agentHearingType"]>();
   const [additionalFactorSection, setAdditionalFactorSection] = useState<StructuredBillingInput["additionalFactorSection"]>();
+  const [defendedPrepUnits, setDefendedPrepUnits] = useState(1);
   const [travelTimeSelected, setTravelTimeSelected] = useState(false);
   const [mileageSelected, setMileageSelected] = useState(false);
   const [travelCourt, setTravelCourt] = useState("");
@@ -184,6 +186,9 @@ function BillingPageContent() {
     return groups;
   }, {}), [formType]);
   const selectedTravelReference = travelReferences.find((reference) => reference.court === travelCourt);
+  const generatedInvoiceNumber = makeInvoiceNumber(formType, clientName);
+  const invoiceNumber = invoiceNumberOverride.trim() || generatedInvoiceNumber;
+  const hasDefendedHearing = selectedWorkItemIds.includes("32-defended-hearing") || selectedWorkItemIds.includes("33-defended-hearing");
 
   useEffect(() => {
     const localMatters = [demoMatter, ...readLocal<MatterFile>(recentMattersStorageKey)].filter((matter, index, all) => all.findIndex((item) => item.id === matter.id) === index);
@@ -252,12 +257,13 @@ function BillingPageContent() {
     clientName,
     matterName,
     legalAidNumber,
-    invoiceNumber: makeInvoiceNumber(formType, clientName),
+    invoiceNumber,
     invoiceType,
     selectedWorkItemIds,
     detailsByItem,
     agentHearingType,
     additionalFactorSection,
+    defendedPrepUnits,
     travelTimeSelected,
     mileageSelected,
     travelCourt,
@@ -274,7 +280,7 @@ function BillingPageContent() {
     } catch {
       return null;
     }
-  }, [formType, clientName, matterName, legalAidNumber, invoiceType, selectedWorkItemIds, detailsByItem, agentHearingType, additionalFactorSection, travelTimeSelected, mileageSelected, travelCourt, parking, officeDisbursements, optionalWordingNotes, wordingOverrides]);
+  }, [formType, clientName, matterName, legalAidNumber, invoiceNumber, invoiceType, selectedWorkItemIds, detailsByItem, agentHearingType, additionalFactorSection, defendedPrepUnits, travelTimeSelected, mileageSelected, travelCourt, parking, officeDisbursements, optionalWordingNotes, wordingOverrides]);
 
   useEffect(() => {
     setEditableWording(previewRecord?.draft.standardWording ?? "");
@@ -302,6 +308,7 @@ function BillingPageContent() {
     setDetailsByItem({});
     setAgentHearingType(undefined);
     setAdditionalFactorSection(undefined);
+    setDefendedPrepUnits(1);
     setGenerationError("");
     setGenerationNotice("");
   }
@@ -362,6 +369,8 @@ function BillingPageContent() {
       ? "North Shore Court"
       : selectedTravelReference?.court === "Auckland Court"
       ? "Auckland Court"
+      : selectedTravelReference?.court === "Waitakere Court"
+      ? "Waitakere Court"
       : "";
     const matter: MatterFile = existingMatter
       ? {
@@ -610,6 +619,13 @@ function BillingPageContent() {
                 <TextField label="Legal aid number" value={legalAidNumber} onChange={setLegalAidNumber} />
                 <TextField label="FAM number" value={famNumber} onChange={setFamNumber} />
               </div>
+              <div className="mt-4 max-w-md">
+                <TextField
+                  label="Invoice number"
+                  value={invoiceNumber}
+                  onChange={(value) => setInvoiceNumberOverride(value === generatedInvoiceNumber ? "" : value)}
+                />
+              </div>
               <p className="mt-3 text-xs leading-5 text-slate-500">Matter name is now taken from the selected matter/client profile. If this client has not been intaken, generating the form creates a shell matter so future billing and OneDrive storage can still attach to the right file.</p>
               <fieldset className="mt-5">
                 <legend className="text-sm font-medium text-slate-700">Billing form</legend>
@@ -688,6 +704,15 @@ function BillingPageContent() {
               </section>
             ) : null}
 
+            {hasDefendedHearing ? (
+              <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-form">
+                <h2 className="text-lg font-semibold text-slate-950">3. Defended hearing preparation</h2>
+                <div className="mt-4 max-w-xs">
+                  <PlainNumberField label="Preparation units" value={defendedPrepUnits} min={1} step={1} onChange={setDefendedPrepUnits} />
+                </div>
+              </section>
+            ) : null}
+
             <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-form">
               <h2 className="text-lg font-semibold text-slate-950">4. Travel, disbursements and evidence</h2>
               <div className="mt-4 grid gap-3 sm:grid-cols-2">
@@ -755,5 +780,6 @@ function TextField({ label, value, onChange }: { label: string; value: string; o
 function Input({ label, type, value, onChange }: { label: string; type: string; value: string; onChange: (value: string) => void }) { return <label className="block text-xs font-medium text-slate-700">{label}<input type={type} className="mt-1 h-10 w-full rounded-md border border-slate-300 px-2 text-sm" value={value} onChange={(event) => onChange(event.target.value)} /></label>; }
 function SelectField({ label, value, options, optionLabels = {}, onChange }: { label: string; value: string; options: string[]; optionLabels?: Record<string, string>; onChange: (value: string) => void }) { return <label className="block text-sm font-medium text-slate-700">{label}<select className="mt-2 h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm" value={value} onChange={(event) => onChange(event.target.value)}><option value="">Select...</option>{options.map((option) => <option key={option} value={option}>{optionLabels[option] ?? option}</option>)}</select></label>; }
 function NumberField({ label, value, onChange }: { label: string; value: number; onChange: (value: number) => void }) { return <label className="block text-sm font-medium text-slate-700">{label}<div className="relative mt-2"><span className="absolute left-3 top-2.5 text-sm text-slate-500">$</span><input type="number" min="0" step="0.01" className="h-10 w-full rounded-md border border-slate-300 pl-7 pr-3 text-sm" value={value || ""} onChange={(event) => onChange(Number(event.target.value) || 0)} /></div></label>; }
+function PlainNumberField({ label, value, min = 0, step = 1, onChange }: { label: string; value: number; min?: number; step?: number; onChange: (value: number) => void }) { return <label className="block text-sm font-medium text-slate-700">{label}<input type="number" min={min} step={step} className="mt-2 h-10 w-full rounded-md border border-slate-300 px-3 text-sm" value={value || ""} onChange={(event) => onChange(Math.max(min, Number(event.target.value) || min))} /></label>; }
 function CheckField({ label, checked, onChange, detail }: { label: string; checked: boolean; onChange: (value: boolean) => void; detail: string }) { return <label className={checked ? "flex cursor-pointer gap-3 rounded-md border border-sky-300 bg-sky-50 p-3" : "flex cursor-pointer gap-3 rounded-md border border-slate-200 p-3"}><input type="checkbox" className="mt-0.5 h-4 w-4 rounded border-slate-300 text-sky-600" checked={checked} onChange={(event) => onChange(event.target.checked)} /><span><span className="block text-sm font-medium text-slate-900">{label}</span><span className="text-xs text-slate-500">{detail}</span></span></label>; }
 function Total({ label, value, strong = false }: { label: string; value: number; strong?: boolean }) { return <div className={strong ? "flex justify-between border-t border-slate-200 pt-3 text-base font-semibold text-slate-950" : "flex justify-between text-slate-700"}><dt>{label}</dt><dd>${value.toFixed(2)}</dd></div>; }

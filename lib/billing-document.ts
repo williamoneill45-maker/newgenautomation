@@ -258,6 +258,10 @@ function calculateHalfHourUnits(hours: number): number {
   return Math.max(1, Math.ceil(hours * 2));
 }
 
+function getDefendedPrepUnits(record: BillingRecord): number {
+  return Math.max(1, Math.floor(record.draft.structuredSelection?.defendedPrepUnits ?? 1));
+}
+
 function getSelectedAttendanceHours(record: BillingRecord, workItemId: string): number {
   return record.draft.structuredSelection?.workItems.find((item) => item.id === workItemId)?.attendanceHours
     ?? record.draft.attendanceHours;
@@ -318,7 +322,8 @@ function calculateForm33AAmounts(record: BillingRecord) {
     ? fixedFees.preHearingAdditionalFactors
     : 0;
   const judgeDirections = isJudgeDirections ? fixedFees.judgeDirections : 0;
-  const defendedHearingPreparation = isDefendedHearing ? fixedFees.defendedHearingPreparation : 0;
+  const defendedHearingPrepUnits = isDefendedHearing ? getDefendedPrepUnits(record) : 0;
+  const defendedHearingPreparation = isDefendedHearing ? fixedFees.defendedHearingPreparation * defendedHearingPrepUnits : 0;
   const defendedHearingUnits = isDefendedHearing ? defendedHearingSelectedUnits : 0;
   const defendedHearingTotal = defendedHearingUnits * fixedFees.defendedHearingPerHalfHour;
   const defendedHearingAgent = isDefendedHearingAgent ? fixedFees.defendedHearingAgent : 0;
@@ -376,6 +381,7 @@ function calculateForm33AAmounts(record: BillingRecord) {
     preHearingAdditionalFactors,
     judgeDirections,
     defendedHearingPreparation,
+    defendedHearingPrepUnits,
     defendedHearingUnits,
     defendedHearingTotal,
     defendedHearingAgent,
@@ -431,7 +437,8 @@ function calculateForm32BAmounts(record: BillingRecord) {
   const additionalFactorsPreHearingMatters = isAdditionalFactors
     ? fixedFees.additionalFactorsPreHearingMatters
     : 0;
-  const defendedHearingPreparation = isDefendedHearing ? fixedFees.defendedHearingPreparation : 0;
+  const defendedHearingPrepUnits = isDefendedHearing ? getDefendedPrepUnits(record) : 0;
+  const defendedHearingPreparation = isDefendedHearing ? fixedFees.defendedHearingPreparation * defendedHearingPrepUnits : 0;
   const defendedHearingUnits = isDefendedHearing
     ? calculateHalfHourUnits(getSelectedAttendanceHours(record, "32-defended-hearing"))
     : 0;
@@ -501,6 +508,7 @@ function calculateForm32BAmounts(record: BillingRecord) {
     report,
     additionalFactorsPreHearingMatters,
     defendedHearingPreparation,
+    defendedHearingPrepUnits,
     defendedHearingUnits,
     defendedHearingTotal,
     directionsConferencePreparation,
@@ -549,7 +557,7 @@ function formatDisplayDate(value: string): string {
 
   return new Intl.DateTimeFormat("en-NZ", {
     day: "2-digit",
-    month: "short",
+    month: "2-digit",
     year: "numeric",
   }).format(date);
 }
@@ -577,7 +585,7 @@ export function buildBillingMergeFields(record: BillingRecord): MergeFields {
     FORM_TYPE: draft.formType,
     CATEGORY_LABEL: draft.categoryLabel,
     COURT: draft.court.toLocaleUpperCase("en-NZ"),
-    BILLING_DATE: draft.date,
+    BILLING_DATE: formatDisplayDate(draft.date),
     START_TIME: draft.startTime,
     END_TIME: draft.endTime,
     ATTENDANCE_TIME: attendanceTime,
@@ -599,7 +607,7 @@ export function buildBillingMergeFields(record: BillingRecord): MergeFields {
     EVIDENCE_STATUS: evidenceStatus,
     TEMPLATE_PATH: record.templatePath,
     REVIEW_STATUS: record.status === "pending_evidence" ? "Pending evidence" : "Ready to review",
-    DATE_TODAY: draft.date,
+    DATE_TODAY: formatDisplayDate(draft.date),
     "dd,mmm,yyyy": formatDisplayDate(draft.date),
     CLIENTSURNAME: getClientSurname(draft.clientName),
     "CLIENT SUR NAME": getClientSurname(draft.clientName),
@@ -650,7 +658,7 @@ export function buildBillingMergeFields(record: BillingRecord): MergeFields {
     JC_AGENT_TOTAL: formatMoney(form33AAmounts.judicialConferenceAgent),
     AF_P_H: formatMoney(form33AAmounts.preHearingAdditionalFactors),
     JUDGE_DIRECTIONS: formatMoney(form33AAmounts.judgeDirections),
-    DH_PREP_QTY: form33AAmounts.defendedHearingPreparation ? "1" : "",
+    DH_PREP_QTY: form33AAmounts.defendedHearingPreparation ? formatNumber(form33AAmounts.defendedHearingPrepUnits) : "",
     DH_PREP_UNIT: form33AAmounts.defendedHearingPreparation
       ? formatMoney(form33AFeeRules.fixedFees.defendedHearingPreparation)
       : "",
@@ -712,7 +720,7 @@ export function buildBillingMergeFields(record: BillingRecord): MergeFields {
       ? formatMoney(form32BFeeRules.fixedFees.report)
       : "",
     SR_TOTAL: formatMoney(form32BAmounts.report),
-    DF_P_QTY: form32BAmounts.defendedHearingPreparation ? "1" : "",
+    DF_P_QTY: form32BAmounts.defendedHearingPreparation ? formatNumber(form32BAmounts.defendedHearingPrepUnits) : "",
     DF_P_UNIT: form32BAmounts.defendedHearingPreparation
       ? formatMoney(form32BFeeRules.fixedFees.defendedHearingPreparation)
       : "",

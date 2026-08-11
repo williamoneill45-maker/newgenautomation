@@ -597,7 +597,7 @@ export default function IntakeForm() {
                   <Field label="Applicant Relationship" value={child.applicantRelationshipToChild} onChange={(value) => updateChild(child.id, "applicantRelationshipToChild", value)} />
                   <Field label="Respondent Relationship" value={child.respondentRelationshipToChild} onChange={(value) => updateChild(child.id, "respondentRelationshipToChild", value)} />
                   <Field label="Living With" value={child.livingWithName} onChange={(value) => updateChild(child.id, "livingWithName", value)} className="md:col-span-1 lg:col-span-2" />
-                  <Field label="Living With Relationship to Child" value={child.livingWithRelationshipToChild} onChange={(value) => updateChild(child.id, "livingWithRelationshipToChild", value)} className="md:col-span-1 lg:col-span-2" />
+                  <Field label="relationship of that person to the child" value={child.livingWithRelationshipToChild} onChange={(value) => updateChild(child.id, "livingWithRelationshipToChild", value)} className="md:col-span-1 lg:col-span-2" />
                 </div>
               </div>
             ))}

@@ -186,6 +186,7 @@ const courtNames: Record<string, { english: string; maori: string }> = {
   auckland: { english: "Auckland", maori: "Tāmaki Makaurau" },
   manukau: { english: "Manukau", maori: "Manukau" },
   "north shore": { english: "North Shore", maori: "Ōkahukura" },
+  waitakere: { english: "Waitakere", maori: "Waitākere" },
 };
 
 function getCourtNames(value: string): { english: string; maori: string } {

@@ -53,7 +53,7 @@ export type DocxMergeOptions = {
   paragraphInsertions?: Record<string, string[]>;
   literalTextReplacements?: Record<string, string>;
   removeFirstExplicitPageBreak?: boolean;
-  affidavitFormatting?: { applicantName: string; childNames: string[] };
+  affidavitFormatting?: { applicantName: string; respondentName: string; childNames: string[]; legislationLines: string[] };
   parentingApplicantName?: string;
   normalizeBillingJudgeDirectionsRow?: boolean;
   billingFormValues?: {
@@ -243,7 +243,46 @@ function updateInformationSheetCheckboxes(
   });
 }
 
+function parseMarkedRuns(value: string): Array<{ text: string; bold?: boolean }> {
+  const runs: Array<{ text: string; bold?: boolean }> = [];
+  let remaining = value;
+  let bold = false;
+
+  while (remaining) {
+    const nextOpen = remaining.indexOf("[[b]]");
+    const nextClose = remaining.indexOf("[[/b]]");
+    const candidates = [nextOpen, nextClose].filter((index) => index >= 0);
+    const nextMarker = candidates.length ? Math.min(...candidates) : -1;
+
+    if (nextMarker === -1) {
+      runs.push({ text: remaining, bold });
+      break;
+    }
+
+    if (nextMarker > 0) {
+      runs.push({ text: remaining.slice(0, nextMarker), bold });
+      remaining = remaining.slice(nextMarker);
+      continue;
+    }
+
+    if (remaining.startsWith("[[b]]")) {
+      bold = true;
+      remaining = remaining.slice("[[b]]".length);
+      continue;
+    }
+
+    bold = false;
+    remaining = remaining.slice("[[/b]]".length);
+  }
+
+  return runs.filter((run) => run.text);
+}
+
 function replaceParagraphText(paragraphXml: string, value: string): string {
+  if (value.includes("[[b]]") || value.includes("[[/b]]")) {
+    return paragraphWithRuns(paragraphXml, parseMarkedRuns(value));
+  }
+
   const nodes = readTextNodes(paragraphXml);
   const formattedValue = escapeXml(value).replace(
     /\r?\n/g,
@@ -297,11 +336,16 @@ function insertRepeatedParagraphs(
   });
 }
 
-function paragraphWithRuns(paragraph: string, runs: Array<{ text: string; bold?: boolean }>): string {
+function paragraphWithRuns(paragraph: string, runs: Array<{ text: string; bold?: boolean; italic?: boolean; breakBefore?: boolean }>): string {
   const pPr = paragraph.match(/<w:pPr\b[\s\S]*?<\/w:pPr>/)?.[0] ?? "";
-  const runXml = runs.map(({ text, bold }) =>
-    `<w:r><w:rPr>${bold ? "<w:b/><w:bCs/>" : ""}</w:rPr><w:t xml:space="preserve">${escapeXml(text)}</w:t></w:r>`,
-  ).join("");
+  const runXml = runs.flatMap(({ text, bold, italic, breakBefore }) => {
+    const parts = text.split(/\r?\n/);
+    return parts.map((part, index) => {
+      const needsBreak = Boolean(breakBefore) || index > 0;
+      const rPr = `${bold ? "<w:b/><w:bCs/>" : ""}${italic ? "<w:i/><w:iCs/>" : ""}`;
+      return `<w:r><w:rPr>${rPr}</w:rPr>${needsBreak ? "<w:br/>" : ""}<w:t xml:space="preserve">${escapeXml(part)}</w:t></w:r>`;
+    });
+  }).join("");
   return paragraph.replace(/(<w:p\b[^>]*>)[\s\S]*?<\/w:p>/, `$1${pPr}${runXml}</w:p>`);
 }
 
@@ -336,10 +380,24 @@ function applyAffidavitFormatting(
         ? paragraph
         : replaceStandaloneApplicantPreservingLayout(paragraph, formatting.applicantName);
     }
-    if (trimmed.startsWith("AFFIRMED at ")) {
+    if (
+      trimmed === "(Family Violence Act 2018 Sections 60 and 75)" ||
+      trimmed === "(Ss 48, 49, and 77 Care of Children Act 2004)"
+    ) {
+      return paragraphWithRuns(paragraph, formatting.legislationLines.map((line, index) => ({
+        text: line,
+        bold: true,
+        italic: true,
+        breakBefore: index > 0,
+      })));
+    }
+    if (
+      trimmed.startsWith("AFFIRMED at ") ||
+      trimmed.startsWith("Affirmed this ") ||
+      /^\d{1,2}(?:st|nd|rd|th) day of [A-Za-z]+ 20\d{2}$/.test(trimmed)
+    ) {
       return paragraphWithRuns(paragraph, [
-        { text: "AFFIRMED", bold: true },
-        { text: text.slice(text.indexOf(" at ")) },
+        { text, bold: true },
       ]);
     }
     if (trimmed.startsWith(`I, ${formatting.applicantName} of `)) {
@@ -352,6 +410,7 @@ function applyAffidavitFormatting(
     }
     const childName = formatting.childNames.find((name) => name && text.includes(name));
     if (childName && text.includes("born")) {
+      if (paragraph.includes("<w:b")) return paragraph;
       const start = text.indexOf(childName);
       return paragraphWithRuns(paragraph, [
         { text: text.slice(0, start) },
@@ -360,7 +419,14 @@ function applyAffidavitFormatting(
       ]);
     }
     if (trimmed.startsWith("I am applying without notice for ")) {
-      return paragraph.replace(/<w:pPr\b[^>]*>/, (tag) => `${tag}<w:spacing w:after="240"/>`);
+      const start = formatting.respondentName ? text.indexOf(formatting.respondentName) : -1;
+      const spaced = paragraph.replace(/<w:pPr\b[^>]*>/, (tag) => `${tag}<w:spacing w:before="120" w:after="120" w:line="360" w:lineRule="auto"/>`);
+      if (start === -1) return spaced;
+      return paragraphWithRuns(spaced, [
+        { text: text.slice(0, start) },
+        { text: formatting.respondentName, bold: true },
+        { text: text.slice(start + formatting.respondentName.length) },
+      ]);
     }
     return paragraph;
   });

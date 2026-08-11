@@ -96,6 +96,7 @@ export type BillingDraft = {
     }>;
     agentHearingType?: "judicial_conference" | "formal_proof" | "defended_hearing";
     additionalFactorSection?: "applications_orders" | "pre_hearing" | "defended_hearing";
+    defendedPrepUnits?: number;
     travelTimeSelected: boolean;
     mileageSelected: boolean;
     invoiceType?: "interim" | "final";

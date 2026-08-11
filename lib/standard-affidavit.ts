@@ -18,11 +18,19 @@ function formatInputDateLong(value: string): string {
   const date = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
   if (Number.isNaN(date.getTime())) return clean(value);
 
-  return new Intl.DateTimeFormat("en-NZ", {
-    day: "numeric",
+  return `${formatOrdinalDay(date.getDate())} of ${new Intl.DateTimeFormat("en-NZ", {
     month: "long",
     year: "numeric",
-  }).format(date);
+  }).format(date)}`;
+}
+
+function formatOrdinalDay(day: number): string {
+  const remainder100 = day % 100;
+  if (remainder100 >= 11 && remainder100 <= 13) return `${day}th`;
+  if (day % 10 === 1) return `${day}st`;
+  if (day % 10 === 2) return `${day}nd`;
+  if (day % 10 === 3) return `${day}rd`;
+  return `${day}th`;
 }
 
 function formatList(values: string[]): string {
@@ -37,10 +45,14 @@ function childDescription(child: Child): string {
   const dob = formatInputDateLong(child.dateOfBirth);
   const nickname = firstName(name);
   return [
-    name,
+    `[[b]]${name}[[/b]]`,
     dob ? `born ${dob}` : "",
     nickname ? `(“${nickname}”)` : "",
   ].filter(Boolean).join(", ");
+}
+
+function childCareName(child: Child): string {
+  return firstName(clean(child.fullName));
 }
 
 function orderLabel(application: ApplicationType, otherDetails: string): string {
@@ -68,6 +80,7 @@ export function isParentingOrderSought(matter: MatterFile): boolean {
 
 export type StandardAffidavitContent = {
   applicationTitle: string;
+  legislationLines: string[];
   applicationIntro: string;
   relationshipStartBlurb: string;
   relationshipEnd: string;
@@ -87,7 +100,9 @@ export function buildStandardAffidavitContent(matter: MatterFile): StandardAffid
   const respondentName = clean(matter.intake.respondent.fullName).toLocaleUpperCase("en-NZ") || "the Respondent";
   const children = matter.intake.children
     .filter((child) => clean(child.fullName));
-  const formattedChildNames = "the children";
+  const formattedChildNames = children.length
+    ? formatList(children.map(childCareName))
+    : "the children";
   const selectedOrderLabels = matter.intake.selectedApplications
     .map((application) => orderLabel(application, matter.intake.otherApplicationDetails))
     .filter(Boolean);
@@ -95,7 +110,11 @@ export function buildStandardAffidavitContent(matter: MatterFile): StandardAffid
     ? selectedOrderLabels
     : [hasProtectionOrder ? "Protection Order" : "", hasParentingOrder ? "Parenting Order" : ""].filter(Boolean);
   const formattedOrders = formatList(orderLabels);
-  const includeParentingProposal = hasProtectionOrder && hasParentingOrder && children.length > 0;
+  const includeParentingProposal = hasParentingOrder && children.length > 0;
+  const legislationLines = [
+    hasProtectionOrder ? "(Family Violence Act 2018 Sections 60 and 75)" : "",
+    hasParentingOrder ? "(Ss 48, 49, and 77 Care of Children Act 2004)" : "",
+  ].filter(Boolean);
   const relationship = matter.intake.relationship;
   const relationshipStartBlurb = relationship.marriageOrCivilUnionDate
     ? `married${clean(relationship.marriageOrCivilUnionPlace) ? ` in ${clean(relationship.marriageOrCivilUnionPlace)}` : ""} on ${formatInputDateLong(relationship.marriageOrCivilUnionDate)}`
@@ -112,12 +131,12 @@ export function buildStandardAffidavitContent(matter: MatterFile): StandardAffid
     : `I am applying without notice for ${withIndefiniteArticle(orderLabels[0] || "Protection Order")} against ${respondentName} (“the Respondent”).`;
 
   const childrenParagraphs = children.length
-    ? [`The Respondent and I are the parents of the following ${children.length === 1 ? "child" : "children"}: ${children.map(childDescription).join("; ")}.`]
+    ? [`The Respondent and I are the parents of the following ${children.length === 1 ? "child" : "children"}:\n${children.map(childDescription).join(";\n")}.`]
     : [];
 
   const parentingParagraphs = includeParentingProposal
     ? [
-        "I seek a Parenting Order granting me day-to-day care. I have always had a greater role and responsibility in providing day-to-day care. I want this arrangement to continue.",
+        `I seek a Parenting Order granting me day-to-day care of ${formattedChildNames}. I have always had a greater role and responsibility in providing day-to-day care to ${formattedChildNames}. I want this arrangement to continue and for ${formattedChildNames} to remain in my day-to-day care.`,
         `I seek an interim Parenting Order granting the Respondent supervised contact with ${formattedChildNames}. I am concerned about ${formattedChildNames}’s safety in the Respondent’s unsupervised care because:  (i) ${formattedChildNames} ${children.length === 1 ? "has" : "have"} been exposed to the Respondent’s violence towards me and ${children.length === 1 ? "has" : "have"} been affected by the abuse ${children.length === 1 ? "the child has" : "they have"} witnessed.  (ii) I am concerned that the Respondent is unable to control his anger and does not realise that his behaviour is abusive.  (iii) I want to be sure that ${formattedChildNames} ${children.length === 1 ? "is" : "are"} safe and ${children.length === 1 ? "is" : "are"} returned to me at the end of any contact. I am concerned that without an order the Respondent may refuse to return ${formattedChildNames}.`,
         "I propose that contact be supervised by a Professional Contact Provider.",
       ].flatMap((paragraph) => paragraph.split(/\s{2,}(?=\([ivx]+\))/i))
@@ -150,6 +169,7 @@ export function buildStandardAffidavitContent(matter: MatterFile): StandardAffid
 
   return {
     applicationTitle,
+    legislationLines,
     applicationIntro,
     relationshipStartBlurb,
     relationshipEnd: formatInputDateLong(relationship.relationshipEndDate),

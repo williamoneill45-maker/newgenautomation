@@ -20,6 +20,16 @@ function safeFileName(value: string): string {
   return value.replace(/[^A-Za-z0-9 ._-]/g, "").trim() || "completed-billing-form";
 }
 
+function formatDate(value: string): string {
+  const date = new Date(`${value}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat("en-NZ", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  }).format(date);
+}
+
 type BillingEvidenceImageInput = {
   fileName: string;
   contentType: "image/png" | "image/jpeg";
@@ -117,7 +127,7 @@ export async function POST(request: Request) {
       outputType: "document",
       normalizeBillingJudgeDirectionsRow: true,
       billingFormValues: {
-        dateCompleted: new Intl.DateTimeFormat("en-NZ", { day: "2-digit", month: "2-digit", year: "numeric" }).format(new Date()),
+        dateCompleted: formatDate(body.record.draft.date),
         invoiceType: body.record.draft.structuredSelection?.invoiceType ?? "interim",
         mileageRate: "1.20",
       },

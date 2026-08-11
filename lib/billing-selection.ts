@@ -78,6 +78,7 @@ export type StructuredBillingInput = {
   detailsByItem: Partial<Record<BillingWorkItemId, BillingItemDetails>>;
   agentHearingType?: "judicial_conference" | "formal_proof" | "defended_hearing";
   additionalFactorSection?: "applications_orders" | "pre_hearing" | "defended_hearing";
+  defendedPrepUnits?: number;
   travelTimeSelected: boolean;
   mileageSelected: boolean;
   travelCourt: string;
@@ -117,16 +118,33 @@ export function validateStructuredBillingInput(input: StructuredBillingInput): s
   });
   if (input.selectedWorkItemIds.includes("33-instructing-agent") && !input.agentHearingType) errors.push("Select the hearing type attended by the agent.");
   if (input.selectedWorkItemIds.includes("33-additional-factors") && !input.additionalFactorSection) errors.push("Select the section for the additional factors.");
+  if (
+    (input.selectedWorkItemIds.includes("32-defended-hearing") || input.selectedWorkItemIds.includes("33-defended-hearing")) &&
+    (!Number.isFinite(input.defendedPrepUnits ?? 1) || (input.defendedPrepUnits ?? 1) < 1)
+  ) {
+    errors.push("Defended hearing preparation units must be at least 1.");
+  }
   if (input.travelTimeSelected && !input.travelCourt) errors.push("Select the court for Travel Time.");
   if (input.parking < 0 || input.officeDisbursements < 0) errors.push("Disbursement amounts cannot be negative.");
   return errors;
 }
 
 function applyTokens(wording: string, details?: BillingItemDetails): string {
+  const formattedDate = formatBillingDate(details?.date ?? "");
   return wording
-    .replace(/\[billing date\]/gi, details?.date ?? "")
+    .replace(/\[billing date\]/gi, formattedDate)
     .replace(/\[attendance time\]/gi, details?.startTime && details.endTime ? `${details.startTime}-${details.endTime}` : "")
     .replace(/\[court\]/gi, details?.court.toLocaleUpperCase("en-NZ") ?? "");
+}
+
+function formatBillingDate(value: string): string {
+  const date = new Date(`${value}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat("en-NZ", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  }).format(date);
 }
 
 export function createStructuredBillingRecord(input: StructuredBillingInput): BillingRecord {
@@ -206,6 +224,7 @@ export function createStructuredBillingRecord(input: StructuredBillingInput): Bi
         workItems,
         agentHearingType: input.agentHearingType,
         additionalFactorSection: input.additionalFactorSection,
+        defendedPrepUnits: Math.max(1, Math.floor(input.defendedPrepUnits ?? 1)),
         travelTimeSelected: input.travelTimeSelected,
         mileageSelected: input.mileageSelected,
         invoiceType: input.invoiceType,
@@ -230,7 +249,16 @@ export function getBillingPreviewRows(record: BillingRecord): BillingPreviewRow[
     const units = calculateHalfHourUnits(item.attendanceHours);
     return [
       definition.preparationFee
-        ? { label: `${definition.label} - Preparation`, quantity: 1, unit: definition.preparationFee, total: definition.preparationFee }
+        ? {
+            label: `${definition.label} - Preparation`,
+            quantity: definition.id === "32-defended-hearing" || definition.id === "33-defended-hearing"
+              ? Math.max(1, record.draft.structuredSelection?.defendedPrepUnits ?? 1)
+              : 1,
+            unit: definition.preparationFee,
+            total: definition.preparationFee * (definition.id === "32-defended-hearing" || definition.id === "33-defended-hearing"
+              ? Math.max(1, record.draft.structuredSelection?.defendedPrepUnits ?? 1)
+              : 1),
+          }
         : null,
       { label: `${definition.label} - Hearing time`, quantity: units, unit: definition.hearingRate ?? 0, total: units * (definition.hearingRate ?? 0) },
     ].filter((row): row is BillingPreviewRow => Boolean(row));

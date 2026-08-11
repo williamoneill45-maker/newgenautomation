@@ -21,8 +21,11 @@ import {
   isParentingOrderSought,
   isProtectionOrderSought,
 } from "../../../lib/standard-affidavit.ts";
-import { standardDocxTemplates } from "../../../lib/template-catalog.ts";
-import { confidentialAddressInformationSheet } from "../../../lib/template-catalog.ts";
+import {
+  confidentialAddressInformationSheet,
+  standardDocxTemplates,
+  type SourceTemplateDefinition,
+} from "../../../lib/template-catalog.ts";
 
 export const runtime = "nodejs";
 
@@ -79,12 +82,44 @@ function safeFileName(value: string): string {
   return value.replace(/[^A-Za-z0-9 ._-]/g, "").trim().replace(/\s+/g, "_") || "Client";
 }
 
-function datedOutputFileName(fileName: string, date = new Date()): string {
-  if (!fileName.startsWith("Information Sheet (")) return fileName;
+function getClientSurname(matter: MatterFile): string {
+  const preferred = matter.clientName || matter.intake.applicant.fullName;
+  return preferred.trim().split(/\s+/).pop() || "Client";
+}
+
+function stripBundlePrefix(fileName: string): string {
+  return fileName.replace(/^\d+\s+/, "");
+}
+
+function clientOutputFileName(matter: MatterFile, templateDefinition: SourceTemplateDefinition, date = new Date()): string {
+  const baseName = stripBundlePrefix(templateDefinition.outputFileName);
+  const surname = safeFileName(getClientSurname(matter)).replace(/_/g, " ");
+  if (!baseName.startsWith("Information Sheet (")) return `${surname} - ${baseName}`;
   const stamp = new Intl.DateTimeFormat("en-NZ", {
     day: "2-digit", month: "2-digit", year: "2-digit",
   }).format(date).replace(/\//g, ".");
-  return fileName.replace(/\.docx$/i, ` ${stamp}.docx`);
+  return `${surname} - ${baseName.replace(/\.docx$/i, ` ${stamp}.docx`)}`;
+}
+
+function confidentialAddressOutputFileName(matter: MatterFile): string {
+  const surname = safeFileName(getClientSurname(matter)).replace(/_/g, " ");
+  return `${surname} - ${stripBundlePrefix(confidentialAddressInformationSheet.outputFileName)}`;
+}
+
+function informationSheetApplicationFields(templateDefinition: SourceTemplateDefinition) {
+  if (templateDefinition.id !== "information_sheet") return {};
+  const applications = templateDefinition.title.includes("(COCA)")
+    ? ["Parenting Order"]
+    : ["Protection Order"];
+
+  return {
+    APPLICATION_TYPE_1: applications[0],
+    APPLICATION_TYPE_2: "",
+    APPLICATION_TYPE_3: "",
+    application_type_1: applications[0],
+    application_type_2: "",
+    application_type_3: "",
+  };
 }
 
 export async function POST(request: Request) {
@@ -125,12 +160,12 @@ export async function POST(request: Request) {
   const affidavitContent = buildStandardAffidavitContent(body.matter);
 
   for (const templateDefinition of standardDocxTemplates) {
-    const outputFileName = datedOutputFileName(templateDefinition.outputFileName);
+    const outputFileName = clientOutputFileName(body.matter, templateDefinition);
     const conditionalSkip =
       (templateDefinition.id === "confidential_address_application" && !body.matter.intake.applicant.isAddressConfidential)
       || (templateDefinition.id === "parenting_order_application" && !hasParentingOrder)
       || (templateDefinition.id === "protection_order_application" && !hasProtectionOrder)
-      || (templateDefinition.id === "domestic_violence_affidavit" && !hasProtectionOrder);
+      || (templateDefinition.id === "domestic_violence_affidavit" && !hasProtectionOrder && !hasParentingOrder);
     if (conditionalSkip) {
       validationReport.skippedDocuments.push({
         template: templateDefinition.sourceFileName,
@@ -141,9 +176,9 @@ export async function POST(request: Request) {
     }
 
     if (!(await templateExists(templateDefinition.sourceFileName))) {
-      if (templateDefinition.id === "domestic_violence_affidavit" && hasProtectionOrder) {
+      if (templateDefinition.id === "domestic_violence_affidavit" && (hasProtectionOrder || hasParentingOrder)) {
         return NextResponse.json(
-          { error: "A Protection Order is included, but the affidavit source template is missing from /templates." },
+          { error: "A Protection Order or Parenting Order is included, but the affidavit source template is missing from /templates." },
           { status: 400 },
         );
       }
@@ -159,6 +194,7 @@ export async function POST(request: Request) {
     const fields = buildTemplateMergeFields(body.matter, templateDefinition.id);
     const templateFields = {
       ...fields,
+      ...informationSheetApplicationFields(templateDefinition),
       ...(templateDefinition.id === "confidential_address_application"
         ? {
             APPLICANT_ADDRESS: body.matter.intake.applicant.homeAddress,
@@ -193,15 +229,15 @@ export async function POST(request: Request) {
         sourceTemplate,
         buildLegacyDocMergeFields(body.matter),
       );
-      bundle.file(templateDefinition.outputFileName, buffer);
+      bundle.file(outputFileName, buffer);
       generatedFiles.push({
-        fileName: templateDefinition.outputFileName,
+        fileName: outputFileName,
         buffer,
         contentType: "application/msword",
       });
       validationReport.documents.push({
         template: templateDefinition.sourceFileName,
-        output: templateDefinition.outputFileName,
+        output: outputFileName,
         title: templateDefinition.title,
         report: {
           placeholders: [],
@@ -267,7 +303,9 @@ export async function POST(request: Request) {
         ? {
             affidavitFormatting: {
               applicantName: body.matter.intake.applicant.fullName.toLocaleUpperCase("en-NZ"),
+              respondentName: body.matter.intake.respondent.fullName.toLocaleUpperCase("en-NZ"),
               childNames: body.matter.intake.children.map((child) => child.fullName.toLocaleUpperCase("en-NZ")),
+              legislationLines: affidavitContent.legislationLines,
             },
             paragraphInsertions: {
               children_blurb: affidavitContent.childrenParagraphs,
@@ -321,15 +359,16 @@ export async function POST(request: Request) {
       await readSourceTemplate(confidentialAddressInformationSheet.sourceFileName),
       body.matter,
     );
-    bundle.file(confidentialAddressInformationSheet.outputFileName, completedConfidentialAddressSheet);
+    const confidentialOutputFileName = confidentialAddressOutputFileName(body.matter);
+    bundle.file(confidentialOutputFileName, completedConfidentialAddressSheet);
     generatedFiles.push({
-      fileName: confidentialAddressInformationSheet.outputFileName,
+      fileName: confidentialOutputFileName,
       buffer: completedConfidentialAddressSheet,
       contentType: "application/pdf",
     });
     validationReport.documents.push({
       template: confidentialAddressInformationSheet.sourceFileName,
-      output: confidentialAddressInformationSheet.outputFileName,
+      output: confidentialOutputFileName,
       title: confidentialAddressInformationSheet.title,
       report: {
         placeholders: [], missingFields: [], unusedFields: [], replacedPlaceholders: 0,

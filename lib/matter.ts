@@ -11,6 +11,7 @@ export const courts = [
   "Auckland Court",
   "Manukau Court",
   "North Shore Court",
+  "Waitakere Court",
 ] as const;
 
 export type CourtLocation = (typeof courts)[number] | "";
