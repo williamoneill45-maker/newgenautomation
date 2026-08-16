@@ -12,7 +12,13 @@ import {
   type StoredBillingInvoice,
 } from "../../lib/billing-storage";
 import { demoMatter, isDemoEnvironment } from "../../lib/demo-data";
-import { recentMattersStorageKey } from "../../lib/legal-aid";
+import {
+  loadMattersFromSupabase,
+  matterStatusMessage,
+  saveMatterToSupabase,
+  writeCachedMatters,
+  type MatterLoadStatus,
+} from "../../lib/matter-persistence";
 import { createEmptyMatter, normalizeProceedingsType, type MatterFile } from "../../lib/matter";
 
 function read<T>(key: string): T[] {
@@ -22,10 +28,6 @@ function read<T>(key: string): T[] {
   } catch {
     return [];
   }
-}
-
-function writeMatters(matters: MatterFile[]) {
-  window.localStorage.setItem(recentMattersStorageKey, JSON.stringify(matters.slice(0, 100)));
 }
 
 function csvCells(line: string): string[] {
@@ -75,20 +77,17 @@ export default function MattersPage() {
   const [invoices, setInvoices] = useState<StoredBillingInvoice[]>([]);
   const [query, setQuery] = useState("");
   const [notice, setNotice] = useState("");
+  const [matterLoadStatus, setMatterLoadStatus] = useState<MatterLoadStatus>("loading");
+  const [matterLoadMessage, setMatterLoadMessage] = useState("Loading matters from Supabase.");
 
   useEffect(() => {
-    const localMatters = read<MatterFile>(recentMattersStorageKey);
-    setMatters(localMatters.length ? localMatters : isDemoEnvironment ? [demoMatter] : []);
     setInvoices(read<StoredBillingInvoice>(billingInvoicesStorageKey));
-    void fetch("/api/matters")
-      .then((response) => response.ok ? response.json() : null)
-      .then((payload: { status?: string; data?: MatterFile[] } | null) => {
-        if (payload?.status === "loaded" && payload.data?.length) {
-          setMatters(payload.data);
-          writeMatters(payload.data);
-        }
-      })
-      .catch(() => undefined);
+    void loadMattersFromSupabase().then((result) => {
+      const nextMatters = result.matters.length ? result.matters : isDemoEnvironment && result.status === "empty" ? [demoMatter] : result.matters;
+      setMatters(nextMatters);
+      setMatterLoadStatus(result.status);
+      setMatterLoadMessage(result.message);
+    });
   }, []);
 
   async function importCsv(event: ChangeEvent<HTMLInputElement>) {
@@ -103,12 +102,8 @@ export default function MattersPage() {
       return matterFromCsv(Object.fromEntries(headers.map((header, index) => [header, values[index] ?? ""])));
     }).filter((matter): matter is MatterFile => Boolean(matter));
 
-    const nextMatters = [
-      ...imported,
-      ...matters.filter((matter) => !imported.some((item) => item.id === matter.id)),
-    ];
-    setMatters(nextMatters);
-    writeMatters(nextMatters);
+    setMatterLoadStatus("loading");
+    setMatterLoadMessage("Saving imported matters to Supabase.");
 
     const existingClients = read<BillingClientProfile>(billingClientsStorageKey);
     const importedClients = imported.map((matter) => ({
@@ -125,13 +120,23 @@ export default function MattersPage() {
       JSON.stringify([...importedClients, ...existingClients.filter((client) => !importedClients.some((item) => item.clientName === client.clientName))]),
     );
 
-    await Promise.all(imported.map((matter) => fetch("/api/matters", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ matter }),
-    }).catch(() => undefined)));
+    const saved = await Promise.allSettled(imported.map((matter) => saveMatterToSupabase(matter)));
+    const savedMatters = saved
+      .filter((result): result is PromiseFulfilledResult<MatterFile> => result.status === "fulfilled")
+      .map((result) => result.value);
+    const failedCount = saved.length - savedMatters.length;
+    const nextRemoteMatters = [
+      ...savedMatters,
+      ...matters.filter((matter) => !savedMatters.some((item) => item.id === matter.id)),
+    ];
+    setMatters(nextRemoteMatters);
+    writeCachedMatters(nextRemoteMatters);
+    setMatterLoadStatus(failedCount ? "error" : savedMatters.length ? "loaded" : "empty");
+    setMatterLoadMessage(failedCount
+      ? `${failedCount} imported matter${failedCount === 1 ? "" : "s"} could not be saved to Supabase.`
+      : matterStatusMessage(savedMatters.length ? "loaded" : "empty", nextRemoteMatters.length));
 
-    setNotice(`${imported.length} matter${imported.length === 1 ? "" : "s"} imported.`);
+    setNotice(`${savedMatters.length} matter${savedMatters.length === 1 ? "" : "s"} imported to Supabase${failedCount ? `; ${failedCount} failed.` : "."}`);
     event.target.value = "";
   }
 
@@ -170,6 +175,14 @@ export default function MattersPage() {
           </div>
         </header>
         {notice ? <p className="mt-4 rounded-md bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-800">{notice}</p> : null}
+        {matterLoadMessage ? (
+          <p className={matterLoadStatus === "loaded" || matterLoadStatus === "empty"
+            ? "mt-4 rounded-md bg-sky-50 px-3 py-2 text-sm font-medium text-sky-800"
+            : "mt-4 rounded-md bg-amber-50 px-3 py-2 text-sm font-medium text-amber-900"}
+          >
+            {matterLoadMessage}
+          </p>
+        ) : null}
         <section className="mt-6 rounded-lg border border-slate-200 bg-white p-5 shadow-form">
           <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
             <h2 className="text-lg font-semibold text-slate-950">All matters</h2>
@@ -188,7 +201,7 @@ export default function MattersPage() {
                   <td className="px-4 py-3"><Badge label={matter.status === "documents_generated" ? "Generated" : "Ready for review"} tone={matter.status === "documents_generated" ? "green" : "blue"} /></td>
                   <td className="px-4 py-3"><Link href={`/new-client?matterId=${encodeURIComponent(matter.id)}`} className="font-semibold text-sky-700 hover:text-sky-900">Open matter</Link></td>
                 </tr>)}
-                {!rows.length ? <tr><td colSpan={7} className="px-4 py-12 text-center text-slate-500">No matters match this search.</td></tr> : null}
+                {!rows.length ? <tr><td colSpan={7} className="px-4 py-12 text-center text-slate-500">{query.trim() ? "No matters match this search." : matterStatusMessage(matterLoadStatus, matters.length)}</td></tr> : null}
               </tbody>
             </table>
           </div>

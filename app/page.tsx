@@ -6,7 +6,8 @@ import { useEffect, useMemo, useState } from "react";
 import { billingInvoicesStorageKey, type StoredBillingInvoice } from "../lib/billing-storage";
 import { demoClaims, demoLegalAidApplications, demoMatter, isDemoEnvironment } from "../lib/demo-data";
 import type { LegalAidClaim } from "../lib/legal-aid-claims";
-import { recentMattersStorageKey, type LegalAidRecord } from "../lib/legal-aid";
+import { type LegalAidRecord } from "../lib/legal-aid";
+import { loadMattersFromSupabase, matterStatusMessage, type MatterLoadStatus } from "../lib/matter-persistence";
 import type { MatterFile } from "../lib/matter";
 
 type QueueCard = { label: string; count: number; tone?: "warning" | "ready" };
@@ -31,16 +32,18 @@ export default function Dashboard() {
   const [legalAid, setLegalAid] = useState<LegalAidRecord[]>([]);
   const [invoices, setInvoices] = useState<StoredBillingInvoice[]>([]);
   const [claims, setClaims] = useState<LegalAidClaim[]>([]);
+  const [matterLoadStatus, setMatterLoadStatus] = useState<MatterLoadStatus>("loading");
 
   useEffect(() => {
-    const loadedMatters = readLocal<MatterFile>(recentMattersStorageKey);
-    setMatters(loadedMatters.length ? loadedMatters : isDemoEnvironment ? [demoMatter] : []);
     setInvoices(readLocal<StoredBillingInvoice>(billingInvoicesStorageKey));
 
     void Promise.all([
+      loadMattersFromSupabase(),
       fetch("/api/legal-aid-applications", { cache: "no-store" }).then((response) => response.ok ? response.json() : null),
       fetch("/api/legal-aid-claims", { cache: "no-store" }).then((response) => response.ok ? response.json() : null),
-    ]).then(([legalAidPayload, claimsPayload]) => {
+    ]).then(([matterResult, legalAidPayload, claimsPayload]) => {
+      setMatters(matterResult.matters.length ? matterResult.matters : isDemoEnvironment && matterResult.status === "empty" ? [demoMatter] : matterResult.matters);
+      setMatterLoadStatus(matterResult.status);
       const loadedLegalAid = legalAidPayload?.status === "loaded" ? legalAidPayload.data as LegalAidRecord[] : [];
       const loadedClaims = claimsPayload?.status === "loaded" ? claimsPayload.data as LegalAidClaim[] : [];
       setLegalAid(loadedLegalAid.length ? loadedLegalAid : isDemoEnvironment ? demoLegalAidApplications : []);
@@ -123,7 +126,7 @@ export default function Dashboard() {
               </div>
             ))}
           </div>
-          <p className="mt-4 text-xs text-slate-500">{matters.length} matter record{matters.length === 1 ? "" : "s"} currently saved in this workspace.</p>
+          <p className="mt-4 text-xs text-slate-500">{matterStatusMessage(matterLoadStatus, matters.length)}</p>
         </section>
       </div>
     </main>

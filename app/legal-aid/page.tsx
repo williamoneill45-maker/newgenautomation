@@ -10,11 +10,11 @@ import {
   legalAidTemplatePath,
   parentingOrderStandardWording,
   protectionOrderStandardWording,
-  recentMattersStorageKey,
   confidentialLawyerPostalAddress,
   type LegalAidRecord,
   type LegalAidReview,
 } from "../../lib/legal-aid";
+import { loadMattersFromSupabase, readCachedMatters } from "../../lib/matter-persistence";
 import { courts, createEmptyMatter, type MatterFile } from "../../lib/matter";
 import { demoLegalAidApplications, demoMatter, isDemoEnvironment } from "../../lib/demo-data";
 
@@ -30,19 +30,7 @@ function updateReviewField(
 }
 
 function readRecentMatters(): MatterFile[] {
-  try {
-    const raw = window.localStorage.getItem(recentMattersStorageKey);
-    return raw ? (JSON.parse(raw) as MatterFile[]) : [];
-  } catch {
-    window.localStorage.removeItem(recentMattersStorageKey);
-    return [];
-  }
-}
-
-function isWithinLastWeek(value: string) {
-  const time = new Date(value).getTime();
-  if (Number.isNaN(time)) return false;
-  return Date.now() - time <= 7 * 24 * 60 * 60 * 1000;
+  return readCachedMatters();
 }
 
 export default function LegalAidPage() {
@@ -66,20 +54,26 @@ export default function LegalAidPage() {
   const hasSignedPage = Boolean(signedPage);
 
   useEffect(() => {
-    const storedRecent = readRecentMatters().filter((item) => (item.legalAidRequired ?? true) && isWithinLastWeek(item.updatedAt || item.createdAt));
-    const recent = storedRecent.length ? storedRecent : isDemoEnvironment ? [demoMatter] : [];
-    setRecentMatters(recent);
     void loadSavedApplications();
-    const storedMatter = window.localStorage.getItem(legalAidMatterStorageKey);
+    void loadMattersFromSupabase().then((result) => {
+      const supabaseMatters = result.matters.filter((item) => item.legalAidRequired ?? true);
+      const recent = supabaseMatters.length ? supabaseMatters : isDemoEnvironment && result.status === "empty" ? [demoMatter] : supabaseMatters;
+      setRecentMatters(recent);
+      if (result.status === "not_configured" || result.status === "error" || result.status === "cache") {
+        setNotice(result.message);
+      }
 
-    try {
-      const parsedMatter = storedMatter
-        ? JSON.parse(storedMatter) as MatterFile
-        : recent[0] ?? null;
-      if (parsedMatter) void loadMatter(parsedMatter);
-    } catch {
-      window.localStorage.removeItem(legalAidMatterStorageKey);
-    }
+      const storedMatter = window.localStorage.getItem(legalAidMatterStorageKey);
+      try {
+        const parsedStoredMatter = storedMatter ? JSON.parse(storedMatter) as MatterFile : null;
+        const selectedMatter = (parsedStoredMatter ? recent.find((item) => item.id === parsedStoredMatter.id) : null)
+          ?? recent[0]
+          ?? ((result.status === "cache" || result.status === "error" || result.status === "not_configured") ? parsedStoredMatter : null);
+        if (selectedMatter) void loadMatter(selectedMatter);
+      } catch {
+        window.localStorage.removeItem(legalAidMatterStorageKey);
+      }
+    });
   }, []);
 
   async function loadSavedApplications() {

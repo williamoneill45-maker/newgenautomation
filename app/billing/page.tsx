@@ -27,7 +27,7 @@ import {
 import { demoMatter, isDemoEnvironment } from "../../lib/demo-data";
 import { form32BSettingsStorageKey } from "../../lib/form32b-rules";
 import { form33ASettingsStorageKey } from "../../lib/form33a-rules";
-import { recentMattersStorageKey } from "../../lib/legal-aid";
+import { loadMattersFromSupabase, saveMatterToSupabase, writeCachedMatters } from "../../lib/matter-persistence";
 import { createEmptyMatter, type CourtLocation, type MatterFile } from "../../lib/matter";
 
 const today = new Date().toLocaleDateString("en-CA", { timeZone: "Pacific/Auckland" });
@@ -64,10 +64,6 @@ function readLocal<T>(key: string): T[] {
     window.localStorage.removeItem(key);
     return [];
   }
-}
-
-function writeRecentMatters(matters: MatterFile[]) {
-  window.localStorage.setItem(recentMattersStorageKey, JSON.stringify(matters));
 }
 
 function writeBillingClients(clients: BillingClientProfile[]) {
@@ -191,26 +187,30 @@ function BillingPageContent() {
   const hasDefendedHearing = selectedWorkItemIds.includes("32-defended-hearing") || selectedWorkItemIds.includes("33-defended-hearing");
 
   useEffect(() => {
-    const localMatters = [demoMatter, ...readLocal<MatterFile>(recentMattersStorageKey)].filter((matter, index, all) => all.findIndex((item) => item.id === matter.id) === index);
     const localClients = readLocal<BillingClientProfile>(billingClientsStorageKey);
-    setMatters(localMatters);
+    const initialMatters = isDemoEnvironment ? [demoMatter] : [];
+    setMatters(initialMatters);
     setClients(localClients);
 
     const queryClient = searchParams.get("client")?.trim();
     if (queryClient) {
-      const match = uniqueSuggestions(localMatters, localClients, queryClient)[0];
+      const match = uniqueSuggestions(initialMatters, localClients, queryClient)[0];
       if (match) selectSuggestion(match);
       else setClientName(queryClient);
     }
 
-    void fetch("/api/matters")
-      .then((response) => response.ok ? response.json() : null)
-      .then((payload) => {
-        if (payload?.status === "loaded" && Array.isArray(payload.data)) {
-          setMatters((current) => [...payload.data, ...current].filter((matter, index, all) => all.findIndex((item) => item.id === matter.id) === index));
+    void loadMattersFromSupabase()
+      .then((result) => {
+        const remoteMatters = result.matters.length ? result.matters : isDemoEnvironment && result.status === "empty" ? [demoMatter] : result.matters;
+        setMatters(remoteMatters);
+        if (queryClient) {
+          const match = uniqueSuggestions(remoteMatters, localClients, queryClient)[0];
+          if (match) selectSuggestion(match);
         }
-      })
-      .catch(() => undefined);
+        if (result.status === "not_configured" || result.status === "error") {
+          setGenerationNotice(result.message);
+        }
+      });
     void fetch("/api/billing-clients")
       .then((response) => response.ok ? response.json() : null)
       .then((payload) => {
@@ -410,21 +410,23 @@ function BillingPageContent() {
       updatedAt: new Date().toISOString(),
     };
 
-    const nextMatters = [matter, ...matters.filter((item) => item.id !== matter.id)];
+    const savedMatter = await saveMatterToSupabase(matter, client.id);
+    const nextMatters = [savedMatter, ...matters.filter((item) => item.id !== savedMatter.id)];
     const nextClients = [client, ...clients.filter((item) => item.id !== client.id)];
     setMatters(nextMatters);
     setClients(nextClients);
-    setSelectedMatterId(matter.id);
+    setSelectedMatterId(savedMatter.id);
     setSelectedClientId(client.id);
-    writeRecentMatters(nextMatters.filter((item) => item.id !== demoMatter.id));
+    writeCachedMatters(nextMatters.filter((item) => item.id !== demoMatter.id));
     writeBillingClients(nextClients);
 
-    await Promise.allSettled([
-      fetch("/api/matters", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ matter, clientId: client.id }) }),
-      fetch("/api/billing-clients", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(client) }),
-    ]);
+    await fetch("/api/billing-clients", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(client),
+    }).catch(() => undefined);
 
-    return { matter, client };
+    return { matter: savedMatter, client };
   }
 
   async function persistInvoice(invoice: StoredBillingInvoice) {

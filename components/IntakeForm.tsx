@@ -17,7 +17,13 @@ import {
   type Party,
 } from "../lib/matter";
 import { calculateChildDisplayAge } from "../lib/document-automation";
-import { legalAidMatterStorageKey, recentMattersStorageKey } from "../lib/legal-aid";
+import { legalAidMatterStorageKey } from "../lib/legal-aid";
+import {
+  loadMattersFromSupabase,
+  readCachedMatters,
+  saveMatterToSupabase,
+  upsertCachedMatter,
+} from "../lib/matter-persistence";
 import {
   billingClientsStorageKey,
   createBillingClientId,
@@ -155,13 +161,7 @@ function SelectField({
 }
 
 function readRecentMatters(): MatterFile[] {
-  try {
-    const raw = window.localStorage.getItem(recentMattersStorageKey);
-    return raw ? (JSON.parse(raw) as MatterFile[]) : [];
-  } catch {
-    window.localStorage.removeItem(recentMattersStorageKey);
-    return [];
-  }
+  return readCachedMatters();
 }
 
 function readBillingClients(): BillingClientProfile[] {
@@ -312,13 +312,6 @@ export default function IntakeForm() {
 
   const saveDraft = async (options: { quiet?: boolean } = {}): Promise<BillingClientProfile | null> => {
     if (!options.quiet) setSaveStatus("");
-    window.localStorage.setItem(legalAidMatterStorageKey, JSON.stringify(matter));
-    const existing = readRecentMatters();
-    window.localStorage.setItem(
-      recentMattersStorageKey,
-      JSON.stringify([matter, ...existing.filter((item) => item.id !== matter.id)].slice(0, 25)),
-    );
-    window.dispatchEvent(new CustomEvent("newgen:matter-saved"));
 
     const clientName = normalizeClientName(matter.intake.applicant.fullName || matter.clientName);
     if (!clientName) {
@@ -362,11 +355,10 @@ export default function IntakeForm() {
       );
 
       try {
-        await fetch("/api/matters", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ matter, clientId: profile.id }),
-        }).catch(() => undefined);
+        const savedMatter = await saveMatterToSupabase(matter, profile.id);
+        setMatter(savedMatter);
+        window.localStorage.setItem(legalAidMatterStorageKey, JSON.stringify(savedMatter));
+        window.dispatchEvent(new CustomEvent("newgen:matter-saved"));
 
         await fetch("/api/billing-clients", {
           method: "POST",
@@ -378,7 +370,7 @@ export default function IntakeForm() {
         return profile;
       } catch (error) {
         if (!options.quiet) {
-          setSaveStatus(error instanceof Error ? error.message : "Intake saved locally, but remote setup failed.");
+          setSaveStatus(error instanceof Error ? error.message : "Matter was not saved to Supabase.");
         }
         if (options.quiet) throw error;
         return profile;
@@ -396,23 +388,24 @@ export default function IntakeForm() {
     const matterId = searchParams.get("matterId");
     if (!matterId) return;
 
-    const localMatter = readRecentMatters().find((item) => item.id === matterId);
-    if (localMatter) {
-      setMatter(localMatter);
-      window.localStorage.setItem(legalAidMatterStorageKey, JSON.stringify(localMatter));
-      return;
-    }
-
-    void fetch("/api/matters", { cache: "no-store" })
-      .then((response) => response.ok ? response.json() : null)
-      .then((payload: { status?: string; data?: MatterFile[] } | null) => {
-        const remoteMatter = payload?.status === "loaded" ? payload.data?.find((item) => item.id === matterId) : null;
+    void loadMattersFromSupabase()
+      .then((result) => {
+        const remoteMatter = result.matters.find((item) => item.id === matterId);
         if (remoteMatter) {
           setMatter(remoteMatter);
           window.localStorage.setItem(legalAidMatterStorageKey, JSON.stringify(remoteMatter));
+          upsertCachedMatter(remoteMatter);
+          return;
         }
-      })
-      .catch(() => undefined);
+        const cachedMatter = readRecentMatters().find((item) => item.id === matterId);
+        if (cachedMatter && (result.status === "cache" || result.status === "error" || result.status === "not_configured")) {
+          setMatter(cachedMatter);
+          window.localStorage.setItem(legalAidMatterStorageKey, JSON.stringify(cachedMatter));
+          setSaveStatus(result.message);
+        } else {
+          setSaveStatus(result.message);
+        }
+      });
   }, [searchParams]);
 
   return (
