@@ -47,7 +47,6 @@ type BillingSuggestion = {
   detail: string;
   clientName: string;
   legalAidNumber: string;
-  famNumber: string;
   matter?: MatterFile;
   client?: BillingClientProfile;
 };
@@ -81,23 +80,21 @@ function uniqueSuggestions(matters: MatterFile[], clients: BillingClientProfile[
   const byKey = new Map<string, BillingSuggestion>();
 
   for (const matter of matters) {
-    if (normalized && ![matter.clientName, matter.legalAidNumber, matter.intake.famNumber].join(" ").toLowerCase().includes(normalized)) continue;
+    if (normalized && ![matter.clientName, matter.legalAidNumber].join(" ").toLowerCase().includes(normalized)) continue;
     byKey.set(`matter:${matter.id}`, {
       key: `matter:${matter.id}`,
       label: matter.clientName || "Unnamed matter",
-      detail: [matter.intake.famNumber, matter.legalAidNumber, matter.status.replace(/_/g, " ")].filter(Boolean).join(" · ") || "Matter profile",
+      detail: [matter.legalAidNumber, matter.status.replace(/_/g, " ")].filter(Boolean).join(" · ") || "Matter profile",
       clientName: matter.clientName,
       legalAidNumber: matter.legalAidNumber,
-      famNumber: matter.intake.famNumber,
       matter,
     });
   }
 
   for (const client of clients) {
-    if (normalized && ![client.clientName, client.legalAidNumber, client.famNumber].join(" ").toLowerCase().includes(normalized)) continue;
+    if (normalized && ![client.clientName, client.legalAidNumber].join(" ").toLowerCase().includes(normalized)) continue;
     const matchingMatter = matters.find((matter) =>
       normalizeClientName(matter.clientName).toLowerCase() === normalizeClientName(client.clientName).toLowerCase() ||
-      (!!client.famNumber && matter.intake.famNumber === client.famNumber) ||
       (!!client.legalAidNumber && matter.legalAidNumber === client.legalAidNumber)
     );
     const key = matchingMatter ? `matter:${matchingMatter.id}` : `client:${client.id}`;
@@ -109,10 +106,9 @@ function uniqueSuggestions(matters: MatterFile[], clients: BillingClientProfile[
     byKey.set(key, {
       key,
       label: client.clientName || "Unnamed client",
-      detail: [client.famNumber, client.legalAidNumber, "Billing profile"].filter(Boolean).join(" · "),
+      detail: [client.legalAidNumber, "Billing profile"].filter(Boolean).join(" · "),
       clientName: client.clientName,
       legalAidNumber: client.legalAidNumber,
-      famNumber: client.famNumber,
       matter: matchingMatter,
       client,
     });
@@ -143,7 +139,6 @@ function BillingPageContent() {
   const [formType, setFormType] = useState<BillingFormType>("32B");
   const [clientName, setClientName] = useState(isDemoEnvironment ? demoMatter.clientName : "");
   const [legalAidNumber, setLegalAidNumber] = useState(isDemoEnvironment ? demoMatter.legalAidNumber : "");
-  const [famNumber, setFamNumber] = useState(isDemoEnvironment ? demoMatter.intake.famNumber : "");
   const [selectedMatterId, setSelectedMatterId] = useState(isDemoEnvironment ? demoMatter.id : "");
   const [selectedClientId, setSelectedClientId] = useState("");
   const [createClaimRecord, setCreateClaimRecord] = useState(true);
@@ -289,7 +284,6 @@ function BillingPageContent() {
   function selectSuggestion(suggestion: BillingSuggestion) {
     setClientName(suggestion.clientName);
     setLegalAidNumber(suggestion.legalAidNumber);
-    setFamNumber(suggestion.famNumber);
     setSelectedMatterId(suggestion.matter?.id ?? "");
     setSelectedClientId(suggestion.client?.id ?? "");
     setGenerationNotice("");
@@ -353,12 +347,10 @@ function BillingPageContent() {
     const normalizedClientName = normalizeClientName(clientName);
     const existingMatter = selectedMatter ?? matters.find((matter) =>
       normalizeClientName(matter.clientName).toLowerCase() === normalizedClientName.toLowerCase() ||
-      (!!famNumber && matter.intake.famNumber === famNumber) ||
       (!!legalAidNumber && matter.legalAidNumber === legalAidNumber)
     );
     const existingClient = selectedClient ?? clients.find((client) =>
       normalizeClientName(client.clientName).toLowerCase() === normalizedClientName.toLowerCase() ||
-      (!!famNumber && client.famNumber === famNumber) ||
       (!!legalAidNumber && client.legalAidNumber === legalAidNumber)
     );
 
@@ -378,7 +370,6 @@ function BillingPageContent() {
           clientName: normalizedClientName,
           legalAidNumber,
           updatedAt: new Date().toISOString(),
-          intake: { ...existingMatter.intake, famNumber },
         }
       : {
           ...shellMatter,
@@ -389,7 +380,6 @@ function BillingPageContent() {
           status: "draft" as const,
           intake: {
             ...shellMatter.intake,
-            famNumber,
             courtLocation: shellCourt,
             applicant: { ...shellMatter.intake.applicant, fullName: normalizedClientName },
           },
@@ -406,7 +396,6 @@ function BillingPageContent() {
       }),
       clientName: normalizedClientName,
       legalAidNumber,
-      famNumber,
       updatedAt: new Date().toISOString(),
     };
 
@@ -501,7 +490,7 @@ function BillingPageContent() {
         clientId: matter.id,
         clientName: record.clientName,
         legalAidNumber: record.legalAidNumber,
-        famNumber,
+        famNumber: "",
         invoiceNumber: record.invoiceNumber,
         invoiceTotal: totals.total,
         formType: record.formType,
@@ -619,7 +608,6 @@ function BillingPageContent() {
                   ) : null}
                 </div>
                 <TextField label="Legal aid number" value={legalAidNumber} onChange={setLegalAidNumber} />
-                <TextField label="FAM number" value={famNumber} onChange={setFamNumber} />
               </div>
               <div className="mt-4 max-w-md">
                 <TextField

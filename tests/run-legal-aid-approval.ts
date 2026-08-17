@@ -28,6 +28,7 @@ const png = Buffer.from(
 );
 const form = new FormData();
 form.set("review", JSON.stringify(review));
+form.set("includeSupportingUploads", "true");
 form.set("incomeProof", new File([png], "income-proof.png", { type: "image/png" }));
 form.set("signedPage", new File([png], "signed-page.png", { type: "image/png" }));
 

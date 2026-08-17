@@ -38,6 +38,7 @@ export default function LegalAidPage() {
   const [review, setReview] = useState<LegalAidReview | null>(null);
   const [incomeProof, setIncomeProof] = useState<File | null>(null);
   const [signedPage, setSignedPage] = useState<File | null>(null);
+  const [includeSupportingUploads, setIncludeSupportingUploads] = useState(false);
   const [error, setError] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
   const [isGenerated, setIsGenerated] = useState(false);
@@ -277,8 +278,10 @@ export default function LegalAidPage() {
       ? "submitted"
       : isGenerated
       ? "generated"
+      : !includeSupportingUploads
+      ? "ready_to_generate"
       : getLegalAidStatus(hasIncomeProof, hasSignedPage),
-    [application?.status, hasIncomeProof, hasSignedPage, isGenerated],
+    [application?.status, hasIncomeProof, hasSignedPage, includeSupportingUploads, isGenerated],
   );
 
   async function markSubmitted() {
@@ -350,12 +353,12 @@ export default function LegalAidPage() {
 
     const saved = await saveDraft(review);
 
-    if (!incomeProof) {
+    if (includeSupportingUploads && !incomeProof) {
       setError("Income proof screenshot or scan is required.");
       return;
     }
 
-    if (!signedPage) {
+    if (includeSupportingUploads && !signedPage) {
       setError("Signed client page 5 screenshot or scan is required.");
       return;
     }
@@ -366,8 +369,11 @@ export default function LegalAidPage() {
     try {
       const formData = new FormData();
       formData.append("review", JSON.stringify(review));
-      formData.append("incomeProof", incomeProof);
-      formData.append("signedPage", signedPage);
+      formData.append("includeSupportingUploads", includeSupportingUploads ? "true" : "false");
+      if (includeSupportingUploads && incomeProof && signedPage) {
+        formData.append("incomeProof", incomeProof);
+        formData.append("signedPage", signedPage);
+      }
 
       const response = await fetch("/api/generate-legal-aid", {
         method: "POST",
@@ -419,7 +425,7 @@ export default function LegalAidPage() {
           <p className="text-sm font-semibold uppercase tracking-wide text-sky-700">Legal aid</p>
           <h1 className="mt-2 text-3xl font-semibold tracking-normal text-slate-950">Legal Aid Application</h1>
           <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-600">
-            Review matter details, attach income proof and the signed client page, then generate the completed PDF.
+            Review matter details, choose whether to attach supporting upload pages, then generate the completed PDF.
           </p>
         </header>
 
@@ -531,51 +537,77 @@ export default function LegalAidPage() {
             <aside className="space-y-6">
               <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-form">
                 <div className="flex items-center justify-between gap-3">
-                  <h2 className="text-lg font-semibold text-slate-950">Required uploads</h2>
+                  <h2 className="text-lg font-semibold text-slate-950">Supporting uploads</h2>
                   <span className="rounded-md bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-700">
                     {status.replace(/_/g, " ")}
                   </span>
                 </div>
+                <label className="mt-5 flex cursor-pointer items-start gap-3 rounded-md border border-slate-200 bg-slate-50 p-3">
+                  <input
+                    type="checkbox"
+                    checked={includeSupportingUploads}
+                    onChange={(event) => {
+                      setIncludeSupportingUploads(event.target.checked);
+                      setError("");
+                      setIsGenerated(false);
+                    }}
+                    className="mt-1 h-4 w-4 rounded border-slate-300 text-sky-600 focus:ring-sky-600"
+                  />
+                  <span>
+                    <span className="block text-sm font-semibold text-slate-900">Attach income proof and signed page</span>
+                    <span className="mt-1 block text-xs leading-5 text-slate-600">
+                      Off by default. Turn this on only when the Legal Aid PDF needs the two screenshot or scan inserts.
+                    </span>
+                  </span>
+                </label>
                 <div className="mt-5 space-y-4">
-                  <UploadField
-                    label="Income proof"
-                    detail="Inserted after page 2."
-                    file={incomeProof}
-                    onChange={(event) => handleFileChange(event, setIncomeProof, "incomeProof")}
-                    onDropFile={(file) => stageUpload(file, setIncomeProof, "incomeProof")}
-                    onPasteFile={(event) => {
-                      const file = getClipboardImageFile(event, "incomeProof");
-                      if (file) {
-                        event.preventDefault();
-                        stageUpload(file, setIncomeProof, "incomeProof");
-                      }
-                    }}
-                  />
-                  <UploadField
-                    label="Signed client page 5"
-                    detail="Replaces page 5."
-                    file={signedPage}
-                    onChange={(event) => handleFileChange(event, setSignedPage, "signedPage")}
-                    onDropFile={(file) => stageUpload(file, setSignedPage, "signedPage")}
-                    onPasteFile={(event) => {
-                      const file = getClipboardImageFile(event, "signedPage");
-                      if (file) {
-                        event.preventDefault();
-                        stageUpload(file, setSignedPage, "signedPage");
-                      }
-                    }}
-                  />
+                  {includeSupportingUploads ? (
+                    <>
+                      <UploadField
+                        label="Income proof"
+                        detail="Inserted after page 2."
+                        file={incomeProof}
+                        onChange={(event) => handleFileChange(event, setIncomeProof, "incomeProof")}
+                        onDropFile={(file) => stageUpload(file, setIncomeProof, "incomeProof")}
+                        onPasteFile={(event) => {
+                          const file = getClipboardImageFile(event, "incomeProof");
+                          if (file) {
+                            event.preventDefault();
+                            stageUpload(file, setIncomeProof, "incomeProof");
+                          }
+                        }}
+                      />
+                      <UploadField
+                        label="Signed client page 5"
+                        detail="Replaces page 5."
+                        file={signedPage}
+                        onChange={(event) => handleFileChange(event, setSignedPage, "signedPage")}
+                        onDropFile={(file) => stageUpload(file, setSignedPage, "signedPage")}
+                        onPasteFile={(event) => {
+                          const file = getClipboardImageFile(event, "signedPage");
+                          if (file) {
+                            event.preventDefault();
+                            stageUpload(file, setSignedPage, "signedPage");
+                          }
+                        }}
+                      />
+                    </>
+                  ) : (
+                    <p className="rounded-md border border-dashed border-slate-300 bg-white p-3 text-sm leading-6 text-slate-600">
+                      Upload inserts are switched off. The generated PDF will use the completed Legal Aid application only.
+                    </p>
+                  )}
                 </div>
               </section>
 
               <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-form">
                 <h2 className="text-lg font-semibold text-slate-950">Next action</h2>
                 <p className="mt-2 text-sm leading-6 text-slate-600">
-                  {status === "submitted" ? "This application is recorded as submitted." : status === "generated" ? "The PDF is generated. Mark it submitted once it has been sent to Legal Aid." : status === "ready_to_generate" ? "Both required uploads are present. Generate the completed PDF." : "Complete the missing upload shown above."}
+                  {status === "submitted" ? "This application is recorded as submitted." : status === "generated" ? "The PDF is generated. Mark it submitted once it has been sent to Legal Aid." : status === "ready_to_generate" ? includeSupportingUploads ? "Both selected uploads are present. Generate the completed PDF." : "Generate the PDF without attaching the two upload pages." : "Complete the missing upload shown above."}
                 </p>
                 {status !== "submitted" ? <button
                   type="button"
-                  disabled={isGenerating || status === "generated" || !incomeProof || !signedPage}
+                  disabled={isGenerating || status === "generated" || (includeSupportingUploads && (!incomeProof || !signedPage))}
                   className="mt-5 inline-flex h-10 w-full items-center justify-center rounded-md bg-sky-600 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-sky-700 disabled:cursor-not-allowed disabled:bg-slate-300"
                   onClick={generateLegalAidApplication}
                 >

@@ -11,7 +11,19 @@ import {
 import { buildAdditionalChildLines } from "../../../lib/child-continuation.ts";
 import { mergeDocxTemplate, type DocxMergeReport } from "../../../lib/docx-template.ts";
 import {
+  billingTemplateDefinitions,
+  buildBillingMergeFields,
+} from "../../../lib/billing-document.ts";
+import type { BillingFormType } from "../../../lib/billing-automation.ts";
+import {
+  createStructuredBillingRecord,
+  type BillingWorkItemId,
+} from "../../../lib/billing-selection.ts";
+import {
+  buildCourtLetterDocxLiteralReplacements,
+  buildCourtLetterDocxMergeFields,
   buildLegacyDocMergeFields,
+  formatTodayLong,
   mergeLegacyDocTemplate,
 } from "../../../lib/legacy-doc-template.ts";
 import type { MatterFile } from "../../../lib/matter.ts";
@@ -69,6 +81,14 @@ async function readSourceTemplate(fileName: string): Promise<ArrayBuffer> {
   ) as ArrayBuffer;
 }
 
+async function readProjectFile(fileName: string): Promise<ArrayBuffer> {
+  const template = await readFile(path.join(process.cwd(), fileName));
+  return template.buffer.slice(
+    template.byteOffset,
+    template.byteOffset + template.byteLength,
+  ) as ArrayBuffer;
+}
+
 async function templateExists(fileName: string): Promise<boolean> {
   try {
     await access(path.join(process.cwd(), "templates", fileName));
@@ -78,8 +98,87 @@ async function templateExists(fileName: string): Promise<boolean> {
   }
 }
 
+async function projectFileExists(fileName: string): Promise<boolean> {
+  try {
+    await access(path.join(process.cwd(), fileName));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function safeFileName(value: string): string {
   return value.replace(/[^A-Za-z0-9 ._-]/g, "").trim().replace(/\s+/g, "_") || "Client";
+}
+
+function dateStamp(date = new Date()): string {
+  return date.toISOString().slice(0, 10).replace(/-/g, "");
+}
+
+function invoiceFileDate(date = new Date()): string {
+  return new Intl.DateTimeFormat("en-NZ", {
+    day: "2-digit", month: "2-digit", year: "2-digit",
+  }).format(date).replace(/\//g, ".");
+}
+
+function initialLegalAidInvoiceNumber(matter: MatterFile, formType: BillingFormType): string {
+  return `${dateStamp()}.${formType}.${safeFileName(getClientSurname(matter)).toUpperCase()}.INITIAL`;
+}
+
+function initialLegalAidBillingWorkItem(formType: BillingFormType): BillingWorkItemId {
+  return formType === "33A" ? "33-pre-hearing-matters" : "32-pre-hearing-matters";
+}
+
+function initialLegalAidInvoiceOutputFileName(matter: MatterFile, formType: BillingFormType): string {
+  const invoiceType = formType === "33A" ? "FV" : "COCA";
+  return `Tax invoice ${invoiceType} ${invoiceFileDate()}.docx`;
+}
+
+async function generateInitialLegalAidInvoice(matter: MatterFile, formType: BillingFormType) {
+  const templateDefinition = billingTemplateDefinitions[formType];
+  const record = createStructuredBillingRecord({
+    formType,
+    clientName: matter.clientName || matter.intake.applicant.fullName,
+    legalAidNumber: matter.legalAidNumber,
+    matterName: [
+      matter.intake.applicant.fullName,
+      matter.intake.respondent.fullName ? `v ${matter.intake.respondent.fullName}` : "",
+    ].filter(Boolean).join(" "),
+    invoiceNumber: initialLegalAidInvoiceNumber(matter, formType),
+    invoiceType: "interim",
+    selectedWorkItemIds: [initialLegalAidBillingWorkItem(formType)],
+    detailsByItem: {},
+    travelTimeSelected: false,
+    mileageSelected: false,
+    travelCourt: "",
+    parking: 0,
+    officeDisbursements: 0,
+    wordingOverrides: {
+      [initialLegalAidBillingWorkItem(formType)]: "All documents drafted and prepped for filing",
+    },
+  });
+  const sourceTemplate = await readProjectFile(templateDefinition.sourcePath);
+  const { buffer, report } = await mergeDocxTemplate(sourceTemplate, buildBillingMergeFields(record), {
+    outputType: "document",
+    normalizeBillingJudgeDirectionsRow: true,
+    billingFormValues: {
+      dateCompleted: new Intl.DateTimeFormat("en-NZ", {
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+      }).format(new Date()),
+      invoiceType: "interim",
+      mileageRate: "1.20",
+    },
+  });
+
+  return {
+    sourcePath: templateDefinition.sourcePath,
+    outputFileName: initialLegalAidInvoiceOutputFileName(matter, formType),
+    title: `Form ${formType} Legal Aid Initial Invoice`,
+    buffer,
+    report,
+  };
 }
 
 function getClientSurname(matter: MatterFile): string {
@@ -122,6 +221,16 @@ function informationSheetApplicationFields(templateDefinition: SourceTemplateDef
   };
 }
 
+const courtLetterDocumentTypes = new Set([
+  "court_legal_aid_confirmation_letter",
+  "court_filing_documents_letter",
+  "court_filing_dv_applications_letter",
+  "mfi_service_letter",
+  "police_information_request_email",
+  "registrar_list_submissions",
+  "client_sworn_affidavit_letter",
+]);
+
 export async function POST(request: Request) {
   const body = (await request.json()) as {
     matter?: MatterFile;
@@ -150,6 +259,7 @@ export async function POST(request: Request) {
       "Missing fields are left unchanged in the completed DOCX.",
       "The Family Violence Affidavit uses standardized wording; History and Recent Events are intentionally left blank.",
       "Conditional affidavit paragraphs retain the template's editable Word text and automatic numbering.",
+      "Initial Legal Aid invoice forms are included conditionally: Form 33A for Protection Order, Form 32B for Parenting Order.",
       "Missing source templates are skipped and listed in this validation report.",
     ],
     skippedDocuments: [],
@@ -192,8 +302,10 @@ export async function POST(request: Request) {
 
     const sourceTemplate = await readSourceTemplate(templateDefinition.sourceFileName);
     const fields = buildTemplateMergeFields(body.matter, templateDefinition.id);
+    const isCourtLetter = courtLetterDocumentTypes.has(templateDefinition.id);
     const templateFields = {
       ...fields,
+      ...(isCourtLetter ? buildCourtLetterDocxMergeFields(body.matter) : {}),
       ...informationSheetApplicationFields(templateDefinition),
       ...(templateDefinition.id === "confidential_address_application"
         ? {
@@ -274,6 +386,12 @@ export async function POST(request: Request) {
             },
           }
         : {}),
+      ...(isCourtLetter
+        ? {
+            literalTextReplacements: buildCourtLetterDocxLiteralReplacements(body.matter),
+            legacyCourtLetterDate: formatTodayLong(),
+          }
+        : {}),
       ...(templateDefinition.id === "parenting_order_application"
         ? {
             parentingApplicantName: body.matter.intake.applicant.fullName.toLocaleUpperCase("en-NZ"),
@@ -346,6 +464,36 @@ export async function POST(request: Request) {
       output: outputFileName,
       title: templateDefinition.title,
       report,
+    });
+  }
+
+  const initialInvoiceFormTypes: BillingFormType[] = [
+    ...(hasProtectionOrder ? ["33A" as const] : []),
+    ...(hasParentingOrder ? ["32B" as const] : []),
+  ];
+  for (const formType of initialInvoiceFormTypes) {
+    const templateDefinition = billingTemplateDefinitions[formType];
+    if (!(await projectFileExists(templateDefinition.sourcePath))) {
+      validationReport.skippedDocuments.push({
+        template: templateDefinition.sourcePath,
+        title: `Form ${formType} Legal Aid Initial Invoice`,
+        reason: "Source billing template is missing from /templates.",
+      });
+      continue;
+    }
+
+    const invoice = await generateInitialLegalAidInvoice(body.matter, formType);
+    bundle.file(invoice.outputFileName, invoice.buffer);
+    generatedFiles.push({
+      fileName: invoice.outputFileName,
+      buffer: invoice.buffer,
+      contentType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    });
+    validationReport.documents.push({
+      template: invoice.sourcePath,
+      output: invoice.outputFileName,
+      title: invoice.title,
+      report: invoice.report,
     });
   }
 
