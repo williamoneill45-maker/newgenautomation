@@ -58,6 +58,8 @@ export type DocxMergeOptions = {
   parentingApplicantName?: string;
   protectionOrderShineApplicantName?: string;
   legacyCourtLetterDate?: string;
+  removeRegistrarHearingDate?: boolean;
+  registrarListPartySurnames?: { applicantSurname: string; respondentSurname: string };
   normalizeBillingJudgeDirectionsRow?: boolean;
   billingFormValues?: {
     dateCompleted: string;
@@ -283,12 +285,12 @@ function normalizeLegacyCourtLetterDateFields(xml: string, dateText: string): st
   const ranges: Array<{ start: number; end: number; value: string }> = [];
 
   for (const pattern of [
-    /FORMTEXT[\s\u2000-\u200b]*(?:(?:\d{1,2}\s+[A-Za-z]+\s+)*\d{4}|2026)?\s*file ref:/gi,
-    /(?<!\d)2026\s*file ref:/g,
+    /FORMTEXT[\s\u2000-\u200b]*(?:(?:\d{1,2}\s+[A-Za-z]+\s+)*\d{4}|2026)?(?=\s*file ref:)/gi,
+    /(?<!\d)2026(?=\s*file ref:)/g,
   ]) {
     let match: RegExpExecArray | null;
     while ((match = pattern.exec(fullText)) !== null) {
-      ranges.push({ start: match.index, end: match.index + match[0].length, value: `${dateText} file ref:` });
+      ranges.push({ start: match.index, end: match.index + match[0].length, value: dateText });
     }
   }
 
@@ -314,6 +316,13 @@ function normalizeLegacyCourtLetterDateFields(xml: string, dateText: string): st
     /(<w:instrText\b[^>]*>)[\s\S]*?FORMTEXT[\s\S]*?(<\/w:instrText>)/gi,
     "$1$2",
   );
+}
+
+function removeParagraphsContainingText(xml: string, fragments: string[]): string {
+  return xml.replace(/<w:p\b[\s\S]*?<\/w:p>/g, (paragraph) => {
+    const text = readTextNodes(paragraph).map((node) => node.text).join("");
+    return fragments.some((fragment) => text.includes(fragment)) ? "" : paragraph;
+  });
 }
 
 function parseMarkedRuns(value: string): Array<{ text: string; bold?: boolean }> {
@@ -533,6 +542,30 @@ function applyProtectionOrderShineFormatting(xml: string, applicantName: string)
   });
 }
 
+function applyRegistrarListPartySurnameFormatting(
+  xml: string,
+  surnames: NonNullable<DocxMergeOptions["registrarListPartySurnames"]>,
+): string {
+  const targets = [
+    { label: "Applicant:", surname: surnames.applicantSurname },
+    { label: "Respondent:", surname: surnames.respondentSurname },
+  ];
+
+  return xml.replace(/<w:p\b[\s\S]*?<\/w:p>/g, (paragraph) => {
+    const text = readTextNodes(paragraph).map((node) => node.text).join("");
+    const target = targets.find(({ label, surname }) => surname && text.includes(label) && text.includes(surname));
+    if (!target) return paragraph;
+    const nameStart = text.indexOf(target.surname);
+    const before = text.slice(0, nameStart);
+    const spacer = before && !/\s$/.test(before) ? " " : "";
+    return paragraphWithRuns(paragraph, [
+      { text: `${before}${spacer}` },
+      { text: target.surname, bold: true },
+      { text: text.slice(nameStart + target.surname.length) },
+    ]);
+  });
+}
+
 function appendContinuationSections(
   xml: string,
   sections: Array<{ heading: string; lines: string[]; pageBreak?: boolean }>,
@@ -691,6 +724,9 @@ function applyTemplateTransformations(xml: string, options: DocxMergeOptions, is
   }
   if (options.literalTextReplacements) {
     output = replaceLiteralText(output, options.literalTextReplacements);
+  }
+  if (options.removeRegistrarHearingDate) {
+    output = removeParagraphsContainingText(output, ["DATE OF REGISTRAR"]);
   }
   if (options.legacyCourtLetterDate) {
     output = normalizeLegacyCourtLetterDateFields(output, options.legacyCourtLetterDate);
@@ -1186,6 +1222,9 @@ export async function mergeDocxTemplate(
       }
       if (path === "word/document.xml" && options.protectionOrderShineApplicantName) {
         formattedXml = applyProtectionOrderShineFormatting(formattedXml, options.protectionOrderShineApplicantName);
+      }
+      if (path === "word/document.xml" && options.registrarListPartySurnames) {
+        formattedXml = applyRegistrarListPartySurnameFormatting(formattedXml, options.registrarListPartySurnames);
       }
       zip.file(path, formattedXml);
     }),

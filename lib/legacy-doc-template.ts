@@ -16,7 +16,7 @@ function getFirstName(fullName: string): string {
 }
 
 function getEnglishCourtName(value: string): string {
-  return clean(value).replace(/\s+court$/i, "");
+  return clean(value).split("|")[0].trim().replace(/\s+court$/i, "");
 }
 
 function formatInputDateLong(value: string): string {
@@ -48,6 +48,8 @@ export function formatTodayLong(): string {
     year: "numeric",
   }).format(new Date());
 }
+
+export const COURT_LETTER_DATE_PLACEHOLDER = "xx/xx/xxxx";
 
 function encodeFixedWidth(value: string, byteLength: number, encoding: BufferEncoding): Buffer {
   if (encoding === "utf16le") {
@@ -308,16 +310,17 @@ export function buildCourtLetterDocxMergeFields(matter: MatterFile): Record<stri
     "respondent_address))": respondentAddress,
     respondent_address: respondentAddress,
     applicant_phone_number: clean(matter.intake.applicant.mobilePhone),
-    "date_format_dd/mm/yyyy": formatToday(),
-    "date_format-dd/mm/yyyy": formatToday(),
+    "date_format_dd/mm/yyyy": COURT_LETTER_DATE_PLACEHOLDER,
+    "date_format-dd/mm/yyyy": COURT_LETTER_DATE_PLACEHOLDER,
   };
 }
 
 export function buildCourtLetterDocxLiteralReplacements(matter: MatterFile): Record<string, string> {
-  const todayLong = formatTodayLong();
   const replacements: Record<string, string> = {
-    "13 March 2026": todayLong,
+    "13 March 2026": COURT_LETTER_DATE_PLACEHOLDER,
     "{{respondent_address)),{{occupation}}": "{{respondent_address}}, {{respondent_occupation}}",
+    "{{Applicant_name_bold_captals}},": "{{Applicant_name_bold_captals}}",
+    "against:-": "against:",
   };
 
   const legalAidNumber = clean(matter.legalAidNumber);

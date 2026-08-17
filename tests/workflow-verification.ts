@@ -8,9 +8,9 @@ import { buildAdditionalChildLines } from "../lib/child-continuation.ts";
 import { buildTemplateMergeFields } from "../lib/document-automation.ts";
 import { mergeDocxTemplate } from "../lib/docx-template.ts";
 import {
+  COURT_LETTER_DATE_PLACEHOLDER,
   buildCourtLetterDocxLiteralReplacements,
   buildCourtLetterDocxMergeFields,
-  formatTodayLong,
 } from "../lib/legacy-doc-template.ts";
 import { claimIsOverdue, derivePayment } from "../lib/legal-aid-claims.ts";
 import { createEmptyChild, createEmptyMatter, type MatterFile } from "../lib/matter.ts";
@@ -199,27 +199,62 @@ async function verifyCourtLetterBundleTemplates() {
 
 async function verifyCourtLetterMerge() {
   const matter = matterWithChildren(1);
-  const fields = {
+  matter.intake.courtLocation = "Auckland | Tāmaki Makaurau" as MatterFile["intake"]["courtLocation"];
+  const applicantSurnameUpper = "THOMPSON";
+  const respondentSurnameUpper = "ROBERTS";
+  const baseFields = {
     ...buildTemplateMergeFields(matter, "police_information_request_email"),
     ...buildCourtLetterDocxMergeFields(matter),
   };
   const replacements = buildCourtLetterDocxLiteralReplacements(matter);
   for (const template of standardDocxTemplates.filter((definition) => definition.sourceFileName.startsWith("court-letters/"))) {
     const source = await readFile(path.join(root, "templates", template.sourceFileName));
+    const isRegistrarList = template.id === "registrar_list_submissions";
+    const fields = {
+      ...baseFields,
+      ...(isRegistrarList
+        ? {
+            Applicant_last_name_lowercase: applicantSurnameUpper,
+            Respondent_last_name_lowercase: respondentSurnameUpper,
+          }
+        : {}),
+    };
     const result = await mergeDocxTemplate(arrayBufferFrom(source), fields, {
       literalTextReplacements: replacements,
-      legacyCourtLetterDate: formatTodayLong(),
+      legacyCourtLetterDate: COURT_LETTER_DATE_PLACEHOLDER,
+      ...(isRegistrarList
+        ? {
+            removeRegistrarHearingDate: true,
+            registrarListPartySurnames: {
+              applicantSurname: applicantSurnameUpper,
+              respondentSurname: respondentSurnameUpper,
+            },
+          }
+        : {}),
     });
     const text = await visibleText(result.buffer);
+    const xml = await documentXml(result.buffer);
     assert.equal(text.includes("FORMTEXT"), false, `${template.title} left FORMTEXT visible`);
     assert.equal(text.includes("{{"), false, `${template.title} left an opening placeholder visible`);
     assert.equal(text.includes("}}"), false, `${template.title} left a closing placeholder visible`);
     assert.equal(text.includes("Auckland |"), false, `${template.title} should use English-only court location`);
+    assert.ok(text.includes(COURT_LETTER_DATE_PLACEHOLDER), `${template.title} should use placeholder letter date`);
+    assert.equal(text.includes("17 August 2026"), false, `${template.title} should not use generated current date`);
     if (template.sourceFileName.endsWith("Police Email.docx")) {
       assert.ok(text.includes("SARAH THOMPSON"), "Police Email should include applicant name");
       assert.ok(text.includes("MICHAEL ROBERTS"), "Police Email should include respondent name");
       assert.ok(text.includes("14 April 1988"), "Police Email should include full applicant DOB");
-      assert.equal(text.includes("17 August 202 "), false, "Police Email date should not be truncated");
+      assert.equal(text.includes("RE: SARAH THOMPSON ,"), false, "Police Email RE line should not retain a trailing comma");
+      assert.equal(text.includes("against:-"), false, "Police Email should not retain against:- punctuation");
+    }
+    if (isRegistrarList) {
+      assert.ok(text.includes("Applicant: THOMPSON"), "Registrar List should uppercase applicant surname");
+      assert.ok(text.includes("Respondent: ROBERTS"), "Registrar List should uppercase respondent surname");
+      assert.equal(text.includes("DATE OF REGISTRAR"), false, "Registrar List should remove registrar hearing date line");
+      const applicantParagraph = xml.match(/<w:p\b[\s\S]*?Applicant:[\s\S]*?<\/w:p>/)?.[0] ?? "";
+      const respondentParagraph = xml.match(/<w:p\b[\s\S]*?Respondent:[\s\S]*?<\/w:p>/)?.[0] ?? "";
+      assert.match(applicantParagraph, /<w:b\/?>[\s\S]*?THOMPSON/, "Registrar applicant surname should be bold");
+      assert.match(respondentParagraph, /<w:b\/?>[\s\S]*?ROBERTS/, "Registrar respondent surname should be bold");
     }
   }
 }

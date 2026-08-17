@@ -11,10 +11,10 @@ import {
 import { buildAdditionalChildLines } from "../../../lib/child-continuation.ts";
 import { mergeDocxTemplate, type DocxMergeReport } from "../../../lib/docx-template.ts";
 import {
+  COURT_LETTER_DATE_PLACEHOLDER,
   buildCourtLetterDocxLiteralReplacements,
   buildCourtLetterDocxMergeFields,
   buildLegacyDocMergeFields,
-  formatTodayLong,
   mergeLegacyDocTemplate,
 } from "../../../lib/legacy-doc-template.ts";
 import type { MatterFile } from "../../../lib/matter.ts";
@@ -61,6 +61,11 @@ function describeUnresolvedPlaceholders(report: DocumentValidationReport): strin
       document.report.missingFields.map((field) => `${document.output}: {{${field}}}`),
     )
     .join(", ");
+}
+
+function getSurnameUpper(fullName: string): string {
+  const parts = fullName.replace(/\s+/g, " ").trim().split(" ").filter(Boolean);
+  return (parts.at(-1) ?? "").toLocaleUpperCase("en-NZ");
 }
 
 async function readSourceTemplate(fileName: string): Promise<ArrayBuffer> {
@@ -206,9 +211,17 @@ export async function POST(request: Request) {
     const sourceTemplate = await readSourceTemplate(templateDefinition.sourceFileName);
     const fields = buildTemplateMergeFields(body.matter, templateDefinition.id);
     const isCourtLetter = courtLetterDocumentTypes.has(templateDefinition.id);
+    const applicantSurnameUpper = getSurnameUpper(body.matter.intake.applicant.fullName);
+    const respondentSurnameUpper = getSurnameUpper(body.matter.intake.respondent.fullName);
     const templateFields = {
       ...fields,
       ...(isCourtLetter ? buildCourtLetterDocxMergeFields(body.matter) : {}),
+      ...(templateDefinition.id === "registrar_list_submissions"
+        ? {
+            Applicant_last_name_lowercase: applicantSurnameUpper,
+            Respondent_last_name_lowercase: respondentSurnameUpper,
+          }
+        : {}),
       ...informationSheetApplicationFields(templateDefinition),
       ...(templateDefinition.id === "confidential_address_application"
         ? {
@@ -292,7 +305,16 @@ export async function POST(request: Request) {
       ...(isCourtLetter
         ? {
             literalTextReplacements: buildCourtLetterDocxLiteralReplacements(body.matter),
-            legacyCourtLetterDate: formatTodayLong(),
+            legacyCourtLetterDate: COURT_LETTER_DATE_PLACEHOLDER,
+          }
+        : {}),
+      ...(templateDefinition.id === "registrar_list_submissions"
+        ? {
+            removeRegistrarHearingDate: true,
+            registrarListPartySurnames: {
+              applicantSurname: applicantSurnameUpper,
+              respondentSurname: respondentSurnameUpper,
+            },
           }
         : {}),
       ...(templateDefinition.id === "parenting_order_application"
