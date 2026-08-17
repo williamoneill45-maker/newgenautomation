@@ -108,6 +108,16 @@ export function buildStandardAffidavitContent(matter: MatterFile): StandardAffid
   const respondentName = clean(matter.intake.respondent.fullName).toLocaleUpperCase("en-NZ") || "the Respondent";
   const children = matter.intake.children
     .filter((child) => clean(child.fullName));
+  const withoutNoticeSafetyPeople = children.length === 0
+    ? "me"
+    : children.length === 1
+    ? "me and my child"
+    : "me and the children of my family";
+  const withoutNoticeSafetyFear = children.length === 0
+    ? "I am very fearful for my safety."
+    : children.length === 1
+    ? "I am very fearful for my safety and also my child’s safety."
+    : "I am very fearful for my safety and also the children’s safety.";
   const formattedChildNames = children.length
     ? formatList(children.map(childCareName))
     : "the children";
@@ -189,11 +199,11 @@ export function buildStandardAffidavitContent(matter: MatterFile): StandardAffid
       ? ["FACTS IN SUPPORT OF APPLICATION FOR PROTECTION ORDER WITHOUT NOTICE"]
       : [],
     withoutNoticeIntro: hasProtectionOrder
-      ? ["The Application for a Protection Order is being made without notice to the Respondent because the delay that would be caused by proceeding on notice would or might entail a risk of harm and undue hardship to me and the children of my family as follows:"]
+      ? [`The Application for a Protection Order is being made without notice to the Respondent because the delay that would be caused by proceeding on notice would or might entail a risk of harm and undue hardship to ${withoutNoticeSafetyPeople} as follows:`]
       : [],
     withoutNoticeSafetyFactors: hasProtectionOrder
       ? [
-          "I am very fearful for my safety and also the children’s safety.",
+          withoutNoticeSafetyFear,
           "I believe that if the Respondent knew that I was applying for this Order, I may suffer further physical abuse and/or psychological abuse.",
         ]
       : [],

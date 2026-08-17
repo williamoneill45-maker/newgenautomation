@@ -168,6 +168,23 @@ async function verifyChildGeneration(count: number) {
 
 for (const count of [0, 1, 3, 4, 5, 6, 8]) await verifyChildGeneration(count);
 
+function verifyWithoutNoticeSafetyChildWording() {
+  const noChildren = buildStandardAffidavitContent(matterWithChildren(0));
+  assert.ok(noChildren.withoutNoticeIntro.join(" ").includes("undue hardship to me as follows:"), "No-child without-notice intro should only refer to the applicant");
+  assert.ok(noChildren.withoutNoticeSafetyFactors.includes("I am very fearful for my safety."), "No-child safety factor should only refer to the applicant");
+  assert.equal(noChildren.withoutNoticeSafetyFactors.some((line) => /child/i.test(line)), false, "No-child safety factor should not refer to children");
+
+  const oneChild = buildStandardAffidavitContent(matterWithChildren(1));
+  assert.ok(oneChild.withoutNoticeIntro.join(" ").includes("undue hardship to me and my child as follows:"), "One-child without-notice intro should refer to child");
+  assert.ok(oneChild.withoutNoticeSafetyFactors.includes("I am very fearful for my safety and also my child’s safety."), "One-child safety factor should use child singular");
+
+  const multipleChildren = buildStandardAffidavitContent(matterWithChildren(2));
+  assert.ok(multipleChildren.withoutNoticeIntro.join(" ").includes("undue hardship to me and the children of my family as follows:"), "Multiple-child without-notice intro should refer to children");
+  assert.ok(multipleChildren.withoutNoticeSafetyFactors.includes("I am very fearful for my safety and also the children’s safety."), "Multiple-child safety factor should use children plural");
+}
+
+verifyWithoutNoticeSafetyChildWording();
+
 async function verifyInformationSheetApplications() {
   const matter = matterWithChildren(1);
   const source = await readFile(path.join(root, "templates", "Information Sheet Final 1.docx"));
