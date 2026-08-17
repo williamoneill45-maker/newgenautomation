@@ -53,8 +53,10 @@ export type DocxMergeOptions = {
   paragraphInsertions?: Record<string, string[]>;
   literalTextReplacements?: Record<string, string>;
   removeFirstExplicitPageBreak?: boolean;
+  informationSheetApplicationCount?: number;
   affidavitFormatting?: { applicantName: string; respondentName: string; childNames: string[]; legislationLines: string[] };
   parentingApplicantName?: string;
+  protectionOrderShineApplicantName?: string;
   normalizeBillingJudgeDirectionsRow?: boolean;
   billingFormValues?: {
     dateCompleted: string;
@@ -241,6 +243,37 @@ function updateInformationSheetCheckboxes(
     groupIndex += 1;
     return updated;
   });
+}
+
+function removeUnusedInformationSheetApplicationSlots(
+  xml: string,
+  applicationCount: number,
+): string {
+  const nodes = readTextNodes(xml);
+  const fullText = nodes.map((node) => node.text).join("");
+  const ranges: Array<{ start: number; end: number }> = [];
+
+  for (const slot of [2, 3]) {
+    if (slot <= applicationCount) continue;
+    const pattern = new RegExp(`\\s*${slot}\\.\\s*\\{\\{\\s*(?:APPLICATION_TYPE_${slot}|application_type_${slot})\\s*\\}\\}`, "gi");
+    let match: RegExpExecArray | null;
+    while ((match = pattern.exec(fullText)) !== null) {
+      ranges.push({ start: match.index, end: match.index + match[0].length });
+    }
+  }
+
+  for (const range of ranges.sort((left, right) => right.start - left.start)) {
+    replaceTextRange(nodes, range.start, range.end, "");
+  }
+
+  let output = "";
+  let xmlCursor = 0;
+  for (const node of nodes) {
+    output += xml.slice(xmlCursor, node.fullMatchStart);
+    output += `${node.openTag}${node.changed ? escapeXml(node.text) : node.rawText}${node.closeTag}`;
+    xmlCursor = node.fullMatchEnd;
+  }
+  return output + xml.slice(xmlCursor);
 }
 
 function parseMarkedRuns(value: string): Array<{ text: string; bold?: boolean }> {
@@ -445,6 +478,21 @@ function applyParentingFormatting(xml: string, applicantName: string): string {
   });
 }
 
+function applyProtectionOrderShineFormatting(xml: string, applicantName: string): string {
+  return xml.replace(/<w:p\b[\s\S]*?<\/w:p>/g, (paragraph) => {
+    const text = readTextNodes(paragraph).map((node) => node.text).join("");
+    const suffix = " - currently working with Shine.";
+    const nameStart = text.indexOf(applicantName);
+    if (nameStart === -1 || !text.includes(`${applicantName}${suffix}`)) return paragraph;
+
+    return paragraphWithRuns(paragraph, [
+      { text: text.slice(0, nameStart) },
+      { text: applicantName, bold: true },
+      { text: text.slice(nameStart + applicantName.length) },
+    ]);
+  });
+}
+
 function appendContinuationSections(
   xml: string,
   sections: Array<{ heading: string; lines: string[]; pageBreak?: boolean }>,
@@ -590,6 +638,12 @@ function applyTemplateTransformations(xml: string, options: DocxMergeOptions, is
     output = updateInformationSheetCheckboxes(
       output,
       options.informationSheetEthnicityCheckboxes,
+    );
+  }
+  if (typeof options.informationSheetApplicationCount === "number") {
+    output = removeUnusedInformationSheetApplicationSlots(
+      output,
+      options.informationSheetApplicationCount,
     );
   }
   if (options.paragraphInsertions) {
@@ -1086,6 +1140,9 @@ export async function mergeDocxTemplate(
       }
       if (path === "word/document.xml" && options.parentingApplicantName) {
         formattedXml = applyParentingFormatting(formattedXml, options.parentingApplicantName);
+      }
+      if (path === "word/document.xml" && options.protectionOrderShineApplicantName) {
+        formattedXml = applyProtectionOrderShineFormatting(formattedXml, options.protectionOrderShineApplicantName);
       }
       zip.file(path, formattedXml);
     }),
