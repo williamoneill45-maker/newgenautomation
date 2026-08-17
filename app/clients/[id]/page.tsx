@@ -6,7 +6,8 @@ import { useEffect, useMemo, useState } from "react";
 
 import { billingClientsStorageKey, billingInvoicesStorageKey, type BillingClientProfile, type StoredBillingInvoice } from "../../../lib/billing-storage";
 import { demoClient, demoMatter, isDemoEnvironment } from "../../../lib/demo-data";
-import { recentMattersStorageKey, type LegalAidRecord } from "../../../lib/legal-aid";
+import { type LegalAidRecord } from "../../../lib/legal-aid";
+import { loadMattersFromSupabase, type MatterLoadStatus } from "../../../lib/matter-persistence";
 import type { MatterFile } from "../../../lib/matter";
 
 function read<T>(key: string): T[] {
@@ -19,19 +20,21 @@ export default function MatterProfilePage() {
   const [matters, setMatters] = useState<MatterFile[]>([]);
   const [invoices, setInvoices] = useState<StoredBillingInvoice[]>([]);
   const [legalAid, setLegalAid] = useState<LegalAidRecord[]>([]);
+  const [matterLoadStatus, setMatterLoadStatus] = useState<MatterLoadStatus>("loading");
 
   useEffect(() => {
     const localClients = read<BillingClientProfile>(billingClientsStorageKey);
-    const localMatters = read<MatterFile>(recentMattersStorageKey);
     setClients(localClients.length ? localClients : isDemoEnvironment ? [demoClient] : []);
-    setMatters(localMatters.length ? localMatters : isDemoEnvironment ? [demoMatter] : []);
     setInvoices(read<StoredBillingInvoice>(billingInvoicesStorageKey));
     void Promise.all([
-      fetch("/api/matters").then((response) => response.ok ? response.json() : null).catch(() => null),
+      loadMattersFromSupabase(),
+      fetch("/api/billing-clients").then((response) => response.ok ? response.json() : null).catch(() => null),
       fetch("/api/billing-records").then((response) => response.ok ? response.json() : null).catch(() => null),
       fetch("/api/legal-aid-applications").then((response) => response.ok ? response.json() : null).catch(() => null),
-    ]).then(([matterPayload, invoicePayload, legalAidPayload]) => {
-      if (matterPayload?.status === "loaded" && matterPayload.data?.length) setMatters(matterPayload.data);
+    ]).then(([matterResult, clientPayload, invoicePayload, legalAidPayload]) => {
+      setMatters(matterResult.matters.length ? matterResult.matters : isDemoEnvironment && matterResult.status === "empty" ? [demoMatter] : matterResult.matters);
+      setMatterLoadStatus(matterResult.status);
+      if (clientPayload?.status === "loaded") setClients(clientPayload.clients);
       if (invoicePayload?.status === "loaded" && invoicePayload.invoices?.length) setInvoices(invoicePayload.invoices);
       if (legalAidPayload?.status === "loaded") setLegalAid(legalAidPayload.data);
     });
@@ -53,7 +56,7 @@ export default function MatterProfilePage() {
   const totalBilled = clientInvoices.reduce((sum, item) => sum + item.invoiceTotal, 0);
 
   if (!matter && !client && !reconstructedInvoice) {
-    return <main className="min-h-screen bg-slate-50 p-8"><div className="mx-auto max-w-5xl"><Link href="/clients" className="text-sm font-semibold text-sky-700">Back to matters</Link><h1 className="mt-8 text-2xl font-semibold">Matter not found</h1><p className="mt-2 text-sm text-slate-600">No saved intake, client profile, or billing record could reconstruct this matter.</p></div></main>;
+    return <main className="min-h-screen bg-slate-50 p-8"><div className="mx-auto max-w-5xl"><Link href="/clients" className="text-sm font-semibold text-sky-700">Back to matters</Link><h1 className="mt-8 text-2xl font-semibold">Matter not found</h1><p className="mt-2 text-sm text-slate-600">{matterLoadStatus === "not_configured" ? "Supabase matter storage is not configured for this deployment." : matterLoadStatus === "error" ? "Supabase matter storage could not be reached." : "No saved intake, client profile, or billing record could reconstruct this matter."}</p></div></main>;
   }
 
   const latestInvoice = clientInvoices[0];
