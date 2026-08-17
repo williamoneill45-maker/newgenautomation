@@ -154,6 +154,7 @@ export const documentTypes = [
   "mfi_service_letter",
   "police_information_request_email",
   "registrar_list_submissions",
+  "client_sworn_affidavit_letter",
 ] as const;
 
 export type DocumentType = (typeof documentTypes)[number];

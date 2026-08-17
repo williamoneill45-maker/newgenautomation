@@ -11,6 +11,14 @@ function getLastName(fullName: string): string {
   return parts.at(-1) ?? "";
 }
 
+function getFirstName(fullName: string): string {
+  return clean(fullName).split(" ").filter(Boolean)[0] ?? "";
+}
+
+function getEnglishCourtName(value: string): string {
+  return clean(value).replace(/\s+court$/i, "");
+}
+
 function formatInputDateLong(value: string): string {
   const match = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
   if (!match) return clean(value);
@@ -259,15 +267,28 @@ export function buildCourtLetterDocxMergeFields(matter: MatterFile): Record<stri
     applicantAddress,
     respondentAddress,
   } = buildCourtLetterValues(matter);
+  const courtLocation = getEnglishCourtName(matter.intake.courtLocation);
 
   return {
+    court_location: courtLocation,
+    court_locaiton: courtLocation,
+    court_lcoation: courtLocation,
+    "court location": courtLocation,
     Applciant_surname: applicantLastName,
     Applciant_lastname: applicantLastName,
+    Applciant_last_name: applicantLastName,
     applicant_last_name: applicantLastName,
     Applicant_last_name: applicantLastName,
     Applicant_last_name_lowercase: applicantLastNameLower,
     Respondent_last_name_lowercase: respondentLastNameLower,
     applicant_fullname: applicantName,
+    Applicant_full_name: applicantName,
+    Applciant_full_name: applicantName,
+    applicant_first_name: getFirstName(applicantName),
+    Applciant_address: applicantAddress,
+    applicant_address: applicantAddress,
+    APPLICANT_SURNAME: applicantLastNameUpper,
+    RESPONDENT_SURNAME: respondentLastNameUpper,
     Appli_lastname_bold_captals: applicantLastNameUpper,
     Resp_lastname_bold_captals: respondentLastNameUpper,
     App_lastname_bold_captals: applicantLastNameUpper,
@@ -281,13 +302,30 @@ export function buildCourtLetterDocxMergeFields(matter: MatterFile): Record<stri
       clean(matter.intake.applicant.occupation),
       clean(matter.intake.respondent.occupation),
     ],
+    respondent_occupation: clean(matter.intake.respondent.occupation),
     "dd/month/yyyy": formatInputDateLong(matter.intake.applicant.dateOfBirth),
     applicants_address: applicantAddress,
     "respondent_address))": respondentAddress,
+    respondent_address: respondentAddress,
     applicant_phone_number: clean(matter.intake.applicant.mobilePhone),
     "date_format_dd/mm/yyyy": formatToday(),
     "date_format-dd/mm/yyyy": formatToday(),
   };
+}
+
+export function buildCourtLetterDocxLiteralReplacements(matter: MatterFile): Record<string, string> {
+  const todayLong = formatTodayLong();
+  const replacements: Record<string, string> = {
+    "13 March 2026": todayLong,
+    "{{respondent_address)),{{occupation}}": "{{respondent_address}}, {{respondent_occupation}}",
+  };
+
+  const legalAidNumber = clean(matter.legalAidNumber);
+  if (legalAidNumber) {
+    replacements.xxx = legalAidNumber;
+  }
+
+  return replacements;
 }
 
 export function mergeLegacyDocTemplate(

@@ -57,6 +57,7 @@ export type DocxMergeOptions = {
   affidavitFormatting?: { applicantName: string; respondentName: string; childNames: string[]; legislationLines: string[] };
   parentingApplicantName?: string;
   protectionOrderShineApplicantName?: string;
+  legacyCourtLetterDate?: string;
   normalizeBillingJudgeDirectionsRow?: boolean;
   billingFormValues?: {
     dateCompleted: string;
@@ -264,6 +265,42 @@ function removeUnusedInformationSheetApplicationSlots(
 
   for (const range of ranges.sort((left, right) => right.start - left.start)) {
     replaceTextRange(nodes, range.start, range.end, "");
+  }
+
+  let output = "";
+  let xmlCursor = 0;
+  for (const node of nodes) {
+    output += xml.slice(xmlCursor, node.fullMatchStart);
+    output += `${node.openTag}${node.changed ? escapeXml(node.text) : node.rawText}${node.closeTag}`;
+    xmlCursor = node.fullMatchEnd;
+  }
+  return output + xml.slice(xmlCursor);
+}
+
+function normalizeLegacyCourtLetterDateFields(xml: string, dateText: string): string {
+  const nodes = readTextNodes(xml);
+  const fullText = nodes.map((node) => node.text).join("");
+  const ranges: Array<{ start: number; end: number; value: string }> = [];
+
+  for (const pattern of [
+    /FORMTEXT[\s\u2000-\u200b]*(?:(?:\d{1,2}\s+[A-Za-z]+\s+)*\d{4}|2026)?\s*file ref:/gi,
+    /(?<!\d)2026\s*file ref:/g,
+  ]) {
+    let match: RegExpExecArray | null;
+    while ((match = pattern.exec(fullText)) !== null) {
+      ranges.push({ start: match.index, end: match.index + match[0].length, value: `${dateText} file ref:` });
+    }
+  }
+
+  const nonOverlappingRanges: Array<{ start: number; end: number; value: string }> = [];
+  for (const range of ranges.sort((left, right) => left.start - right.start || (right.end - right.start) - (left.end - left.start))) {
+    const previous = nonOverlappingRanges.at(-1);
+    if (previous && range.start < previous.end) continue;
+    nonOverlappingRanges.push(range);
+  }
+
+  for (const range of nonOverlappingRanges.sort((left, right) => right.start - left.start)) {
+    replaceTextRange(nodes, range.start, range.end, range.value);
   }
 
   let output = "";
@@ -651,6 +688,9 @@ function applyTemplateTransformations(xml: string, options: DocxMergeOptions, is
   }
   if (options.literalTextReplacements) {
     output = replaceLiteralText(output, options.literalTextReplacements);
+  }
+  if (options.legacyCourtLetterDate) {
+    output = normalizeLegacyCourtLetterDateFields(output, options.legacyCourtLetterDate);
   }
   if (isMainDocument && options.continuationSections) {
     output = appendContinuationSections(output, options.continuationSections);

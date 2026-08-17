@@ -11,7 +11,10 @@ import {
 import { buildAdditionalChildLines } from "../../../lib/child-continuation.ts";
 import { mergeDocxTemplate, type DocxMergeReport } from "../../../lib/docx-template.ts";
 import {
+  buildCourtLetterDocxLiteralReplacements,
+  buildCourtLetterDocxMergeFields,
   buildLegacyDocMergeFields,
+  formatTodayLong,
   mergeLegacyDocTemplate,
 } from "../../../lib/legacy-doc-template.ts";
 import type { MatterFile } from "../../../lib/matter.ts";
@@ -122,6 +125,16 @@ function informationSheetApplicationFields(templateDefinition: SourceTemplateDef
   };
 }
 
+const courtLetterDocumentTypes = new Set([
+  "court_legal_aid_confirmation_letter",
+  "court_filing_documents_letter",
+  "court_filing_dv_applications_letter",
+  "mfi_service_letter",
+  "police_information_request_email",
+  "registrar_list_submissions",
+  "client_sworn_affidavit_letter",
+]);
+
 export async function POST(request: Request) {
   const body = (await request.json()) as {
     matter?: MatterFile;
@@ -192,8 +205,10 @@ export async function POST(request: Request) {
 
     const sourceTemplate = await readSourceTemplate(templateDefinition.sourceFileName);
     const fields = buildTemplateMergeFields(body.matter, templateDefinition.id);
+    const isCourtLetter = courtLetterDocumentTypes.has(templateDefinition.id);
     const templateFields = {
       ...fields,
+      ...(isCourtLetter ? buildCourtLetterDocxMergeFields(body.matter) : {}),
       ...informationSheetApplicationFields(templateDefinition),
       ...(templateDefinition.id === "confidential_address_application"
         ? {
@@ -272,6 +287,12 @@ export async function POST(request: Request) {
             literalTextReplacements: {
               "{{RESPONDENT_NAME}} - currently working with Shine.": "{{APPLICANT_NAME}} - currently working with Shine.",
             },
+          }
+        : {}),
+      ...(isCourtLetter
+        ? {
+            literalTextReplacements: buildCourtLetterDocxLiteralReplacements(body.matter),
+            legacyCourtLetterDate: formatTodayLong(),
           }
         : {}),
       ...(templateDefinition.id === "parenting_order_application"

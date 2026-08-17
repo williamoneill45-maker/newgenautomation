@@ -65,37 +65,49 @@ export const standardDocxTemplates: SourceTemplateDefinition[] = [
   {
     id: "court_legal_aid_confirmation_letter",
     title: "Ltr to Court Confirming Legal Aid",
-    sourceFileName: "court-letters/Ltr to Court Confirming Legal Aid.doc",
-    outputFileName: "10 Ltr to Court Confirming Legal Aid.doc",
+    sourceFileName: "court-letters/Ltr to Court confirming client granted legal aid .docx",
+    outputFileName: "10 Ltr to Court Confirming Legal Aid.docx",
   },
   {
     id: "court_filing_documents_letter",
     title: "Ltr to Court Filing Docs",
-    sourceFileName: "court-letters/Ltr to Court Filing Docs.doc",
-    outputFileName: "11 Ltr to Court Filing Docs.doc",
+    sourceFileName: "court-letters/Ltr to Court Filing Docs.docx",
+    outputFileName: "11 Ltr to Court Filing Docs.docx",
   },
   {
     id: "court_filing_dv_applications_letter",
     title: "Ltr to Court Filing DV Applications",
-    sourceFileName: "court-letters/Ltr to Court Filing DV Applications.doc",
-    outputFileName: "12 Ltr to Court Filing DV Applications.doc",
+    sourceFileName: "court-letters/Ltr to Court Filing DV Applications.docx",
+    outputFileName: "12 Ltr to Court Filing DV Applications.docx",
   },
   {
     id: "mfi_service_letter",
     title: "Ltr to MFI",
-    sourceFileName: "court-letters/Ltr to MFI.doc",
-    outputFileName: "13 Ltr to MFI.doc",
+    sourceFileName: "court-letters/Ltr to MFI.docx",
+    outputFileName: "13 Ltr to MFI.docx",
   },
   {
     id: "police_information_request_email",
     title: "Police Email",
-    sourceFileName: "court-letters/Police Email.doc",
-    outputFileName: "14 Police Email.doc",
+    sourceFileName: "court-letters/Police Email.docx",
+    outputFileName: "14 Police Email.docx",
+  },
+  {
+    id: "registrar_list_submissions",
+    title: "Registrar List Submissions",
+    sourceFileName: "court-letters/Registrar List Submissions.docx",
+    outputFileName: "15 Registrar List Submissions.docx",
+  },
+  {
+    id: "client_sworn_affidavit_letter",
+    title: "Ltr to client enclosing sworn affidavit",
+    sourceFileName: "court-letters/Ltr to client enclosing sworn affidavit .docx",
+    outputFileName: "16 Ltr to client enclosing sworn affidavit.docx",
   },
 ];
 
 export const confidentialAddressInformationSheet = {
   title: "Confidential Address Applicant Information Sheet",
   sourceFileName: "Confidential Address Applicant Information Sheet.pdf",
-  outputFileName: "15 Confidential Address Applicant Information Sheet.pdf",
+  outputFileName: "17 Confidential Address Applicant Information Sheet.pdf",
 } as const;

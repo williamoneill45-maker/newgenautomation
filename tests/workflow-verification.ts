@@ -7,9 +7,15 @@ import JSZip from "jszip";
 import { buildAdditionalChildLines } from "../lib/child-continuation.ts";
 import { buildTemplateMergeFields } from "../lib/document-automation.ts";
 import { mergeDocxTemplate } from "../lib/docx-template.ts";
+import {
+  buildCourtLetterDocxLiteralReplacements,
+  buildCourtLetterDocxMergeFields,
+  formatTodayLong,
+} from "../lib/legacy-doc-template.ts";
 import { claimIsOverdue, derivePayment } from "../lib/legal-aid-claims.ts";
 import { createEmptyChild, createEmptyMatter, type MatterFile } from "../lib/matter.ts";
 import { buildStandardAffidavitContent } from "../lib/standard-affidavit.ts";
+import { standardDocxTemplates } from "../lib/template-catalog.ts";
 
 const root = process.cwd();
 const outputDir = path.join("/tmp", "newgen-document-qa");
@@ -35,9 +41,15 @@ function matterWithChildren(count: number): MatterFile {
   ];
   matter.intake.courtLocation = "Auckland Court";
   matter.intake.applicant.fullName = "SARAH THOMPSON";
+  matter.intake.applicant.dateOfBirth = "1988-04-14";
+  matter.intake.applicant.homeAddress = "12 Kauri Street, Auckland";
+  matter.intake.applicant.mobilePhone = "021 555 0101";
+  matter.intake.applicant.occupation = "Primary school teacher";
   matter.intake.applicant.ethnicity = "Other";
   matter.intake.applicant.otherEthnicity = "Dutch";
   matter.intake.respondent.fullName = "MICHAEL ROBERTS";
+  matter.intake.respondent.homeAddress = "42 Rimu Lane, Henderson, Auckland";
+  matter.intake.respondent.occupation = "Builder";
   matter.intake.respondent.ethnicity = "Other";
   matter.intake.respondent.otherEthnicity = "Tokelauan";
   matter.intake.children = Array.from({ length: count }, (_, index) => ({
@@ -175,6 +187,45 @@ async function verifyProtectionOrderShineFormatting() {
 
 await verifyInformationSheetApplications();
 await verifyProtectionOrderShineFormatting();
+
+async function verifyCourtLetterBundleTemplates() {
+  const sourceFiles = standardDocxTemplates.map((template) => template.sourceFileName);
+  assert.ok(sourceFiles.includes("court-letters/Registrar List Submissions.docx"), "Registrar List Submissions should be included in the standard bundle");
+  assert.ok(sourceFiles.includes("court-letters/Ltr to client enclosing sworn affidavit .docx"), "Client sworn affidavit letter should be included in the standard bundle");
+  for (const sourceFile of sourceFiles.filter((fileName) => fileName.startsWith("court-letters/"))) {
+    assert.ok(sourceFile.endsWith(".docx"), `${sourceFile} should use converted DOCX merge path`);
+  }
+}
+
+async function verifyCourtLetterMerge() {
+  const matter = matterWithChildren(1);
+  const fields = {
+    ...buildTemplateMergeFields(matter, "police_information_request_email"),
+    ...buildCourtLetterDocxMergeFields(matter),
+  };
+  const replacements = buildCourtLetterDocxLiteralReplacements(matter);
+  for (const template of standardDocxTemplates.filter((definition) => definition.sourceFileName.startsWith("court-letters/"))) {
+    const source = await readFile(path.join(root, "templates", template.sourceFileName));
+    const result = await mergeDocxTemplate(arrayBufferFrom(source), fields, {
+      literalTextReplacements: replacements,
+      legacyCourtLetterDate: formatTodayLong(),
+    });
+    const text = await visibleText(result.buffer);
+    assert.equal(text.includes("FORMTEXT"), false, `${template.title} left FORMTEXT visible`);
+    assert.equal(text.includes("{{"), false, `${template.title} left an opening placeholder visible`);
+    assert.equal(text.includes("}}"), false, `${template.title} left a closing placeholder visible`);
+    assert.equal(text.includes("Auckland |"), false, `${template.title} should use English-only court location`);
+    if (template.sourceFileName.endsWith("Police Email.docx")) {
+      assert.ok(text.includes("SARAH THOMPSON"), "Police Email should include applicant name");
+      assert.ok(text.includes("MICHAEL ROBERTS"), "Police Email should include respondent name");
+      assert.ok(text.includes("14 April 1988"), "Police Email should include full applicant DOB");
+      assert.equal(text.includes("17 August 202 "), false, "Police Email date should not be truncated");
+    }
+  }
+}
+
+await verifyCourtLetterBundleTemplates();
+await verifyCourtLetterMerge();
 
 assert.deepEqual(derivePayment(1000, 0), { paidStatus: "Unpaid", outstandingAmount: 1000 });
 assert.deepEqual(derivePayment(1000, 400), { paidStatus: "Part Paid", outstandingAmount: 600 });
