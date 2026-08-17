@@ -202,8 +202,16 @@ function getFirstName(fullName: string): string {
   return fullName.trim().split(/\s+/)[0] ?? "";
 }
 
+function toTitleCaseName(value: string): string {
+  return value
+    .toLocaleLowerCase("en-NZ")
+    .replace(/[A-Za-z][A-Za-z'-]*/g, (word) =>
+      word.charAt(0).toLocaleUpperCase("en-NZ") + word.slice(1),
+    );
+}
+
 function getQuotedFirstName(fullName: string): string {
-  const firstName = getFirstName(fullName).toLocaleUpperCase("en-NZ");
+  const firstName = toTitleCaseName(getFirstName(fullName));
   return firstName ? `“${firstName}”` : "";
 }
 

@@ -11,6 +11,14 @@ function firstName(value: string): string {
   return clean(value).split(" ")[0] ?? "";
 }
 
+function toTitleCaseName(value: string): string {
+  return value
+    .toLocaleLowerCase("en-NZ")
+    .replace(/[A-Za-z][A-Za-z'-]*/g, (word) =>
+      word.charAt(0).toLocaleUpperCase("en-NZ") + word.slice(1),
+    );
+}
+
 function formatInputDateLong(value: string): string {
   const match = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
   if (!match) return clean(value);
@@ -43,7 +51,7 @@ function formatList(values: string[]): string {
 function childDescription(child: Child): string {
   const name = clean(child.fullName).toLocaleUpperCase("en-NZ");
   const dob = formatInputDateLong(child.dateOfBirth);
-  const nickname = firstName(name);
+  const nickname = toTitleCaseName(firstName(child.fullName));
   return [
     `[[b]]${name}[[/b]]`,
     dob ? `born ${dob}` : "",
@@ -52,7 +60,7 @@ function childDescription(child: Child): string {
 }
 
 function childCareName(child: Child): string {
-  return firstName(clean(child.fullName));
+  return toTitleCaseName(firstName(clean(child.fullName)));
 }
 
 function orderLabel(application: ApplicationType, otherDetails: string): string {

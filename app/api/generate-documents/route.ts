@@ -109,8 +109,8 @@ function confidentialAddressOutputFileName(matter: MatterFile): string {
 function informationSheetApplicationFields(templateDefinition: SourceTemplateDefinition) {
   if (templateDefinition.id !== "information_sheet") return {};
   const applications = templateDefinition.title.includes("(COCA)")
-    ? ["Parenting Order"]
-    : ["Protection Order"];
+    ? ["Without Notice Application for Parenting Order"]
+    : ["Without Notice Application for Protection Order"];
 
   return {
     APPLICATION_TYPE_1: applications[0],
@@ -268,6 +268,7 @@ export async function POST(request: Request) {
         : {}),
       ...(templateDefinition.id === "protection_order_application"
         ? {
+            protectionOrderShineApplicantName: body.matter.intake.applicant.fullName.toLocaleUpperCase("en-NZ"),
             literalTextReplacements: {
               "{{RESPONDENT_NAME}} - currently working with Shine.": "{{APPLICANT_NAME}} - currently working with Shine.",
             },
@@ -281,7 +282,10 @@ export async function POST(request: Request) {
           }
         : {}),
       ...(templateDefinition.id === "information_sheet"
-        ? { childCount: Math.min(body.matter.intake.children.length, 3) }
+        ? {
+            childCount: Math.min(body.matter.intake.children.length, 3),
+            informationSheetApplicationCount: 1,
+          }
         : {}),
       ...(templateDefinition.id === "information_sheet" && body.matter.intake.children.length > 3
         ? {

@@ -13,6 +13,16 @@ import { buildStandardAffidavitContent } from "../lib/standard-affidavit.ts";
 
 const root = process.cwd();
 const outputDir = path.join("/tmp", "newgen-document-qa");
+const childNames = [
+  "Ari Thompson",
+  "Maia Thompson",
+  "Luca Thompson",
+  "Noah Thompson",
+  "Isla Thompson",
+  "Theo Thompson",
+  "Ruby Thompson",
+  "Leo Thompson",
+];
 
 function matterWithChildren(count: number): MatterFile {
   const matter = createEmptyMatter();
@@ -33,7 +43,7 @@ function matterWithChildren(count: number): MatterFile {
   matter.intake.children = Array.from({ length: count }, (_, index) => ({
     ...createEmptyChild(matter.id, index + 1),
     id: `child-${index + 1}`,
-    fullName: `CHILD NUMBER ${index + 1}`,
+    fullName: childNames[index] ?? `Child Number ${index + 1}`,
     dateOfBirth: `20${String(10 + index).padStart(2, "0")}-01-01`,
     gender: index % 2 ? "M" : "F",
     livingWithName: "SARAH THOMPSON",
@@ -43,17 +53,36 @@ function matterWithChildren(count: number): MatterFile {
   return matter;
 }
 
-async function visibleText(buffer: ArrayBuffer): Promise<string> {
+function arrayBufferFrom(buffer: Buffer): ArrayBuffer {
+  return buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength) as ArrayBuffer;
+}
+
+async function documentXml(buffer: ArrayBuffer): Promise<string> {
   const zip = await JSZip.loadAsync(buffer);
-  const xml = await zip.file("word/document.xml")?.async("string");
-  return (xml ?? "").replace(/<[^>]+>/g, " ").replace(/&amp;/g, "&").replace(/\s+/g, " ");
+  return await zip.file("word/document.xml")?.async("string") ?? "";
+}
+
+async function visibleText(buffer: ArrayBuffer): Promise<string> {
+  const xml = await documentXml(buffer);
+  return xml
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&amp;/g, "&")
+    .replace(/\s+/g, " ");
 }
 
 async function verifyChildGeneration(count: number) {
   const matter = matterWithChildren(count);
   const affidavit = buildStandardAffidavitContent(matter);
   const affidavitText = [...affidavit.childrenParagraphs, ...affidavit.parentingParagraphs].join(" ");
-  for (const child of matter.intake.children) assert.ok(affidavitText.includes(child.fullName), `Affidavit omitted ${child.fullName} at count ${count}`);
+  for (const child of matter.intake.children) {
+    assert.ok(affidavitText.includes(child.fullName.toLocaleUpperCase("en-NZ")), `Affidavit omitted ${child.fullName} at count ${count}`);
+  }
+  if (count > 0) {
+    assert.ok(affidavitText.includes("(“Ari”)"), "Domestic Violence Affidavit should use title-case child nickname");
+    assert.equal(affidavitText.includes("(“ARI”)"), false, "Domestic Violence Affidavit should not use uppercase child nickname");
+  }
   assert.equal(buildAdditionalChildLines(matter).length, Math.max(0, count - 3));
 
   for (const [templateName, documentType] of [
@@ -62,7 +91,7 @@ async function verifyChildGeneration(count: number) {
   ] as const) {
     const source = await readFile(path.join(root, "templates", templateName));
     const fields = buildTemplateMergeFields(matter, documentType);
-    const result = await mergeDocxTemplate(source.buffer.slice(source.byteOffset, source.byteOffset + source.byteLength) as ArrayBuffer, fields, {
+    const result = await mergeDocxTemplate(arrayBufferFrom(source), fields, {
       ...(documentType === "parenting_order_application" ? {
         childCount: Math.min(count, 3),
         repeatChildParagraphsThrough: count,
@@ -75,9 +104,13 @@ async function verifyChildGeneration(count: number) {
       } : {}),
     });
     const text = await visibleText(result.buffer);
-    for (const child of matter.intake.children) assert.ok(text.includes(child.fullName), `${templateName} omitted ${child.fullName} at count ${count}`);
+    for (const child of matter.intake.children) assert.ok(text.includes(child.fullName.toLocaleUpperCase("en-NZ")), `${templateName} omitted ${child.fullName} at count ${count}`);
     if (documentType === "parenting_order_application") {
       assert.equal(text.includes("ADDITIONAL CHILDREN AFFECTED BY THE APPLICATION"), false);
+      if (count > 0) {
+        assert.ok(text.includes("(“Ari”)"), "Parenting Order should use title-case child nickname");
+        assert.equal(text.includes("(“ARI”)"), false, "Parenting Order should not use uppercase child nickname");
+      }
     }
     if (documentType === "information_sheet") {
       assert.ok(text.includes("Dutch"), "Information Sheet omitted applicant Other ethnicity text");
@@ -92,6 +125,56 @@ async function verifyChildGeneration(count: number) {
 }
 
 for (const count of [0, 1, 3, 4, 5, 6, 8]) await verifyChildGeneration(count);
+
+async function verifyInformationSheetApplications() {
+  const matter = matterWithChildren(1);
+  const source = await readFile(path.join(root, "templates", "Information Sheet Final 1.docx"));
+  for (const applicationLabel of [
+    "Without Notice Application for Parenting Order",
+    "Without Notice Application for Protection Order",
+  ]) {
+    const result = await mergeDocxTemplate(arrayBufferFrom(source), {
+      ...buildTemplateMergeFields(matter, "information_sheet"),
+      APPLICATION_TYPE_1: applicationLabel,
+      APPLICATION_TYPE_2: "",
+      APPLICATION_TYPE_3: "",
+      application_type_1: applicationLabel,
+      application_type_2: "",
+      application_type_3: "",
+    }, {
+      childCount: 1,
+      informationSheetApplicationCount: 1,
+    });
+    const text = await visibleText(result.buffer);
+    assert.ok(text.includes(applicationLabel), `Information Sheet omitted ${applicationLabel}`);
+    assert.equal(text.includes("APPLICATION_TYPE_2"), false, "Information Sheet left application slot 2 placeholder visible");
+    assert.equal(/\b2\.\s*\b3\./.test(text), false, "Information Sheet left empty application slot 2 visible");
+  }
+}
+
+async function verifyProtectionOrderShineFormatting() {
+  const matter = matterWithChildren(1);
+  const applicantName = matter.intake.applicant.fullName.toLocaleUpperCase("en-NZ");
+  const source = await readFile(path.join(root, "templates", "Application for Protection Order.docx"));
+  const result = await mergeDocxTemplate(arrayBufferFrom(source), buildTemplateMergeFields(matter, "protection_order_application"), {
+    protectionOrderShineApplicantName: applicantName,
+    literalTextReplacements: {
+      "{{RESPONDENT_NAME}} - currently working with Shine.": "{{APPLICANT_NAME}} - currently working with Shine.",
+    },
+  });
+  const xml = await documentXml(result.buffer);
+  const paragraph = xml.match(/<w:p\b[\s\S]*?<\/w:p>/g)?.find((candidate) =>
+    candidate.includes("currently working with Shine."),
+  ) ?? "";
+  assert.ok(paragraph.includes(applicantName), "Protection Order Shine line should use applicant name");
+  assert.match(paragraph, new RegExp(`<w:b\\/?>(?:<w:bCs\\/>)?[\\s\\S]*?${applicantName}`), "Protection Order applicant name should be bold in Shine line");
+  const suffixXml = paragraph.slice(paragraph.indexOf(applicantName) + applicantName.length);
+  assert.ok(suffixXml.includes(" - currently working with Shine."), "Protection Order Shine suffix should remain visible");
+  assert.equal(/<w:b\/?>/.test(suffixXml), false, "Protection Order Shine suffix should remain plain text");
+}
+
+await verifyInformationSheetApplications();
+await verifyProtectionOrderShineFormatting();
 
 assert.deepEqual(derivePayment(1000, 0), { paidStatus: "Unpaid", outstandingAmount: 1000 });
 assert.deepEqual(derivePayment(1000, 400), { paidStatus: "Part Paid", outstandingAmount: 600 });
