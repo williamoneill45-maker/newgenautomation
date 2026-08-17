@@ -310,7 +310,10 @@ function normalizeLegacyCourtLetterDateFields(xml: string, dateText: string): st
     output += `${node.openTag}${node.changed ? escapeXml(node.text) : node.rawText}${node.closeTag}`;
     xmlCursor = node.fullMatchEnd;
   }
-  return output + xml.slice(xmlCursor);
+  return (output + xml.slice(xmlCursor)).replace(
+    /(<w:instrText\b[^>]*>)[\s\S]*?FORMTEXT[\s\S]*?(<\/w:instrText>)/gi,
+    "$1$2",
+  );
 }
 
 function parseMarkedRuns(value: string): Array<{ text: string; bold?: boolean }> {
