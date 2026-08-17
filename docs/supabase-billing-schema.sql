@@ -33,7 +33,9 @@ create table if not exists public.billing_clients (
 );
 
 create table if not exists public.matters (
-  id text primary key,
+  id uuid primary key default gen_random_uuid(),
+  firm_id uuid,
+  app_matter_id text unique,
   client_id text not null default '',
   client_name text not null,
   legal_aid_number text not null default '',
@@ -46,9 +48,12 @@ create table if not exists public.matters (
   updated_at timestamptz not null default now()
 );
 
+alter table public.matters alter column firm_id drop not null;
+alter table public.matters add column if not exists app_matter_id text;
 alter table public.matters add column if not exists client_id text not null default '';
 alter table public.matters add column if not exists legal_aid_required boolean not null default true;
 alter table public.matters add column if not exists intake_json jsonb not null default '{}'::jsonb;
+create unique index if not exists matters_app_matter_id_key on public.matters (app_matter_id);
 create index if not exists matters_client_name_idx on public.matters (client_name);
 create index if not exists matters_updated_at_idx on public.matters (updated_at desc);
 alter table public.matters enable row level security;

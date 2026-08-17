@@ -70,12 +70,12 @@ const followUpDays = 14;
 
 function getSupabaseConfig() {
   const supabaseUrl = process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY ?? "";
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.SUPABASE_SECRET_KEY ?? "";
   return {
     supabaseUrl: supabaseUrl.replace(/\/$/, ""),
     serviceKey,
     firmId: process.env.NEWGEN_FIRM_ID?.trim() || "newgen",
-    missing: [supabaseUrl ? "" : "SUPABASE_URL", serviceKey ? "" : "SUPABASE_SERVICE_ROLE_KEY"].filter(Boolean),
+    missing: [supabaseUrl ? "" : "SUPABASE_URL", serviceKey ? "" : "SUPABASE_SERVICE_ROLE_KEY or SUPABASE_SECRET_KEY"].filter(Boolean),
   };
 }
 

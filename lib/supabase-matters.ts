@@ -8,6 +8,7 @@ export type MattersResult<T> =
 
 type MatterRow = {
   id: string;
+  app_matter_id?: string | null;
   client_id?: string | null;
   client_name: string;
   legal_aid_number?: string | null;
@@ -21,11 +22,11 @@ type MatterRow = {
 
 function getSupabaseConfig() {
   const supabaseUrl = process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY ?? "";
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.SUPABASE_SECRET_KEY ?? "";
   return {
     supabaseUrl: supabaseUrl.replace(/\/$/, ""),
     serviceKey,
-    missing: [supabaseUrl ? "" : "SUPABASE_URL", serviceKey ? "" : "SUPABASE_SERVICE_ROLE_KEY"].filter(Boolean),
+    missing: [supabaseUrl ? "" : "SUPABASE_URL", serviceKey ? "" : "SUPABASE_SERVICE_ROLE_KEY or SUPABASE_SECRET_KEY"].filter(Boolean),
   };
 }
 
@@ -39,6 +40,7 @@ function headers(serviceKey: string, prefer?: string): HeadersInit {
 }
 
 function mapRow(row: MatterRow): MatterFile {
+  const matterId = row.app_matter_id || row.id;
   const intake = row.intake_json ?? {
     selectedApplications: [],
     proceedingsType: "",
@@ -47,8 +49,8 @@ function mapRow(row: MatterRow): MatterFile {
     famNumber: row.fam_number ?? "",
     msdClientNumber: "",
     applicant: {
-      id: `applicant-${row.id}`,
-      matterId: row.id,
+      id: `applicant-${matterId}`,
+      matterId,
       role: "applicant",
       fullName: row.client_name,
       dateOfBirth: "",
@@ -64,8 +66,8 @@ function mapRow(row: MatterRow): MatterFile {
       isAddressConfidential: false,
     },
     respondent: {
-      id: `respondent-${row.id}`,
-      matterId: row.id,
+      id: `respondent-${matterId}`,
+      matterId,
       role: "respondent",
       fullName: "",
       dateOfBirth: "",
@@ -98,7 +100,7 @@ function mapRow(row: MatterRow): MatterFile {
   } satisfies MatterFile["intake"];
 
   return {
-    id: row.id,
+    id: matterId,
     clientName: row.client_name,
     legalAidNumber: row.legal_aid_number ?? "",
     legalAidRequired: row.legal_aid_required ?? true,
@@ -129,11 +131,11 @@ export async function saveMatterToSupabase(matter: MatterFile, clientId = ""): P
   const { supabaseUrl, serviceKey, missing } = getSupabaseConfig();
   if (missing.length) return { status: "not_configured", missing };
 
-  const response = await fetch(`${supabaseUrl}/rest/v1/matters?on_conflict=id`, {
+  const response = await fetch(`${supabaseUrl}/rest/v1/matters?on_conflict=app_matter_id`, {
     method: "POST",
     headers: headers(serviceKey, "resolution=merge-duplicates,return=representation"),
     body: JSON.stringify({
-      id: matter.id,
+      app_matter_id: matter.id,
       client_id: clientId,
       client_name: matter.clientName || matter.intake.applicant.fullName,
       legal_aid_number: matter.legalAidNumber ?? "",

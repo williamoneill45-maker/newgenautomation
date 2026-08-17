@@ -355,31 +355,42 @@ export async function POST(request: Request) {
     const { completeConfidentialAddressInformationSheet } = await import(
       "../../../lib/confidential-address-information-sheet.ts"
     );
-    const completedConfidentialAddressSheet = await completeConfidentialAddressInformationSheet(
-      await readSourceTemplate(confidentialAddressInformationSheet.sourceFileName),
-      body.matter,
-    );
-    const confidentialOutputFileName = confidentialAddressOutputFileName(body.matter);
-    bundle.file(confidentialOutputFileName, completedConfidentialAddressSheet);
-    generatedFiles.push({
-      fileName: confidentialOutputFileName,
-      buffer: completedConfidentialAddressSheet,
-      contentType: "application/pdf",
-    });
-    validationReport.documents.push({
-      template: confidentialAddressInformationSheet.sourceFileName,
-      output: confidentialOutputFileName,
-      title: confidentialAddressInformationSheet.title,
-      report: {
-        placeholders: [], missingFields: [], unusedFields: [], replacedPlaceholders: 0,
-        structure: {
-          samePackageFileList: true,
-          unchangedNonTemplateFiles: true,
-          onlyPlaceholderTextChanged: true,
-          changedXmlFiles: [],
+    try {
+      const completedConfidentialAddressSheet = await completeConfidentialAddressInformationSheet(
+        await readSourceTemplate(confidentialAddressInformationSheet.sourceFileName),
+        body.matter,
+      );
+      const confidentialOutputFileName = confidentialAddressOutputFileName(body.matter);
+      bundle.file(confidentialOutputFileName, completedConfidentialAddressSheet);
+      generatedFiles.push({
+        fileName: confidentialOutputFileName,
+        buffer: completedConfidentialAddressSheet,
+        contentType: "application/pdf",
+      });
+      validationReport.documents.push({
+        template: confidentialAddressInformationSheet.sourceFileName,
+        output: confidentialOutputFileName,
+        title: confidentialAddressInformationSheet.title,
+        report: {
+          placeholders: [], missingFields: [], unusedFields: [], replacedPlaceholders: 0,
+          structure: {
+            samePackageFileList: true,
+            unchangedNonTemplateFiles: true,
+            onlyPlaceholderTextChanged: true,
+            changedXmlFiles: [],
+          },
         },
-      },
-    });
+      });
+    } catch (error) {
+      console.error("Confidential address information sheet generation failed", error);
+      validationReport.skippedDocuments.push({
+        template: confidentialAddressInformationSheet.sourceFileName,
+        title: confidentialAddressInformationSheet.title,
+        reason: error instanceof Error
+          ? `The source PDF could not be parsed: ${error.message}`
+          : "The source PDF could not be parsed.",
+      });
+    }
   } else {
     validationReport.skippedDocuments.push({
       template: confidentialAddressInformationSheet.sourceFileName,
@@ -397,6 +408,8 @@ export async function POST(request: Request) {
       { status: 400 },
     );
   }
+
+  bundle.file("Generation Report.json", JSON.stringify(validationReport, null, 2));
 
   let oneDriveStatus = "not_configured";
   let oneDrivePath = "";

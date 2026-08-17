@@ -8,10 +8,10 @@ export async function saveBillingInvoiceToSupabase(
   invoice: StoredBillingInvoice,
 ): Promise<SupabaseSaveResult> {
   const supabaseUrl = process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY ?? "";
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.SUPABASE_SECRET_KEY ?? "";
   const missing = [
     supabaseUrl ? "" : "SUPABASE_URL",
-    serviceKey ? "" : "SUPABASE_SERVICE_ROLE_KEY",
+    serviceKey ? "" : "SUPABASE_SERVICE_ROLE_KEY or SUPABASE_SECRET_KEY",
   ].filter(Boolean);
 
   if (missing.length) {
@@ -77,10 +77,10 @@ export async function saveBillingClientToSupabase(
   client: BillingClientProfile,
 ): Promise<SupabaseSaveResult> {
   const supabaseUrl = process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY ?? "";
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.SUPABASE_SECRET_KEY ?? "";
   const missing = [
     supabaseUrl ? "" : "SUPABASE_URL",
-    serviceKey ? "" : "SUPABASE_SERVICE_ROLE_KEY",
+    serviceKey ? "" : "SUPABASE_SERVICE_ROLE_KEY or SUPABASE_SECRET_KEY",
   ].filter(Boolean);
 
   if (missing.length) {
@@ -142,10 +142,10 @@ export async function deleteBillingClientFromSupabase(
   clientId: string,
 ): Promise<SupabaseSaveResult> {
   const supabaseUrl = process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY ?? "";
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.SUPABASE_SECRET_KEY ?? "";
   const missing = [
     supabaseUrl ? "" : "SUPABASE_URL",
-    serviceKey ? "" : "SUPABASE_SERVICE_ROLE_KEY",
+    serviceKey ? "" : "SUPABASE_SERVICE_ROLE_KEY or SUPABASE_SECRET_KEY",
   ].filter(Boolean);
 
   if (missing.length) {
@@ -185,10 +185,10 @@ export async function listBillingInvoicesFromSupabase(): Promise<
   | { status: "not_configured"; missing: string[] }
 > {
   const supabaseUrl = process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY ?? "";
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.SUPABASE_SECRET_KEY ?? "";
   const missing = [
     supabaseUrl ? "" : "SUPABASE_URL",
-    serviceKey ? "" : "SUPABASE_SERVICE_ROLE_KEY",
+    serviceKey ? "" : "SUPABASE_SERVICE_ROLE_KEY or SUPABASE_SECRET_KEY",
   ].filter(Boolean);
 
   if (missing.length) {
@@ -256,10 +256,10 @@ export async function deleteBillingInvoiceFromSupabase(
   invoiceId: string,
 ): Promise<SupabaseSaveResult> {
   const supabaseUrl = process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY ?? "";
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.SUPABASE_SECRET_KEY ?? "";
   const missing = [
     supabaseUrl ? "" : "SUPABASE_URL",
-    serviceKey ? "" : "SUPABASE_SERVICE_ROLE_KEY",
+    serviceKey ? "" : "SUPABASE_SERVICE_ROLE_KEY or SUPABASE_SECRET_KEY",
   ].filter(Boolean);
 
   if (missing.length) {
@@ -286,10 +286,10 @@ export async function deleteBillingInvoiceFromSupabase(
 
 export async function clearBillingInvoicesFromSupabase(): Promise<SupabaseSaveResult> {
   const supabaseUrl = process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY ?? "";
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.SUPABASE_SECRET_KEY ?? "";
   const missing = [
     supabaseUrl ? "" : "SUPABASE_URL",
-    serviceKey ? "" : "SUPABASE_SERVICE_ROLE_KEY",
+    serviceKey ? "" : "SUPABASE_SERVICE_ROLE_KEY or SUPABASE_SECRET_KEY",
   ].filter(Boolean);
 
   if (missing.length) {
@@ -316,10 +316,10 @@ export async function listBillingClientsFromSupabase(): Promise<
   | { status: "not_configured"; missing: string[] }
 > {
   const supabaseUrl = process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY ?? "";
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.SUPABASE_SECRET_KEY ?? "";
   const missing = [
     supabaseUrl ? "" : "SUPABASE_URL",
-    serviceKey ? "" : "SUPABASE_SERVICE_ROLE_KEY",
+    serviceKey ? "" : "SUPABASE_SERVICE_ROLE_KEY or SUPABASE_SECRET_KEY",
   ].filter(Boolean);
 
   if (missing.length) {
@@ -411,10 +411,10 @@ export async function uploadBillingEvidenceToSupabase(input: {
   | { status: "not_configured"; missing: string[] }
 > {
   const supabaseUrl = process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY ?? "";
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.SUPABASE_SECRET_KEY ?? "";
   const missing = [
     supabaseUrl ? "" : "SUPABASE_URL",
-    serviceKey ? "" : "SUPABASE_SERVICE_ROLE_KEY",
+    serviceKey ? "" : "SUPABASE_SERVICE_ROLE_KEY or SUPABASE_SECRET_KEY",
   ].filter(Boolean);
 
   if (missing.length) {
