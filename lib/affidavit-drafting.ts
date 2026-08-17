@@ -498,8 +498,8 @@ function paragraphsAreUsable(paragraphs: string[], sourceNotes: string): boolean
 }
 
 export async function draftDomesticViolenceAffidavit(matter: MatterFile): Promise<AffidavitDraftResult> {
-  const historyNotes = clean(matter.intake.domesticViolenceNotes.history);
-  const recentNotes = clean(matter.intake.domesticViolenceNotes.recentEvents);
+  const historyNotes = clean(matter.intake.domesticViolenceNotes?.history ?? "");
+  const recentNotes = clean(matter.intake.domesticViolenceNotes?.recentEvents ?? "");
   const fallbackNotes = draftFallbackAffidavitSections(historyNotes, recentNotes);
   const fallbackSections: AffidavitSections = {
     ...fallbackNotes,
