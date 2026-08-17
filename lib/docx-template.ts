@@ -61,6 +61,7 @@ export type DocxMergeOptions = {
   removeRegistrarHearingDate?: boolean;
   registrarListPartySurnames?: { applicantSurname: string; respondentSurname: string };
   normalizeBillingJudgeDirectionsRow?: boolean;
+  billingInitialApplicationOrderFee?: string;
   billingFormValues?: {
     dateCompleted: string;
     invoiceType: "interim" | "final";
@@ -323,6 +324,63 @@ function removeParagraphsContainingText(xml: string, fragments: string[]): strin
     const text = readTextNodes(paragraph).map((node) => node.text).join("");
     return fragments.some((fragment) => text.includes(fragment)) ? "" : paragraph;
   });
+}
+
+function setTableCellText(cellXml: string, value: string): string {
+  const paragraphMatch = cellXml.match(/<w:p\b[\s\S]*?<\/w:p>/);
+  if (paragraphMatch) {
+    return cellXml.replace(paragraphMatch[0], replaceParagraphText(paragraphMatch[0], value));
+  }
+  return cellXml.replace("</w:tc>", `<w:p><w:r><w:t xml:space="preserve">${escapeXml(value)}</w:t></w:r></w:p></w:tc>`);
+}
+
+function fillBillingInitialApplicationOrderFee(xml: string, amount: string): string {
+  const rowMatches = [...xml.matchAll(/<w:tr\b[\s\S]*?<\/w:tr>/g)];
+  let targetIndex = -1;
+  const pendingIndexes: number[] = [];
+
+  for (let index = 0; index < rowMatches.length; index += 1) {
+    const row = rowMatches[index][0];
+    const cells = [...row.matchAll(/<w:tc\b[\s\S]*?<\/w:tc>/g)].map((match) => match[0]);
+    const cellTexts = cells.map((cell) =>
+      readTextNodes(cell).map((node) => node.text).join("").replace(/\s+/g, " ").trim(),
+    );
+    const hasApplicationOrderLabel = cellTexts.some((text) => /^Application\(s\)\/\s*Order\(s\)$/i.test(text));
+    if (hasApplicationOrderLabel) {
+      pendingIndexes.push(index);
+      continue;
+    }
+
+    if (!pendingIndexes.length) continue;
+    const boundary = cellTexts.join(" ");
+    if (/Undefended|Defended|Formal proof|Interlocutories|Document preparation|Pre-Hearing/i.test(boundary)) {
+      targetIndex = pendingIndexes.at(-1) ?? -1;
+      break;
+    }
+  }
+
+  if (targetIndex === -1) return xml;
+
+  const targetRow = rowMatches[targetIndex][0];
+  const targetCells = [...targetRow.matchAll(/<w:tc\b[\s\S]*?<\/w:tc>/g)].map((match) => match[0]);
+  if (targetCells.length < 4) return xml;
+  const amountCells = targetCells
+    .map((cell, index) => ({
+      cell,
+      index,
+      width: Number(cell.match(/<w:tcW\b[^>]*w:w="(\d+)"/)?.[1] ?? 0),
+    }))
+    .filter(({ index, width }) => index > 0 && width >= 1000)
+    .slice(-2);
+  if (amountCells.length < 2) return xml;
+
+  let updatedTargetRow = targetRow;
+  for (const { cell } of amountCells) {
+    updatedTargetRow = updatedTargetRow.replace(cell, setTableCellText(cell, amount));
+  }
+
+  const match = rowMatches[targetIndex];
+  return `${xml.slice(0, match.index)}${updatedTargetRow}${xml.slice((match.index ?? 0) + targetRow.length)}`;
 }
 
 function parseMarkedRuns(value: string): Array<{ text: string; bold?: boolean }> {
@@ -700,6 +758,9 @@ function applyTemplateTransformations(xml: string, options: DocxMergeOptions, is
       });
       return normalized;
     });
+  }
+  if (isMainDocument && options.billingInitialApplicationOrderFee) {
+    output = fillBillingInitialApplicationOrderFee(output, options.billingInitialApplicationOrderFee);
   }
   if (typeof options.childCount === "number") {
     output = removeUnusedChildBlocks(output, options.childCount);

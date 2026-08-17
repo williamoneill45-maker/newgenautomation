@@ -122,8 +122,15 @@ function dateStamp(date = new Date()): string {
 
 function invoiceFileDate(date = new Date()): string {
   return new Intl.DateTimeFormat("en-NZ", {
-    day: "2-digit", month: "2-digit", year: "2-digit",
+    day: "2-digit",
+    month: "2-digit",
+    year: "2-digit",
   }).format(date).replace(/\//g, ".");
+}
+
+function getClientSurname(matter: MatterFile): string {
+  const preferred = matter.clientName || matter.intake.applicant.fullName;
+  return preferred.trim().split(/\s+/).pop() || "Client";
 }
 
 function initialLegalAidInvoiceNumber(matter: MatterFile, formType: BillingFormType): string {
@@ -141,6 +148,7 @@ function initialLegalAidInvoiceOutputFileName(formType: BillingFormType): string
 
 async function generateInitialLegalAidInvoice(matter: MatterFile, formType: BillingFormType) {
   const templateDefinition = billingTemplateDefinitions[formType];
+  const workItemId = initialLegalAidBillingWorkItem(formType);
   const record = createStructuredBillingRecord({
     formType,
     clientName: matter.clientName || matter.intake.applicant.fullName,
@@ -151,7 +159,7 @@ async function generateInitialLegalAidInvoice(matter: MatterFile, formType: Bill
     ].filter(Boolean).join(" "),
     invoiceNumber: initialLegalAidInvoiceNumber(matter, formType),
     invoiceType: "interim",
-    selectedWorkItemIds: [initialLegalAidBillingWorkItem(formType)],
+    selectedWorkItemIds: [workItemId],
     detailsByItem: {},
     travelTimeSelected: false,
     mileageSelected: false,
@@ -159,13 +167,17 @@ async function generateInitialLegalAidInvoice(matter: MatterFile, formType: Bill
     parking: 0,
     officeDisbursements: 0,
     wordingOverrides: {
-      [initialLegalAidBillingWorkItem(formType)]: "All documents drafted and prepped for filing",
+      [workItemId]: "All documents drafted and prepped for filing",
     },
   });
   const sourceTemplate = await readProjectFile(templateDefinition.sourcePath);
-  const { buffer, report } = await mergeDocxTemplate(sourceTemplate, buildBillingMergeFields(record), {
+  const mergeFields = buildBillingMergeFields(record);
+  mergeFields.PH_MATTERS = "";
+  mergeFields.PHM = "";
+  const { buffer, report } = await mergeDocxTemplate(sourceTemplate, mergeFields, {
     outputType: "document",
     normalizeBillingJudgeDirectionsRow: true,
+    billingInitialApplicationOrderFee: "620.00",
     billingFormValues: {
       dateCompleted: new Intl.DateTimeFormat("en-NZ", {
         day: "2-digit",
@@ -184,11 +196,6 @@ async function generateInitialLegalAidInvoice(matter: MatterFile, formType: Bill
     buffer,
     report,
   };
-}
-
-function getClientSurname(matter: MatterFile): string {
-  const preferred = matter.clientName || matter.intake.applicant.fullName;
-  return preferred.trim().split(/\s+/).pop() || "Client";
 }
 
 function stripBundlePrefix(fileName: string): string {
@@ -276,8 +283,12 @@ export async function POST(request: Request) {
 
   for (const templateDefinition of standardDocxTemplates) {
     const outputFileName = clientOutputFileName(body.matter, templateDefinition);
+    const isCocaInformationSheet = templateDefinition.id === "information_sheet" && templateDefinition.title.includes("(COCA)");
+    const isFvInformationSheet = templateDefinition.id === "information_sheet" && templateDefinition.title.includes("(FV)");
     const conditionalSkip =
       (templateDefinition.id === "confidential_address_application" && !body.matter.intake.applicant.isAddressConfidential)
+      || (isCocaInformationSheet && !hasParentingOrder)
+      || (isFvInformationSheet && !hasProtectionOrder)
       || (templateDefinition.id === "parenting_order_application" && !hasParentingOrder)
       || (templateDefinition.id === "protection_order_application" && !hasProtectionOrder)
       || (templateDefinition.id === "domestic_violence_affidavit" && !hasProtectionOrder && !hasParentingOrder);

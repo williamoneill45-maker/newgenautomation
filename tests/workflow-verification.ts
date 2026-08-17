@@ -16,6 +16,7 @@ import { claimIsOverdue, derivePayment } from "../lib/legal-aid-claims.ts";
 import { createEmptyChild, createEmptyMatter, type MatterFile } from "../lib/matter.ts";
 import { buildStandardAffidavitContent } from "../lib/standard-affidavit.ts";
 import { standardDocxTemplates } from "../lib/template-catalog.ts";
+import { POST as generateDocuments } from "../app/api/generate-documents/route.ts";
 
 const root = process.cwd();
 const outputDir = path.join("/tmp", "newgen-document-qa");
@@ -82,6 +83,35 @@ async function visibleText(buffer: ArrayBuffer): Promise<string> {
     .replace(/&apos;/g, "'")
     .replace(/&amp;/g, "&")
     .replace(/\s+/g, " ");
+}
+
+function currentInvoiceFileDate(date = new Date()): string {
+  return new Intl.DateTimeFormat("en-NZ", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "2-digit",
+  }).format(date).replace(/\//g, ".");
+}
+
+function tableRows(xml: string): string[] {
+  return [...xml.matchAll(/<w:tr\b[\s\S]*?<\/w:tr>/g)].map((match) =>
+    match[0]
+      .replace(/<[^>]+>/g, " ")
+      .replace(/&amp;/g, "&")
+      .replace(/\s+/g, " ")
+      .trim(),
+  );
+}
+
+async function generatedDocumentZip(matter: MatterFile): Promise<JSZip> {
+  const response = await generateDocuments(new Request("http://localhost/api/generate-documents", {
+    method: "POST",
+    body: JSON.stringify({ matter, uploadToOneDrive: false }),
+  }));
+  if (response.status !== 200) {
+    assert.fail(`Document generation route should succeed: ${await response.text().catch(() => "")}`);
+  }
+  return JSZip.loadAsync(await response.arrayBuffer());
 }
 
 async function verifyChildGeneration(count: number) {
@@ -164,6 +194,62 @@ async function verifyInformationSheetApplications() {
   }
 }
 
+function matterForApplications(applications: MatterFile["intake"]["selectedApplications"]): MatterFile {
+  const matter = matterWithChildren(1);
+  matter.intake.selectedApplications = applications;
+  matter.intake.proceedingsType = applications.length > 1
+    ? "both"
+    : applications.some((application) => /parenting/i.test(application))
+    ? "care_of_children"
+    : "protection_order";
+  return matter;
+}
+
+async function assertInitialInvoiceRow(zip: JSZip, fileName: string) {
+  const invoiceFile = zip.file(fileName);
+  assert.ok(invoiceFile, `${fileName} should be included in generated bundle`);
+  const invoiceZip = await JSZip.loadAsync(await invoiceFile.async("arraybuffer"));
+  const rows = tableRows(await invoiceZip.file("word/document.xml")?.async("string") ?? "");
+  const applicationOrderRow = rows.find((row) => /Application\(s\)\/\s*Order\(s\)/i.test(row) && row.includes("620.00"));
+  assert.ok(applicationOrderRow, `${fileName} should place 620.00 on the Applications/Orders row`);
+  const preHearingRow = rows.find((row) => /Pre-hearing matters/i.test(row) && row.includes("620.00"));
+  assert.equal(preHearingRow, undefined, `${fileName} should not place 620.00 on the Pre-hearing matters row`);
+  assert.ok(rows.join(" ").includes("All documents drafted and prepped for filing"), `${fileName} should include initial invoice wording`);
+}
+
+async function verifyConditionalInformationSheetsAndInitialInvoices() {
+  const stamp = currentInvoiceFileDate();
+  const parentingOnlyZip = await generatedDocumentZip(matterForApplications([
+    "Without Notice Application for Parenting Order",
+  ]));
+  const parentingOnlyFiles = Object.keys(parentingOnlyZip.files);
+  assert.ok(parentingOnlyFiles.some((file) => /Information Sheet \(COCA\)/.test(file)), "Parenting-only bundle should include COCA information sheet");
+  assert.equal(parentingOnlyFiles.some((file) => /Information Sheet \(FV\)/.test(file)), false, "Parenting-only bundle should not include FV information sheet");
+  assert.ok(parentingOnlyFiles.includes(`Tax invoice COCA ${stamp}.docx`), "Parenting-only bundle should include COCA Form 32B invoice");
+  assert.equal(parentingOnlyFiles.includes(`Tax invoice FV ${stamp}.docx`), false, "Parenting-only bundle should not include FV Form 33A invoice");
+  await assertInitialInvoiceRow(parentingOnlyZip, `Tax invoice COCA ${stamp}.docx`);
+
+  const protectionOnlyZip = await generatedDocumentZip(matterForApplications([
+    "Without Notice Application for Protection Order",
+  ]));
+  const protectionOnlyFiles = Object.keys(protectionOnlyZip.files);
+  assert.ok(protectionOnlyFiles.some((file) => /Information Sheet \(FV\)/.test(file)), "Protection-only bundle should include FV information sheet");
+  assert.equal(protectionOnlyFiles.some((file) => /Information Sheet \(COCA\)/.test(file)), false, "Protection-only bundle should not include COCA information sheet");
+  assert.ok(protectionOnlyFiles.includes(`Tax invoice FV ${stamp}.docx`), "Protection-only bundle should include FV Form 33A invoice");
+  assert.equal(protectionOnlyFiles.includes(`Tax invoice COCA ${stamp}.docx`), false, "Protection-only bundle should not include COCA Form 32B invoice");
+  await assertInitialInvoiceRow(protectionOnlyZip, `Tax invoice FV ${stamp}.docx`);
+
+  const bothZip = await generatedDocumentZip(matterForApplications([
+    "Without Notice Application for Protection Order",
+    "Without Notice Application for Parenting Order",
+  ]));
+  const bothFiles = Object.keys(bothZip.files);
+  assert.ok(bothFiles.some((file) => /Information Sheet \(FV\)/.test(file)), "Both-applications bundle should include FV information sheet");
+  assert.ok(bothFiles.some((file) => /Information Sheet \(COCA\)/.test(file)), "Both-applications bundle should include COCA information sheet");
+  assert.ok(bothFiles.includes(`Tax invoice FV ${stamp}.docx`), "Both-applications bundle should include FV Form 33A invoice");
+  assert.ok(bothFiles.includes(`Tax invoice COCA ${stamp}.docx`), "Both-applications bundle should include COCA Form 32B invoice");
+}
+
 async function verifyProtectionOrderShineFormatting() {
   const matter = matterWithChildren(1);
   const applicantName = matter.intake.applicant.fullName.toLocaleUpperCase("en-NZ");
@@ -186,6 +272,7 @@ async function verifyProtectionOrderShineFormatting() {
 }
 
 await verifyInformationSheetApplications();
+await verifyConditionalInformationSheetsAndInitialInvoices();
 await verifyProtectionOrderShineFormatting();
 
 async function verifyCourtLetterBundleTemplates() {
