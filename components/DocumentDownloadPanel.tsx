@@ -3,7 +3,8 @@
 import { useEffect, useState } from "react";
 
 import { demoMatter, isDemoEnvironment } from "../lib/demo-data";
-import { legalAidMatterStorageKey, recentMattersStorageKey } from "../lib/legal-aid";
+import { legalAidMatterStorageKey } from "../lib/legal-aid";
+import { saveMatterToSupabase } from "../lib/matter-persistence";
 import { normalizeProceedingsType, type MatterFile } from "../lib/matter";
 
 type BundleStatus = "Generated" | "Not Required" | "Awaiting Requirements";
@@ -18,13 +19,21 @@ function getSavedMatter(): MatterFile | null {
   }
 }
 
-function markMatterDocumentsGenerated(matter: MatterFile) {
+async function markMatterDocumentsGenerated(matter: MatterFile): Promise<{ matter: MatterFile; warning: string }> {
   const generatedMatter: MatterFile = { ...matter, status: "documents_generated", updatedAt: new Date().toISOString() };
-  const existingRaw = window.localStorage.getItem(recentMattersStorageKey);
-  const existing = existingRaw ? (JSON.parse(existingRaw) as MatterFile[]) : [];
-  window.localStorage.setItem(legalAidMatterStorageKey, JSON.stringify(generatedMatter));
-  window.localStorage.setItem(recentMattersStorageKey, JSON.stringify([generatedMatter, ...existing.filter((item) => item.id !== matter.id)].slice(0, 25)));
-  window.dispatchEvent(new CustomEvent("newgen:matter-saved"));
+  try {
+    const savedMatter = await saveMatterToSupabase(generatedMatter);
+    window.localStorage.setItem(legalAidMatterStorageKey, JSON.stringify(savedMatter));
+    window.dispatchEvent(new CustomEvent("newgen:matter-saved"));
+    return { matter: savedMatter, warning: "" };
+  } catch (error) {
+    window.localStorage.setItem(legalAidMatterStorageKey, JSON.stringify(generatedMatter));
+    window.dispatchEvent(new CustomEvent("newgen:matter-saved"));
+    return {
+      matter: generatedMatter,
+      warning: error instanceof Error ? ` Matter status was not saved to Supabase: ${error.message}` : " Matter status was not saved to Supabase.",
+    };
+  }
 }
 
 function bundleStatus(required: boolean, generated: boolean): BundleStatus {
@@ -91,9 +100,9 @@ export default function DocumentDownloadPanel() {
       if (uploadToOneDrive) {
         const payload = await response.json() as { error?: string; oneDrivePath?: string; uploadedDocuments?: Array<{ fileName: string }> };
         if (!response.ok) throw new Error(payload.error || "Documents could not be saved to OneDrive.");
-        markMatterDocumentsGenerated(savedMatter);
-        setMatter({ ...savedMatter, status: "documents_generated" });
-        setStatus(`${payload.uploadedDocuments?.length ?? 0} documents saved to ${payload.oneDrivePath || "OneDrive"}.`);
+        const saved = await markMatterDocumentsGenerated(savedMatter);
+        setMatter(saved.matter);
+        setStatus(`${payload.uploadedDocuments?.length ?? 0} documents saved to ${payload.oneDrivePath || "OneDrive"}.${saved.warning}`);
         return;
       }
       if (!response.ok) {
@@ -111,9 +120,9 @@ export default function DocumentDownloadPanel() {
       anchor.click();
       anchor.remove();
       window.URL.revokeObjectURL(url);
-      markMatterDocumentsGenerated(savedMatter);
-      setMatter({ ...savedMatter, status: "documents_generated" });
-      setStatus("Matter documents downloaded to this computer.");
+      const saved = await markMatterDocumentsGenerated(savedMatter);
+      setMatter(saved.matter);
+      setStatus(`Matter documents downloaded to this computer.${saved.warning}`);
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Documents could not be generated.");
     } finally {
