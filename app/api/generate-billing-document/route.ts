@@ -11,6 +11,7 @@ import {
 } from "../../../lib/billing-document.ts";
 import { mergeDocxTemplate } from "../../../lib/docx-template.ts";
 import type { BillingRecord } from "../../../lib/billing-automation.ts";
+import type { MergeFields, MergeFieldTextValue } from "../../../lib/document-automation.ts";
 import { validateStructuredBillingRecord } from "../../../lib/billing-selection.ts";
 import { uploadBillingDocumentToOneDrive } from "../../../lib/onedrive.ts";
 
@@ -28,6 +29,12 @@ function formatDate(value: string): string {
     month: "2-digit",
     year: "numeric",
   }).format(date);
+}
+
+function fieldText(fields: MergeFields, key: string): string {
+  const value = fields[key] as MergeFieldTextValue | undefined;
+  if (Array.isArray(value)) return value[0] ?? "";
+  return value ?? "";
 }
 
 type BillingEvidenceImageInput = {
@@ -120,6 +127,7 @@ export async function POST(request: Request) {
     }
 
     const fields = buildBillingMergeFields(body.record);
+    const defendedPrepPrefix = body.record.formType === "32B" ? "DF_P" : "DH_PREP";
     const travelCourt = body.record.draft.travel?.travelTimeValue
       ? body.record.draft.travel.court
       : "";
@@ -131,6 +139,16 @@ export async function POST(request: Request) {
         invoiceType: body.record.draft.structuredSelection?.invoiceType ?? "interim",
         mileageRate: "1.20",
       },
+      billingOfficeDisbursementAmount: fieldText(fields, "OFFICE_DISBURSEMENTS"),
+      ...(body.record.formType === "33A"
+        ? {
+            billingDefendedHearingPreparation: {
+              quantity: fieldText(fields, `${defendedPrepPrefix}_QTY`),
+              unit: fieldText(fields, `${defendedPrepPrefix}_UNIT`),
+              total: fieldText(fields, `${defendedPrepPrefix}_TOTAL`),
+            },
+          }
+        : {}),
       imageAppendices: (body.evidenceImages ?? []).map(decodeDataUrl),
       ...(travelCourt
         ? {

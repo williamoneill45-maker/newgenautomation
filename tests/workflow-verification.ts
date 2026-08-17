@@ -16,7 +16,9 @@ import { claimIsOverdue, derivePayment } from "../lib/legal-aid-claims.ts";
 import { createEmptyChild, createEmptyMatter, type MatterFile } from "../lib/matter.ts";
 import { buildStandardAffidavitContent } from "../lib/standard-affidavit.ts";
 import { standardDocxTemplates } from "../lib/template-catalog.ts";
+import { createStructuredBillingRecord, type BillingWorkItemId } from "../lib/billing-selection.ts";
 import { POST as generateDocuments } from "../app/api/generate-documents/route.ts";
+import { POST as generateBillingDocument } from "../app/api/generate-billing-document/route.ts";
 
 const root = process.cwd();
 const outputDir = path.join("/tmp", "newgen-document-qa");
@@ -112,6 +114,40 @@ async function generatedDocumentZip(matter: MatterFile): Promise<JSZip> {
     assert.fail(`Document generation route should succeed: ${await response.text().catch(() => "")}`);
   }
   return JSZip.loadAsync(await response.arrayBuffer());
+}
+
+async function generatedBillingXml(formType: "32B" | "33A", selectedWorkItemId: BillingWorkItemId, defendedPrepUnits: number) {
+  const record = createStructuredBillingRecord({
+    formType,
+    clientName: "Sarah Patel",
+    legalAidNumber: "100200300",
+    invoiceNumber: `TEST-${formType}`,
+    invoiceType: "interim",
+    selectedWorkItemIds: [selectedWorkItemId],
+    detailsByItem: {
+      [selectedWorkItemId]: {
+        date: "2026-08-18",
+        court: "Manukau Court",
+        startTime: "09:00",
+        endTime: "09:30",
+      },
+    },
+    defendedPrepUnits,
+    travelTimeSelected: true,
+    mileageSelected: false,
+    travelCourt: "Manukau Court",
+    parking: 15,
+    officeDisbursements: 35,
+  });
+  const response = await generateBillingDocument(new Request("http://localhost/api/generate-billing-document", {
+    method: "POST",
+    body: JSON.stringify({ record, reviewed: true, uploadToOneDrive: false }),
+  }));
+  if (response.status !== 200) {
+    assert.fail(`Billing document generation route should succeed: ${await response.text().catch(() => "")}`);
+  }
+  const zip = await JSZip.loadAsync(await response.arrayBuffer());
+  return await zip.file("word/document.xml")?.async("string") ?? "";
 }
 
 async function verifyChildGeneration(count: number) {
@@ -291,6 +327,30 @@ async function verifyProtectionOrderShineFormatting() {
 await verifyInformationSheetApplications();
 await verifyConditionalInformationSheetsAndInitialInvoices();
 await verifyProtectionOrderShineFormatting();
+
+async function verifyBillingDisbursementsAndDefendedPrep() {
+  const form32BXml = await generatedBillingXml("32B", "32-defended-hearing", 3);
+  const form32BRows = tableRows(form32BXml);
+  const form32BOfficeRow = form32BRows.find((row) => /Office disbursement/i.test(row)) ?? "";
+  const form32BPrepRow = form32BRows.find((row) => /Defended hearing\(s\)\s*[–-]\s*Preparation/i.test(row)) ?? "";
+  assert.ok(form32BOfficeRow.includes("35.00"), "Form 32B should populate Office disbursement amount");
+  assert.ok(form32BRows.some((row) => /Total disbursements/i.test(row) && /\$\s*113\.00/.test(row)), "Form 32B td should include office disbursements, parking, and travel time");
+  assert.ok(form32BPrepRow.includes("3"), "Form 32B defended hearing preparation should show selected prep units");
+  assert.ok(form32BPrepRow.includes("160.00"), "Form 32B defended hearing preparation should show $160 unit fee");
+  assert.ok(form32BPrepRow.includes("480.00"), "Form 32B defended hearing preparation should total selected units at $160 each");
+
+  const form33AXml = await generatedBillingXml("33A", "33-defended-hearing", 4);
+  const form33ARows = tableRows(form33AXml);
+  const form33AOfficeRow = form33ARows.find((row) => /Office disbursement/i.test(row)) ?? "";
+  const form33APrepRow = form33ARows.find((row) => /Defended hearing\(s\)\s*[–-]\s*Preparation/i.test(row)) ?? "";
+  assert.ok(form33AOfficeRow.includes("35.00"), "Form 33A should populate Office disbursement amount");
+  assert.ok(form33ARows.some((row) => /Total disbursements/i.test(row) && /\$\s*113\.00/.test(row)), "Form 33A td should include office disbursements, parking, and travel time");
+  assert.ok(form33APrepRow.includes("4"), "Form 33A defended hearing preparation should show selected prep units");
+  assert.ok(form33APrepRow.includes("160.00"), "Form 33A defended hearing preparation should show $160 unit fee");
+  assert.ok(form33APrepRow.includes("640.00"), "Form 33A defended hearing preparation should total selected units at $160 each");
+}
+
+await verifyBillingDisbursementsAndDefendedPrep();
 
 async function verifyCourtLetterBundleTemplates() {
   const sourceFiles = standardDocxTemplates.map((template) => template.sourceFileName);

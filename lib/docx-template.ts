@@ -67,6 +67,12 @@ export type DocxMergeOptions = {
     invoiceType: "interim" | "final";
     mileageRate: string;
   };
+  billingOfficeDisbursementAmount?: string;
+  billingDefendedHearingPreparation?: {
+    quantity: string;
+    unit: string;
+    total: string;
+  };
   continuationSections?: Array<{ heading: string; lines: string[]; pageBreak?: boolean }>;
   imageAppendices?: Array<{
     fileName: string;
@@ -381,6 +387,59 @@ function fillBillingInitialApplicationOrderFee(xml: string, amount: string): str
 
   const match = rowMatches[targetIndex];
   return `${xml.slice(0, match.index)}${updatedTargetRow}${xml.slice((match.index ?? 0) + targetRow.length)}`;
+}
+
+function rowCellTexts(row: string): string[] {
+  return [...row.matchAll(/<w:tc\b[\s\S]*?<\/w:tc>/g)].map((match) =>
+    readTextNodes(match[0]).map((node) => node.text).join("").replace(/\s+/g, " ").trim(),
+  );
+}
+
+function rowCells(row: string): string[] {
+  return [...row.matchAll(/<w:tc\b[\s\S]*?<\/w:tc>/g)].map((match) => match[0]);
+}
+
+function tableCellWidth(cell: string): number {
+  return Number(cell.match(/<w:tcW\b[^>]*w:w="(\d+)"/)?.[1] ?? 0);
+}
+
+function replaceRowCells(row: string, replacements: Array<{ cell: string; value: string }>): string {
+  return replacements.reduce(
+    (updated, replacement) => updated.replace(replacement.cell, setTableCellText(replacement.cell, replacement.value)),
+    row,
+  );
+}
+
+function fillBillingOfficeDisbursementRow(xml: string, amount: string): string {
+  return xml.replace(/<w:tr\b[\s\S]*?<\/w:tr>/g, (row) => {
+    const texts = rowCellTexts(row);
+    if (!texts.some((text) => /^Office disbursement$/i.test(text))) return row;
+    const cells = rowCells(row);
+    const target = cells.at(-1);
+    return target ? replaceRowCells(row, [{ cell: target, value: amount }]) : row;
+  });
+}
+
+function fillBillingDefendedHearingPreparationRow(
+  xml: string,
+  values: NonNullable<DocxMergeOptions["billingDefendedHearingPreparation"]>,
+): string {
+  let replaced = false;
+  return xml.replace(/<w:tr\b[\s\S]*?<\/w:tr>/g, (row) => {
+    if (replaced) return row;
+    const texts = rowCellTexts(row);
+    const labelIndex = texts.findIndex((text) => /^Defended hearing\(s\)\s*[–-]\s*Preparation$/i.test(text));
+    if (labelIndex === -1) return row;
+    const cells = rowCells(row);
+    const targets = cells.slice(labelIndex + 1).filter((cell) => tableCellWidth(cell) >= 500).slice(0, 3);
+    if (targets.length < 3) return row;
+    replaced = true;
+    return replaceRowCells(row, [
+      { cell: targets[0], value: values.quantity },
+      { cell: targets[1], value: values.unit },
+      { cell: targets[2], value: values.total },
+    ]);
+  });
 }
 
 function parseMarkedRuns(value: string): Array<{ text: string; bold?: boolean }> {
@@ -761,6 +820,12 @@ function applyTemplateTransformations(xml: string, options: DocxMergeOptions, is
   }
   if (isMainDocument && options.billingInitialApplicationOrderFee) {
     output = fillBillingInitialApplicationOrderFee(output, options.billingInitialApplicationOrderFee);
+  }
+  if (isMainDocument && typeof options.billingOfficeDisbursementAmount === "string") {
+    output = fillBillingOfficeDisbursementRow(output, options.billingOfficeDisbursementAmount);
+  }
+  if (isMainDocument && options.billingDefendedHearingPreparation) {
+    output = fillBillingDefendedHearingPreparationRow(output, options.billingDefendedHearingPreparation);
   }
   if (typeof options.childCount === "number") {
     output = removeUnusedChildBlocks(output, options.childCount);
