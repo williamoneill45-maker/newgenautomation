@@ -405,6 +405,7 @@ export async function POST(request: Request) {
     const reviewPayload = body.get("review");
     const incomeProof = body.get("incomeProof");
     const signedPage = body.get("signedPage");
+    const includeSupportingUploads = body.get("includeSupportingUploads") === "true";
 
     if (typeof applicationId === "string" && applicationId.trim()) {
       const applicationResult = await getLegalAidApplicationFromSupabase(applicationId);
@@ -422,32 +423,34 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: "Legal Aid application was not found." }, { status: 404 });
       }
 
-      if (!application.incomeProofPath) {
-        return NextResponse.json({ error: "Income proof screenshot or scan is required." }, { status: 400 });
-      }
-
-      if (!application.signedPagePath) {
-        return NextResponse.json({ error: "Signed client page 5 screenshot or scan is required." }, { status: 400 });
-      }
-
       const pdfDoc = await PDFDocument.load(await readTemplate(), { ignoreEncryption: true });
       fillTextFields(pdfDoc, application.review);
       await fillVisibleLegalAidWidgets(pdfDoc, sanitizeLegalAidReview(application.review));
       flattenLegalAidForm(pdfDoc);
       drawLegalAidTitle(pdfDoc, sanitizeLegalAidReview(application.review), await pdfDoc.embedFont(StandardFonts.Helvetica));
 
-      const incomeProofBytes = await downloadLegalAidFileFromSupabase(application.incomeProofPath);
-      const signedPageBytes = await downloadLegalAidFileFromSupabase(application.signedPagePath);
-      const incomeProofFile = {
-        name: application.incomeProofFileName || "income-proof.pdf",
-        type: "",
-      };
-      const signedPageFile = {
-        name: application.signedPageFileName || "signed-page-5.pdf",
-        type: "",
-      };
+      if (includeSupportingUploads) {
+        if (!application.incomeProofPath) {
+          return NextResponse.json({ error: "Income proof screenshot or scan is required." }, { status: 400 });
+        }
 
-      await insertLegalAidUploads(pdfDoc, incomeProofFile, incomeProofBytes, signedPageFile, signedPageBytes);
+        if (!application.signedPagePath) {
+          return NextResponse.json({ error: "Signed client page 5 screenshot or scan is required." }, { status: 400 });
+        }
+
+        const incomeProofBytes = await downloadLegalAidFileFromSupabase(application.incomeProofPath);
+        const signedPageBytes = await downloadLegalAidFileFromSupabase(application.signedPagePath);
+        const incomeProofFile = {
+          name: application.incomeProofFileName || "income-proof.pdf",
+          type: "",
+        };
+        const signedPageFile = {
+          name: application.signedPageFileName || "signed-page-5.pdf",
+          type: "",
+        };
+
+        await insertLegalAidUploads(pdfDoc, incomeProofFile, incomeProofBytes, signedPageFile, signedPageBytes);
+      }
 
       const generatedAt = new Date().toISOString();
       await saveLegalAidApplicationToSupabase({
@@ -476,11 +479,11 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Legal Aid review data is required." }, { status: 400 });
     }
 
-    if (!(incomeProof instanceof File) || incomeProof.size === 0) {
+    if (includeSupportingUploads && (!(incomeProof instanceof File) || incomeProof.size === 0)) {
       return NextResponse.json({ error: "Income proof screenshot or scan is required." }, { status: 400 });
     }
 
-    if (!(signedPage instanceof File) || signedPage.size === 0) {
+    if (includeSupportingUploads && (!(signedPage instanceof File) || signedPage.size === 0)) {
       return NextResponse.json({ error: "Signed client page 5 screenshot or scan is required." }, { status: 400 });
     }
 
@@ -491,18 +494,20 @@ export async function POST(request: Request) {
     flattenLegalAidForm(pdfDoc);
     drawLegalAidTitle(pdfDoc, sanitizeLegalAidReview(review), await pdfDoc.embedFont(StandardFonts.Helvetica));
 
-    const incomeProofBytes = await fileToBytes(incomeProof);
-    const signedPageBytes = await fileToBytes(signedPage);
+    const incomeProofBytes = includeSupportingUploads && incomeProof instanceof File ? await fileToBytes(incomeProof) : null;
+    const signedPageBytes = includeSupportingUploads && signedPage instanceof File ? await fileToBytes(signedPage) : null;
 
-    if (!incomeProofBytes) {
+    if (includeSupportingUploads && !incomeProofBytes) {
       return NextResponse.json({ error: "Income proof screenshot or scan is required." }, { status: 400 });
     }
 
-    if (!signedPageBytes) {
+    if (includeSupportingUploads && !signedPageBytes) {
       return NextResponse.json({ error: "Signed client page 5 screenshot or scan is required." }, { status: 400 });
     }
 
-    await insertLegalAidUploads(pdfDoc, incomeProof, incomeProofBytes, signedPage, signedPageBytes);
+    if (includeSupportingUploads && incomeProof instanceof File && signedPage instanceof File && incomeProofBytes && signedPageBytes) {
+      await insertLegalAidUploads(pdfDoc, incomeProof, incomeProofBytes, signedPage, signedPageBytes);
+    }
 
     const buffer = await pdfDoc.save({ updateFieldAppearances: false });
     const responseBody = buffer.buffer.slice(
