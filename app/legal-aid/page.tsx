@@ -24,7 +24,7 @@ type UploadKind = "incomeProof" | "signedPage";
 function updateReviewField(
   review: LegalAidReview,
   field: ReviewField,
-  value: string,
+  value: LegalAidReview[ReviewField],
 ): LegalAidReview {
   return { ...review, [field]: value };
 }
@@ -634,10 +634,12 @@ function ReviewSection({
 }: {
   review: LegalAidReview;
   matter: MatterFile | null;
-  onChange: (field: ReviewField, value: string) => void;
+  onChange: (field: ReviewField, value: LegalAidReview[ReviewField]) => void;
   onSave: () => void;
   isSaving: boolean;
 }) {
+  const hasUsedOtherNames = Boolean(review.hasUsedOtherNames);
+
   return (
     <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-form">
       <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
@@ -653,7 +655,28 @@ function ReviewSection({
       </div>
 
       <div className="mt-5 grid gap-4 md:grid-cols-2">
-        <Field label="Client name" value={review.clientName} onChange={(value) => onChange("clientName", value)} />
+        <div className="space-y-3">
+          <Field label="Client name" value={review.clientName} onChange={(value) => onChange("clientName", value)} />
+          <label className="flex min-h-11 items-center gap-3 rounded-md border border-slate-200 px-3 py-2 text-sm font-medium text-slate-800">
+            <input
+              type="checkbox"
+              checked={hasUsedOtherNames}
+              onChange={(event) => {
+                onChange("hasUsedOtherNames", event.target.checked);
+                if (!event.target.checked) onChange("otherNamesUsed", "");
+              }}
+              className="h-4 w-4 rounded border-slate-300 text-sky-600 focus:ring-sky-500"
+            />
+            Client has used another name
+          </label>
+          {hasUsedOtherNames ? (
+            <Field
+              label="Other name used"
+              value={review.otherNamesUsed ?? ""}
+              onChange={(value) => onChange("otherNamesUsed", value)}
+            />
+          ) : null}
+        </div>
         <Field label="Date of birth" value={review.dob} onChange={(value) => onChange("dob", value)} />
         <Field label="Mobile phone" value={review.mobilePhone} onChange={(value) => onChange("mobilePhone", value)} />
         <Field label="Email" value={review.email} onChange={(value) => onChange("email", value)} />
@@ -741,7 +764,7 @@ function WordingSection({
   onChange,
 }: {
   review: LegalAidReview;
-  onChange: (field: ReviewField, value: string) => void;
+  onChange: (field: ReviewField, value: LegalAidReview[ReviewField]) => void;
 }) {
   return (
     <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-form">

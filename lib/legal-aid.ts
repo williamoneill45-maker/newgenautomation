@@ -15,6 +15,8 @@ export type LegalAidStatus =
 export type LegalAidReview = {
   matterId: string;
   clientName: string;
+  hasUsedOtherNames?: boolean;
+  otherNamesUsed?: string;
   title?: string;
   dob: string;
   homeAddress: string;
@@ -57,7 +59,7 @@ export const legalAidTemplatePath = "templates/Legal Aid Template.pdf";
 export const confidentialLawyerPostalAddress = [
   "c/o Natalie Quirke",
   "PO Box 25-977",
-  "St Heliers 1070",
+  "St Heliers 1071",
 ].join(", ");
 
 export const protectionOrderStandardWording =
@@ -124,6 +126,8 @@ export function buildLegalAidReview(matter: MatterFile): LegalAidReview {
   return {
     matterId: matter.id,
     clientName: matter.intake.applicant.fullName || matter.clientName,
+    hasUsedOtherNames: false,
+    otherNamesUsed: "",
     title: matter.intake.applicant.title === "Custom"
       ? (matter.intake.applicant.customTitle ?? "").trim()
       : (matter.intake.applicant.title ?? ""),
