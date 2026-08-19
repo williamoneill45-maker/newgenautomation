@@ -263,8 +263,14 @@ async function assertInitialInvoiceRow(zip: JSZip, fileName: string) {
   assert.ok(invoiceFile, `${fileName} should be included in generated bundle`);
   const invoiceZip = await JSZip.loadAsync(await invoiceFile.async("arraybuffer"));
   const rows = tableRows(await invoiceZip.file("word/document.xml")?.async("string") ?? "");
-  const applicationOrderRow = rows.find((row) => /Application\(s\)\/\s*Order\(s\)/i.test(row) && row.includes("620.00"));
-  assert.ok(applicationOrderRow, `${fileName} should place 620.00 on the Applications/Orders row`);
+  const applicationOrderRow = /Tax invoice COCA/i.test(fileName)
+    ? rows.find((row) => /First/i.test(row) && /Only p\s*roceeding/i.test(row) && row.includes("620.00"))
+    : rows.find((row) => /Application\(s\)\/\s*Order\(s\)/i.test(row) && row.includes("620.00"));
+  assert.ok(applicationOrderRow, `${fileName} should place 620.00 on the First/Only proceeding Applications/Orders row`);
+  const applicationOrderHeaderRow = rows.find((row) => /Application\(s\)\/\s*Order\(s\)/i.test(row) && row.includes("620.00"));
+  if (/Tax invoice COCA/i.test(fileName)) {
+    assert.equal(applicationOrderHeaderRow, undefined, `${fileName} should not place 620.00 on the Applications/Orders header row`);
+  }
   const preHearingRow = rows.find((row) => /Pre-hearing matters/i.test(row) && row.includes("620.00"));
   assert.equal(preHearingRow, undefined, `${fileName} should not place 620.00 on the Pre-hearing matters row`);
   assert.ok(rows.join(" ").includes("All documents drafted and prepped for filing"), `${fileName} should include initial invoice wording`);

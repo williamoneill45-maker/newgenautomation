@@ -358,6 +358,11 @@ function fillBillingInitialApplicationOrderFee(xml: string, amount: string): str
     }
 
     if (!pendingIndexes.length) continue;
+    if (cellTexts.some((text) => /^First\/Only proceeding$/i.test(text))) {
+      targetIndex = index;
+      break;
+    }
+
     const boundary = cellTexts.join(" ");
     if (/Undefended|Defended|Formal proof|Interlocutories|Document preparation|Pre-Hearing/i.test(boundary)) {
       targetIndex = pendingIndexes.at(-1) ?? -1;
