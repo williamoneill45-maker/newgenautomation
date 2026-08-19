@@ -3,7 +3,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { CourtCarousel } from "./CourtCarousel";
 
-const enquiryHref = "mailto:hello@newgenbusiness.nz?subject=NewGen%20demo%20query";
+const enquiryHref = "mailto:will@newgenbusiness.nz?subject=NewGen%20demo%20query";
 
 export const metadata: Metadata = {
   title: "NewGen | Family Law Documents, Legal Aid and Billing",
