@@ -2,6 +2,7 @@ import { PDFCheckBox, PDFDocument, PDFTextField, StandardFonts } from "pdf-lib";
 
 import { calculateAge } from "./document-automation.ts";
 import type { MatterFile } from "./matter.ts";
+import { whiteLabelServiceAddress } from "./white-label.ts";
 
 function setText(form: ReturnType<PDFDocument["getForm"]>, name: string, value: string) {
   try { form.getTextField(name).setText(value); } catch { /* The supplied form controls the available field set. */ }
@@ -43,7 +44,7 @@ export async function completeConfidentialAddressInformationSheet(
   setText(form, "DOB ddmmyyyy", formatDate(applicant.dateOfBirth));
   setText(form, "Age", calculateAge(applicant.dateOfBirth));
   setText(form, "Gender", applicant.gender);
-  setText(form, "Service address", "c/o Natalie Quirke, PO Box 25-977, St Heliers 1070");
+  setText(form, "Service address", whiteLabelServiceAddress);
   setText(form, "Mob", applicant.mobilePhone);
   setText(form, "Home address", applicant.homeAddress);
   setText(form, "Phone", applicant.mobilePhone);

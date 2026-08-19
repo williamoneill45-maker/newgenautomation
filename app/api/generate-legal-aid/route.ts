@@ -53,7 +53,6 @@ type Rectangle = { x: number; y: number; width: number; height: number };
 type CheckboxTarget = { pageIndex: number; yes: Rectangle; no: Rectangle };
 type TitleTarget = { pageIndex: number; rectangles: Record<string, Rectangle> };
 
-const oldConfidentialPostcodePattern = /St Heliers\s+1070/gi;
 const legalAidDefaultNoCheckboxFields = [
   "Question 12",
   "Question 181",
@@ -76,7 +75,7 @@ function cleanReviewValue(value: string | undefined): string {
 }
 
 function normalizeConfidentialPostalAddress(value: string | undefined): string {
-  return cleanReviewValue(value).replace(oldConfidentialPostcodePattern, "St Heliers 1071");
+  return cleanReviewValue(value);
 }
 
 function sanitizeLegalAidReview(review: LegalAidReview): LegalAidReview {

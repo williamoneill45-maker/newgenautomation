@@ -1,5 +1,6 @@
 import type { MatterFile } from "./matter.ts";
 import { formatDateForForms } from "./document-automation.ts";
+import { whiteLabelServiceAddress } from "./white-label.ts";
 
 export const legalAidMatterStorageKey = "newgenautomation:draftMatter";
 export const recentMattersStorageKey = "newgenautomation:recentMatters";
@@ -56,11 +57,7 @@ export type LegalAidPendingSummary = Pick<
 
 export const legalAidTemplatePath = "templates/Legal Aid Template.pdf";
 
-export const confidentialLawyerPostalAddress = [
-  "c/o Natalie Quirke",
-  "PO Box 25-977",
-  "St Heliers 1071",
-].join(", ");
+export const confidentialLawyerPostalAddress = whiteLabelServiceAddress;
 
 export const protectionOrderStandardWording =
   "The Respondent has been abusive to the Applicant. It is serious violence. She and the children need urgent protection. It includes physical and psychological abuse.";

@@ -25,7 +25,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <aside className="border-b border-slate-200 bg-white lg:sticky lg:top-0 lg:h-screen lg:border-b-0 lg:border-r">
         <div className="flex h-full flex-col">
           <div className="border-b border-slate-200 px-5 py-5">
-            <p className="text-xs font-semibold uppercase tracking-wide text-sky-700">NewGen</p>
+            <p className="text-xs font-semibold uppercase tracking-wide text-sky-700">New Gen</p>
             <h1 className="mt-1 text-lg font-semibold tracking-normal text-slate-950">Automation</h1>
             {process.env.NEXT_PUBLIC_DEMO_MODE === "true" ? (
               <span className="mt-3 inline-flex rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-sky-800">
