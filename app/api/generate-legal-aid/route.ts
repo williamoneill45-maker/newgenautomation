@@ -51,6 +51,7 @@ const textFieldMap: Record<string, keyof LegalAidReview> = {
 
 type Rectangle = { x: number; y: number; width: number; height: number };
 type CheckboxTarget = { pageIndex: number; yes: Rectangle; no: Rectangle };
+type TitleTarget = { pageIndex: number; rectangles: Record<string, Rectangle> };
 
 const oldConfidentialPostcodePattern = /St Heliers\s+1070/gi;
 const legalAidDefaultNoCheckboxFields = [
@@ -101,20 +102,38 @@ function sanitizeLegalAidReview(review: LegalAidReview): LegalAidReview {
   };
 }
 
-function drawLegalAidTitle(pdfDoc: PDFDocument, review: LegalAidReview, font: PDFFont) {
-  const page = pdfDoc.getPage(0);
-  const checkboxX: Record<string, number> = { Miss: 244, Ms: 304, Mrs: 364, Mr: 424 };
+function drawLegalAidTitle(pdfDoc: PDFDocument, review: LegalAidReview, target: TitleTarget | null, font: PDFFont) {
   const title = review.title ?? "";
-  // The Ministry PDF visually defaults to Miss. Cover that mark before placing
-  // the applicant's explicit intake title so the exported PDF shows one title.
-  page.drawRectangle({ x: 241, y: 608, width: 18, height: 18, color: rgb(0.93, 0.96, 0.9) });
-  const x = checkboxX[title];
-  if (typeof x === "number") {
-    page.drawText("X", { x, y: 612, size: 10, font, color: rgb(0, 0, 0) });
-    return;
+
+  if (target) {
+    const page = pdfDoc.getPage(target.pageIndex);
+    for (const rectangle of Object.values(target.rectangles)) {
+      drawEmptyRadio(page, rectangle);
+    }
+
+    const selected = target.rectangles[title];
+    if (selected) {
+      drawRadioDot(page, selected);
+      return;
+    }
+  } else {
+    const page = pdfDoc.getPage(0);
+    const checkboxX: Record<string, number> = { Miss: 244, Ms: 304, Mrs: 364, Mr: 424 };
+    for (const x of Object.values(checkboxX)) {
+      page.drawRectangle({ x: x - 3, y: 608, width: 18, height: 18, color: rgb(0.93, 0.96, 0.9) });
+    }
+
+    const x = checkboxX[title];
+    if (typeof x === "number") {
+      page.drawText("X", { x, y: 612, size: 10, font, color: rgb(0, 0, 0) });
+      return;
+    }
   }
+
   if (title) {
+    const page = pdfDoc.getPage(target?.pageIndex ?? 0);
     page.drawText(title, { x: 198, y: 612, size: 10, font, color: rgb(0, 0, 0) });
+    return;
   }
 }
 
@@ -327,6 +346,46 @@ function collectYesNoCheckboxTargets(pdfDoc: PDFDocument, fieldNames: readonly s
   return targets;
 }
 
+function collectTitleTarget(pdfDoc: PDFDocument): TitleTarget | null {
+  const form = pdfDoc.getForm();
+  const unsafeForm = form as unknown as {
+    findWidgetPage: (widget: unknown) => ReturnType<PDFDocument["getPage"]>;
+  };
+  const pages = pdfDoc.getPages();
+  const titleNames = ["Miss", "Ms", "Mrs", "Mr"];
+
+  try {
+    const field = form.getCheckBox("title 1");
+    const widgets = field.acroField.getWidgets()
+      .map((widget) => {
+        let pageIndex = 0;
+        try {
+          const page = unsafeForm.findWidgetPage(widget);
+          pageIndex = pages.indexOf(page);
+        } catch {
+          // Fall back to page 1; the title widgets are visibly on the first page.
+        }
+        return {
+          pageIndex,
+          rectangle: widget.getRectangle(),
+        };
+      })
+      .filter((widget): widget is { pageIndex: number; rectangle: Rectangle } => widget.pageIndex >= 0)
+      .sort((left, right) => left.rectangle.x - right.rectangle.x);
+
+    if (widgets.length < titleNames.length) return null;
+
+    return {
+      pageIndex: widgets[0].pageIndex,
+      rectangles: Object.fromEntries(
+        titleNames.map((titleName, index) => [titleName, widgets[index].rectangle]),
+      ),
+    };
+  } catch {
+    return null;
+  }
+}
+
 function getLegalAidCheckboxChoices(review: LegalAidReview): Record<string, "yes" | "no"> {
   return {
     "Question 3": review.hasUsedOtherNames ? "yes" : "no",
@@ -401,6 +460,30 @@ function removeLegalAidCheckboxWidgets(pdfDoc: PDFDocument, targets: Record<stri
       page.node.removeAnnot(annotationRef);
       pdfDoc.context.delete(annotationRef);
     }
+  }
+}
+
+function removeLegalAidTitleWidgets(pdfDoc: PDFDocument, target: TitleTarget | null) {
+  if (!target) return;
+  const page = pdfDoc.getPage(target.pageIndex);
+  const annotations = page.node.Annots();
+  if (!annotations) return;
+
+  const targetRectangles = Object.values(target.rectangles);
+  const annotationRefsToRemove: PDFRef[] = [];
+  for (let index = 0; index < annotations.size(); index += 1) {
+    const annotationRef = annotations.get(index) as PDFRef;
+    const annotation = pdfDoc.context.lookup(annotationRef);
+    const rectangle = getAnnotationRectangle(annotation);
+    if (!rectangle) continue;
+    if (targetRectangles.some((targetRectangle) => isSameRectangle(rectangle, targetRectangle))) {
+      annotationRefsToRemove.push(annotationRef);
+    }
+  }
+
+  for (const annotationRef of annotationRefsToRemove) {
+    page.node.removeAnnot(annotationRef);
+    pdfDoc.context.delete(annotationRef);
   }
 }
 
@@ -600,12 +683,14 @@ export async function POST(request: Request) {
       const pdfDoc = await PDFDocument.load(await readTemplate(), { ignoreEncryption: true });
       const review = sanitizeLegalAidReview(application.review);
       const checkboxTargets = collectYesNoCheckboxTargets(pdfDoc, ["Question 3", ...legalAidDefaultNoCheckboxFields]);
+      const titleTarget = collectTitleTarget(pdfDoc);
       const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
       fillTextFields(pdfDoc, review);
       await fillVisibleLegalAidWidgets(pdfDoc, review);
       removeLegalAidCheckboxWidgets(pdfDoc, checkboxTargets);
+      removeLegalAidTitleWidgets(pdfDoc, titleTarget);
       flattenLegalAidForm(pdfDoc);
-      drawLegalAidTitle(pdfDoc, review, font);
+      drawLegalAidTitle(pdfDoc, review, titleTarget, font);
       drawLegalAidDefaultCheckboxes(pdfDoc, review, checkboxTargets);
 
       if (includeSupportingUploads) {
@@ -669,12 +754,14 @@ export async function POST(request: Request) {
     const review = sanitizeLegalAidReview(JSON.parse(reviewPayload) as LegalAidReview);
     const pdfDoc = await PDFDocument.load(await readTemplate(), { ignoreEncryption: true });
     const checkboxTargets = collectYesNoCheckboxTargets(pdfDoc, ["Question 3", ...legalAidDefaultNoCheckboxFields]);
+    const titleTarget = collectTitleTarget(pdfDoc);
     const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
     fillTextFields(pdfDoc, review);
     await fillVisibleLegalAidWidgets(pdfDoc, review);
     removeLegalAidCheckboxWidgets(pdfDoc, checkboxTargets);
+    removeLegalAidTitleWidgets(pdfDoc, titleTarget);
     flattenLegalAidForm(pdfDoc);
-    drawLegalAidTitle(pdfDoc, review, font);
+    drawLegalAidTitle(pdfDoc, review, titleTarget, font);
     drawLegalAidDefaultCheckboxes(pdfDoc, review, checkboxTargets);
 
     const incomeProofBytes = includeSupportingUploads && incomeProof instanceof File ? await fileToBytes(incomeProof) : null;
