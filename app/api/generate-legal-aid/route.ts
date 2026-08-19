@@ -327,78 +327,11 @@ function collectYesNoCheckboxTargets(pdfDoc: PDFDocument, fieldNames: readonly s
   return targets;
 }
 
-function getWidgetOnValueName(widget: { dict: { lookup: (name: PDFName) => unknown } }): PDFName | null {
-  const appearance = widget.dict.lookup(PDFName.of("AP")) as { lookup?: (name: PDFName) => unknown } | undefined;
-  const normalAppearance = appearance?.lookup?.(PDFName.of("N")) as { keys?: () => PDFName[] } | undefined;
-  const onName = normalAppearance?.keys?.().find((key) => key.decodeText() !== "Off");
-  return onName ?? null;
-}
-
 function getLegalAidCheckboxChoices(review: LegalAidReview): Record<string, "yes" | "no"> {
   return {
     "Question 3": review.hasUsedOtherNames ? "yes" : "no",
     ...Object.fromEntries(legalAidDefaultNoCheckboxFields.map((fieldName) => [fieldName, "no"])),
   };
-}
-
-function setLegalAidDefaultCheckboxAppearances(pdfDoc: PDFDocument, review: LegalAidReview) {
-  const form = pdfDoc.getForm();
-  const choices = getLegalAidCheckboxChoices(review);
-
-  for (const [fieldName, choice] of Object.entries(choices)) {
-    try {
-      const field = form.getField(fieldName);
-      const widgets = field.acroField.getWidgets()
-        .map((widget) => ({ widget, rectangle: widget.getRectangle() }))
-        .sort((left, right) => left.rectangle.x - right.rectangle.x);
-      const selectedIndex = choice === "yes" ? 0 : 1;
-      let selectedOnName: PDFName | null = null;
-
-      widgets.forEach(({ widget }, index) => {
-        const onName = getWidgetOnValueName(widget);
-        const isSelected = index === selectedIndex && Boolean(onName);
-        const state = isSelected && onName ? onName : PDFName.of("Off");
-        widget.setAppearanceState(state);
-        if (isSelected && onName) selectedOnName = state;
-      });
-
-      if (selectedOnName) {
-        (field.acroField as unknown as { setValue: (value: PDFName) => void }).setValue(selectedOnName);
-      }
-    } catch {
-      // Some template revisions omit optional checkbox fields.
-    }
-  }
-}
-
-function removeQuestion3NoWidgetForOtherName(pdfDoc: PDFDocument, review: LegalAidReview) {
-  if (!review.hasUsedOtherNames) return;
-
-  const page = pdfDoc.getPage(0);
-  const annotations = page.node.Annots();
-  if (!annotations) return;
-
-  const annotationRefsToRemove: PDFRef[] = [];
-  for (let index = 0; index < annotations.size(); index += 1) {
-    const annotationRef = annotations.get(index) as PDFRef;
-    const annotation = pdfDoc.context.lookup(annotationRef);
-    const rectangle = getAnnotationRectangle(annotation);
-    if (!rectangle) continue;
-
-    const isQuestion3Radio =
-      rectangle.y > 540
-      && rectangle.y < 550
-      && rectangle.x > 355
-      && rectangle.x < 445
-      && Math.abs(rectangle.width - 19.559) < 1;
-
-    if (isQuestion3Radio) annotationRefsToRemove.push(annotationRef);
-  }
-
-  for (const annotationRef of annotationRefsToRemove) {
-    page.node.removeAnnot(annotationRef);
-    pdfDoc.context.delete(annotationRef);
-  }
 }
 
 function drawRadioDot(page: PDFPage, rectangle: Rectangle) {
@@ -431,20 +364,62 @@ function drawEmptyRadio(page: PDFPage, rectangle: Rectangle) {
   });
 }
 
+function isSameRectangle(left: Rectangle, right: Rectangle): boolean {
+  return Math.abs(left.x - right.x) < 1
+    && Math.abs(left.y - right.y) < 1
+    && Math.abs(left.width - right.width) < 1
+    && Math.abs(left.height - right.height) < 1;
+}
+
+function removeLegalAidCheckboxWidgets(pdfDoc: PDFDocument, targets: Record<string, CheckboxTarget>) {
+  const rectanglesByPage = new Map<number, Rectangle[]>();
+  for (const target of Object.values(targets)) {
+    rectanglesByPage.set(target.pageIndex, [
+      ...(rectanglesByPage.get(target.pageIndex) ?? []),
+      target.yes,
+      target.no,
+    ]);
+  }
+
+  for (const [pageIndex, targetRectangles] of rectanglesByPage.entries()) {
+    const page = pdfDoc.getPage(pageIndex);
+    const annotations = page.node.Annots();
+    if (!annotations) continue;
+
+    const annotationRefsToRemove: PDFRef[] = [];
+    for (let index = 0; index < annotations.size(); index += 1) {
+      const annotationRef = annotations.get(index) as PDFRef;
+      const annotation = pdfDoc.context.lookup(annotationRef);
+      const rectangle = getAnnotationRectangle(annotation);
+      if (!rectangle) continue;
+      if (targetRectangles.some((targetRectangle) => isSameRectangle(rectangle, targetRectangle))) {
+        annotationRefsToRemove.push(annotationRef);
+      }
+    }
+
+    for (const annotationRef of annotationRefsToRemove) {
+      page.node.removeAnnot(annotationRef);
+      pdfDoc.context.delete(annotationRef);
+    }
+  }
+}
+
 function drawLegalAidDefaultCheckboxes(
   pdfDoc: PDFDocument,
   review: LegalAidReview,
   targets: Record<string, CheckboxTarget>,
 ) {
-  if (!review.hasUsedOtherNames) return;
+  const choices = getLegalAidCheckboxChoices(review);
 
-  const target = targets["Question 3"];
-  if (!target) return;
+  for (const [fieldName, choice] of Object.entries(choices)) {
+    const target = targets[fieldName];
+    if (!target) continue;
 
-  const page = pdfDoc.getPage(target.pageIndex);
-  drawEmptyRadio(page, target.yes);
-  drawEmptyRadio(page, target.no);
-  drawRadioDot(page, target.yes);
+    const page = pdfDoc.getPage(target.pageIndex);
+    drawEmptyRadio(page, target.yes);
+    drawEmptyRadio(page, target.no);
+    drawRadioDot(page, target[choice]);
+  }
 }
 
 function flattenLegalAidForm(pdfDoc: PDFDocument) {
@@ -628,8 +603,7 @@ export async function POST(request: Request) {
       const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
       fillTextFields(pdfDoc, review);
       await fillVisibleLegalAidWidgets(pdfDoc, review);
-      setLegalAidDefaultCheckboxAppearances(pdfDoc, review);
-      removeQuestion3NoWidgetForOtherName(pdfDoc, review);
+      removeLegalAidCheckboxWidgets(pdfDoc, checkboxTargets);
       flattenLegalAidForm(pdfDoc);
       drawLegalAidTitle(pdfDoc, review, font);
       drawLegalAidDefaultCheckboxes(pdfDoc, review, checkboxTargets);
@@ -698,8 +672,7 @@ export async function POST(request: Request) {
     const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
     fillTextFields(pdfDoc, review);
     await fillVisibleLegalAidWidgets(pdfDoc, review);
-    setLegalAidDefaultCheckboxAppearances(pdfDoc, review);
-    removeQuestion3NoWidgetForOtherName(pdfDoc, review);
+    removeLegalAidCheckboxWidgets(pdfDoc, checkboxTargets);
     flattenLegalAidForm(pdfDoc);
     drawLegalAidTitle(pdfDoc, review, font);
     drawLegalAidDefaultCheckboxes(pdfDoc, review, checkboxTargets);
