@@ -23,6 +23,19 @@ export function CourtCarousel({ documents }: { documents: CourtDocument[] }) {
 
   return (
     <div className="court-carousel mt-8">
+      <div className="court-carousel-tabs" aria-label="Court document examples">
+        {documents.map((document, index) => (
+          <button
+            key={document.label}
+            type="button"
+            className={index === active ? "court-carousel-tab court-carousel-tab-active" : "court-carousel-tab"}
+            onClick={() => setActive(index)}
+            aria-pressed={index === active}
+          >
+            {document.label}
+          </button>
+        ))}
+      </div>
       <button
         type="button"
         aria-label="Previous court document"
@@ -38,6 +51,7 @@ export function CourtCarousel({ documents }: { documents: CourtDocument[] }) {
 
           return (
             <article key={document.label} className={`court-carousel-card court-carousel-card-${position}`} aria-hidden={position !== "active"}>
+              <div className="court-carousel-label">{document.label}</div>
               <Image
                 src={document.src}
                 alt={document.alt}
