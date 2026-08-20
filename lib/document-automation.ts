@@ -381,6 +381,17 @@ function buildChildMergeFields(
 
 export function buildMatterMergeFields(matter: MatterFile): MergeFields {
   const { intake } = matter;
+  const relationship = intake.relationship ?? {
+    marriageOrCivilUnionDate: "",
+    marriageOrCivilUnionPlace: "",
+    deFactoRelationshipStart: "",
+    relationshipEndDate: "",
+  };
+  const proceedings = intake.proceedings ?? {
+    previousApplications: "",
+    existingOrdersBetweenParties: "",
+    existingOrdersRelatingToChildren: "",
+  };
   const firstChild = intake.children[0];
   const secondChild = intake.children[1];
   const thirdChild = intake.children[2];
@@ -488,15 +499,15 @@ export function buildMatterMergeFields(matter: MatterFile): MergeFields {
     date_today_long: new Intl.DateTimeFormat("en-NZ", { day: "numeric", month: "long", year: "numeric" }).format(todayDate),
     "date_today ": today,
     Date_today: today,
-    existing_child_orders: intake.proceedings.existingOrdersRelatingToChildren,
+    existing_child_orders: proceedings.existingOrdersRelatingToChildren,
     existing_orders_between_parties:
-      intake.proceedings.existingOrdersBetweenParties,
-    marriage_date: formatInputDateForForms(intake.relationship.marriageOrCivilUnionDate),
-    marriage_place: intake.relationship.marriageOrCivilUnionPlace,
-    previous_applications: intake.proceedings.previousApplications,
-    relationship_end_date: formatInputDateForForms(intake.relationship.relationshipEndDate),
-    relationship_start_date: formatInputDateForForms(intake.relationship.deFactoRelationshipStart),
-    start: formatInputDateForForms(intake.relationship.deFactoRelationshipStart),
+      proceedings.existingOrdersBetweenParties,
+    marriage_date: formatInputDateForForms(relationship.marriageOrCivilUnionDate),
+    marriage_place: relationship.marriageOrCivilUnionPlace,
+    previous_applications: proceedings.previousApplications,
+    relationship_end_date: formatInputDateForForms(relationship.relationshipEndDate),
+    relationship_start_date: formatInputDateForForms(relationship.deFactoRelationshipStart),
+    start: formatInputDateForForms(relationship.deFactoRelationshipStart),
     NUMBER_OF_CHILDREN: numberOfChildren,
     NUMBEROFCHILDREN: numberOfChildren,
     NUMBEROFCHIDLREN: numberOfChildren,

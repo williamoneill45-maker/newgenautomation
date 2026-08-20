@@ -76,8 +76,8 @@ function includesApplication(matter: MatterFile, text: string): boolean {
 
 function summarizeAbuse(matter: MatterFile): string {
   const notes = [
-    matter.intake.domesticViolenceNotes.recentEvents,
-    matter.intake.domesticViolenceNotes.history,
+    matter.intake.domesticViolenceNotes?.recentEvents ?? "",
+    matter.intake.domesticViolenceNotes?.history ?? "",
   ]
     .join(" ")
     .replace(/\s+/g, " ")

@@ -133,7 +133,12 @@ export function buildStandardAffidavitContent(matter: MatterFile): StandardAffid
     hasProtectionOrder ? "(Family Violence Act 2018 Sections 60 and 75)" : "",
     hasParentingOrder ? "(Ss 48, 49, and 77 Care of Children Act 2004)" : "",
   ].filter(Boolean);
-  const relationship = matter.intake.relationship;
+  const relationship = matter.intake.relationship ?? {
+    marriageOrCivilUnionDate: "",
+    marriageOrCivilUnionPlace: "",
+    deFactoRelationshipStart: "",
+    relationshipEndDate: "",
+  };
   const relationshipStartBlurb = relationship.marriageOrCivilUnionDate
     ? `married${clean(relationship.marriageOrCivilUnionPlace) ? ` in ${clean(relationship.marriageOrCivilUnionPlace)}` : ""} on ${formatInputDateLong(relationship.marriageOrCivilUnionDate)}`
     : relationship.deFactoRelationshipStart
