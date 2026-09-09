@@ -413,12 +413,14 @@ export function buildMatterMergeFields(matter: MatterFile): MergeFields {
   const numberOfChildren = intake.children.length ? String(intake.children.length) : "";
   const applicantLastName = intake.applicant.fullName.trim().split(/\s+/).at(-1) ?? "";
   const respondentLastName = intake.respondent.fullName.trim().split(/\s+/).at(-1) ?? "";
+  const respondentFirstName = getFirstName(respondentName);
   const applicantSubject = intake.applicant.gender === "M" ? "he" : intake.applicant.gender === "F" ? "she" : "they";
 
   return normalizeMergeFields({
     APPLICANT_NAME: applicantName,
     applicant_full_name: intake.applicant.fullName,
     applicant_full_name_upper: applicantName,
+    applicant_first_name: getFirstName(applicantName),
     applicant_last_name: applicantLastName,
     applicant_last_name_upper: applicantLastName.toLocaleUpperCase("en-NZ"),
     applicant_dob_long: formatInputDateLong(intake.applicant.dateOfBirth),
@@ -427,6 +429,7 @@ export function buildMatterMergeFields(matter: MatterFile): MergeFields {
     RESPONDENT_NAME: respondentName,
     respondent_full_name: intake.respondent.fullName,
     respondent_full_name_upper: respondentName,
+    respondent_first_name: respondentFirstName,
     respondent_last_name: respondentLastName,
     respondent_last_name_upper: respondentLastName.toLocaleUpperCase("en-NZ"),
     APPLICANT_ADDRESS: applicantAddress,
@@ -443,9 +446,11 @@ export function buildMatterMergeFields(matter: MatterFile): MergeFields {
     APPLICATION_TYPE_3: selectedApplications[2],
     English_court_name: englishCourtName,
     Maori_court_name: maoriCourtName,
+    court_location_maori: maoriCourtName,
     court: englishCourtName,
     month_day: formatOrdinalDay(todayDate.getDate()),
     month: new Intl.DateTimeFormat("en-NZ", { month: "long" }).format(todayDate),
+    year: String(todayDate.getFullYear()),
     a_dob: formatInputDateForForms(intake.applicant.dateOfBirth),
     x: applicantAge,
     ag: intake.applicant.gender ?? "",
@@ -529,6 +534,8 @@ export function buildMatterMergeFields(matter: MatterFile): MergeFields {
     respondent_relationship_to_applicant:
       intake.respondent.relationshipToApplicant,
     respondent_work_address: intake.respondent.workAddress,
+    respondent_relationship_to_children:
+      joinPresent(intake.children.map((child) => child.respondentRelationshipToChild)),
     respondents_relationship_to_children:
       joinPresent(intake.children.map((child) => child.respondentRelationshipToChild)),
     respondents_name: respondentName,

@@ -7,8 +7,10 @@ import JSZip from "jszip";
 import { buildAdditionalChildLines } from "../lib/child-continuation.ts";
 import { buildTemplateMergeFields } from "../lib/document-automation.ts";
 import { mergeDocxTemplate } from "../lib/docx-template.ts";
+import { buildBillingMergeFields } from "../lib/billing-document.ts";
 import { claimIsOverdue, derivePayment } from "../lib/legal-aid-claims.ts";
 import { createEmptyChild, createEmptyMatter, type MatterFile } from "../lib/matter.ts";
+import { createStructuredBillingRecord } from "../lib/billing-selection.ts";
 import { buildStandardAffidavitContent } from "../lib/standard-affidavit.ts";
 
 const root = process.cwd();
@@ -70,6 +72,16 @@ async function visibleText(buffer: ArrayBuffer): Promise<string> {
     .replace(/&apos;/g, "'")
     .replace(/&amp;/g, "&")
     .replace(/\s+/g, " ");
+}
+
+function paragraphVisibleText(paragraph: string): string {
+  return paragraph
+    .replace(/<[^>]+>/g, "")
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&amp;/g, "&")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 async function verifyChildGeneration(count: number) {
@@ -157,6 +169,7 @@ async function verifyProtectionOrderShineFormatting() {
   const applicantName = matter.intake.applicant.fullName.toLocaleUpperCase("en-NZ");
   const source = await readFile(path.join(root, "templates", "Application for Protection Order.docx"));
   const result = await mergeDocxTemplate(arrayBufferFrom(source), buildTemplateMergeFields(matter, "protection_order_application"), {
+    normalizeProtectionOrderLayout: true,
     protectionOrderShineApplicantName: applicantName,
     literalTextReplacements: {
       "{{RESPONDENT_NAME}} - currently working with Shine.": "{{APPLICANT_NAME}} - currently working with Shine.",
@@ -171,10 +184,80 @@ async function verifyProtectionOrderShineFormatting() {
   const suffixXml = paragraph.slice(paragraph.indexOf(applicantName) + applicantName.length);
   assert.ok(suffixXml.includes(" - currently working with Shine."), "Protection Order Shine suffix should remain visible");
   assert.equal(/<w:b\/?>/.test(suffixXml), false, "Protection Order Shine suffix should remain plain text");
+  assert.match(suffixXml, /<w:rPr>[\s\S]*<w:rFonts\b|<w:rPr>[\s\S]*<w:szCs\b/, "Protection Order Shine suffix should retain template font properties");
+
+  const datedParagraph = xml.match(/<w:p\b[\s\S]*?<\/w:p>/g)?.find((candidate) =>
+    candidate.includes("Dated this"),
+  ) ?? "";
+  assert.ok(datedParagraph.includes('w:pos="9360"'), "Protection Order dated line should use a full-width right tab");
+  assert.ok(datedParagraph.includes('w:jc w:val="both"'), "Protection Order dated line should justify across the page");
+}
+
+async function verifyAffidavitSigningFormatting() {
+  const matter = matterWithChildren(1);
+  matter.intake.courtLocation = "North Shore Court";
+  matter.intake.familyViolenceTypes = ["physical abuse", "psychological abuse", "damage to property", "sexual abuse"];
+  const affidavitContent = buildStandardAffidavitContent(matter);
+  const source = await readFile(path.join(root, "templates", "Domestic Violence Affidavit.docx"));
+  const result = await mergeDocxTemplate(arrayBufferFrom(source), {
+    ...buildTemplateMergeFields(matter, "domestic_violence_affidavit"),
+    affidavit_application_title: affidavitContent.applicationTitle,
+  }, {
+    literalTextReplacements: {
+      "AFFIRMED at {{English_court_name}} this": "AFFIRMED at            this",
+    },
+    affidavitFormatting: {
+      applicantName: matter.intake.applicant.fullName.toLocaleUpperCase("en-NZ"),
+      respondentName: matter.intake.respondent.fullName.toLocaleUpperCase("en-NZ"),
+      childNames: matter.intake.children.map((child) => child.fullName.toLocaleUpperCase("en-NZ")),
+      legislationLines: affidavitContent.legislationLines,
+    },
+    paragraphInsertions: {
+      protection_facts_heading: affidavitContent.protectionFactsHeading,
+      violence_categories: affidavitContent.violenceCategories,
+    },
+  });
+  const xml = await documentXml(result.buffer);
+  const paragraphs = xml.match(/<w:p\b[\s\S]*?<\/w:p>/g) ?? [];
+  const affirmedParagraph = paragraphs.find((candidate) => candidate.includes("AFFIRMED")) ?? "";
+  assert.match(paragraphVisibleText(affirmedParagraph), /^AFFIRMED at\s+this$/, "Affidavit signing line should not include the court location");
+  assert.equal(affirmedParagraph.includes("NORTH SHORE"), false, "Affidavit signing line should not include North Shore");
+  assert.match(affirmedParagraph, /<w:b\/><w:bCs\/>[\s\S]*?<w:t xml:space="preserve">AFFIRMED<\/w:t>/, "Only AFFIRMED should be bolded in the signing line");
+  const afterAffirmed = affirmedParagraph.slice(affirmedParagraph.indexOf("AFFIRMED") + "AFFIRMED".length);
+  assert.equal(/<w:b\/>/.test(afterAffirmed), false, "Text after AFFIRMED should remain plain");
+  const text = await visibleText(result.buffer);
+  assert.ok(text.includes("Facts relating to Respondent"), "Affidavit should include facts relating to Respondent");
+  assert.ok(text.includes("The Respondent has used family violence against me as follows:"), "Affidavit should include family violence category intro");
+  assert.ok(text.includes("(a) Physical abuse."), "Affidavit should include physical abuse category");
+  assert.ok(text.includes("(b) Psychological abuse;"), "Affidavit should include psychological abuse category");
+  assert.ok(text.includes("(c) Damage to property;"), "Affidavit should include damage to property category");
+  assert.ok(text.includes("(d) Sexual abuse"), "Affidavit should include sexual abuse category");
+}
+
+function verifyBillingClientNameOrder() {
+  const record = createStructuredBillingRecord({
+    formType: "33A",
+    clientName: "LUPTON, Stacey Olivia",
+    legalAidNumber: "100100100",
+    matterName: "Family violence / protection order",
+    invoiceNumber: "20260828.33A.LUPTON",
+    invoiceType: "interim",
+    selectedWorkItemIds: ["33-pre-hearing-matters"],
+    detailsByItem: {},
+    travelTimeSelected: false,
+    mileageSelected: false,
+    travelCourt: "",
+    parking: 0,
+    officeDisbursements: 0,
+  });
+  const fields = buildBillingMergeFields(record);
+  assert.equal(fields.CLIENT_NAME, "STACEY OLIVIA LUPTON", "Billing client name should put first names before surname");
 }
 
 await verifyInformationSheetApplications();
 await verifyProtectionOrderShineFormatting();
+await verifyAffidavitSigningFormatting();
+verifyBillingClientNameOrder();
 
 assert.deepEqual(derivePayment(1000, 0), { paidStatus: "Unpaid", outstandingAmount: 1000 });
 assert.deepEqual(derivePayment(1000, 400), { paidStatus: "Part Paid", outstandingAmount: 600 });

@@ -57,6 +57,7 @@ export type DocxMergeOptions = {
   affidavitFormatting?: { applicantName: string; respondentName: string; childNames: string[]; legislationLines: string[] };
   parentingApplicantName?: string;
   protectionOrderShineApplicantName?: string;
+  normalizeProtectionOrderLayout?: boolean;
   normalizeBillingJudgeDirectionsRow?: boolean;
   billingFormValues?: {
     dateCompleted: string;
@@ -369,13 +370,25 @@ function insertRepeatedParagraphs(
   });
 }
 
+function baseRunProperties(paragraph: string): string {
+  const firstRunProperties = paragraph.match(/<w:rPr\b[^>]*>([\s\S]*?)<\/w:rPr>/)?.[1]
+    ?? paragraph.match(/<w:pPr\b[\s\S]*?<w:rPr\b[^>]*>([\s\S]*?)<\/w:rPr>[\s\S]*?<\/w:pPr>/)?.[1]
+    ?? "";
+  return firstRunProperties
+    .replace(/<w:b(?:\b[^>]*)?\/>/g, "")
+    .replace(/<w:bCs(?:\b[^>]*)?\/>/g, "")
+    .replace(/<w:i(?:\b[^>]*)?\/>/g, "")
+    .replace(/<w:iCs(?:\b[^>]*)?\/>/g, "");
+}
+
 function paragraphWithRuns(paragraph: string, runs: Array<{ text: string; bold?: boolean; italic?: boolean; breakBefore?: boolean }>): string {
   const pPr = paragraph.match(/<w:pPr\b[\s\S]*?<\/w:pPr>/)?.[0] ?? "";
+  const baseRPr = baseRunProperties(paragraph);
   const runXml = runs.flatMap(({ text, bold, italic, breakBefore }) => {
     const parts = text.split(/\r?\n/);
     return parts.map((part, index) => {
       const needsBreak = Boolean(breakBefore) || index > 0;
-      const rPr = `${bold ? "<w:b/><w:bCs/>" : ""}${italic ? "<w:i/><w:iCs/>" : ""}`;
+      const rPr = `${baseRPr}${bold ? "<w:b/><w:bCs/>" : ""}${italic ? "<w:i/><w:iCs/>" : ""}`;
       return `<w:r><w:rPr>${rPr}</w:rPr>${needsBreak ? "<w:br/>" : ""}<w:t xml:space="preserve">${escapeXml(part)}</w:t></w:r>`;
     });
   }).join("");
@@ -426,11 +439,14 @@ function applyAffidavitFormatting(
     }
     if (
       trimmed.startsWith("AFFIRMED at ") ||
-      trimmed.startsWith("Affirmed this ") ||
-      /^\d{1,2}(?:st|nd|rd|th) day of [A-Za-z]+ 20\d{2}$/.test(trimmed)
+      trimmed.startsWith("Affirmed this ")
     ) {
+      const affirmed = text.match(/^(\s*)(AFFIRMED|Affirmed)([\s\S]*)$/);
+      if (!affirmed) return paragraph;
       return paragraphWithRuns(paragraph, [
-        { text, bold: true },
+        { text: affirmed[1] },
+        { text: affirmed[2], bold: true },
+        { text: affirmed[3] },
       ]);
     }
     if (trimmed.startsWith(`I, ${formatting.applicantName} of `)) {
@@ -490,6 +506,38 @@ function applyProtectionOrderShineFormatting(xml: string, applicantName: string)
       { text: applicantName, bold: true },
       { text: text.slice(nameStart + applicantName.length) },
     ]);
+  });
+}
+
+function replaceParagraphProperties(paragraph: string, pPr: string): string {
+  if (/<w:pPr\b[\s\S]*?<\/w:pPr>/.test(paragraph)) {
+    return paragraph.replace(/<w:pPr\b[\s\S]*?<\/w:pPr>/, pPr);
+  }
+  return paragraph.replace(/<w:p\b[^>]*>/, (tag) => `${tag}${pPr}`);
+}
+
+function applyProtectionOrderLayout(xml: string): string {
+  const partyPPr = '<w:pPr><w:tabs><w:tab w:val="left" w:pos="2880"/></w:tabs><w:spacing w:line="240" w:lineRule="atLeast"/><w:ind w:left="2880" w:right="-136" w:hanging="2160"/></w:pPr>';
+  const rolePPr = '<w:pPr><w:tabs><w:tab w:val="left" w:pos="2880"/></w:tabs><w:spacing w:line="240" w:lineRule="atLeast"/><w:ind w:left="4865" w:right="-136" w:hanging="1985"/><w:rPr><w:i/></w:rPr></w:pPr>';
+  const datedPPr = '<w:pPr><w:tabs><w:tab w:val="right" w:pos="9360"/></w:tabs><w:spacing w:line="240" w:lineRule="atLeast"/><w:ind w:right="17"/><w:jc w:val="both"/></w:pPr>';
+
+  return xml.replace(/<w:p\b[\s\S]*?<\/w:p>/g, (paragraph) => {
+    const text = readTextNodes(paragraph).map((node) => node.text).join("").trim();
+    if (
+      text.startsWith("BETWEEN") ||
+      text.startsWith("AND") ||
+      text.includes("{{APPLICANT_NAME}}") ||
+      text.includes("{{RESPONDENT_NAME}}")
+    ) {
+      return replaceParagraphProperties(paragraph, partyPPr);
+    }
+    if (text === "Applicant" || text === "Respondent") {
+      return replaceParagraphProperties(paragraph, rolePPr);
+    }
+    if (text.startsWith("Dated this ")) {
+      return replaceParagraphProperties(paragraph, datedPPr);
+    }
+    return paragraph;
   });
 }
 
@@ -1143,6 +1191,9 @@ export async function mergeDocxTemplate(
       }
       if (path === "word/document.xml" && options.protectionOrderShineApplicantName) {
         formattedXml = applyProtectionOrderShineFormatting(formattedXml, options.protectionOrderShineApplicantName);
+      }
+      if (path === "word/document.xml" && options.normalizeProtectionOrderLayout) {
+        formattedXml = applyProtectionOrderLayout(formattedXml);
       }
       zip.file(path, formattedXml);
     }),

@@ -9,6 +9,10 @@ import {
   getInformationSheetEthnicityCheckboxes,
 } from "../../../lib/document-automation.ts";
 import { buildAdditionalChildLines } from "../../../lib/child-continuation.ts";
+import {
+  buildInformationToClientDocx,
+  buildLetterOfEngagementDocx,
+} from "../../../lib/client-letters-docx.ts";
 import { mergeDocxTemplate, type DocxMergeReport } from "../../../lib/docx-template.ts";
 import {
   billingTemplateDefinitions,
@@ -205,6 +209,31 @@ function confidentialAddressOutputFileName(matter: MatterFile): string {
   return `${surname} - ${stripBundlePrefix(confidentialAddressInformationSheet.outputFileName)}`;
 }
 
+function consentedProtectedPersonOutputFileName(matter: MatterFile): string {
+  const surname = safeFileName(getClientSurname(matter)).replace(/_/g, " ");
+  return `${surname} - Consent to Being Named Protected Person.docx`;
+}
+
+function feeWaiverOutputFileName(matter: MatterFile): string {
+  const surname = safeFileName(getClientSurname(matter)).replace(/_/g, " ");
+  return `${surname} - Fee Waiver.pdf`;
+}
+
+function standardReport(title: string): DocxMergeReport {
+  return {
+    placeholders: [],
+    missingFields: [],
+    unusedFields: [],
+    replacedPlaceholders: 0,
+    structure: {
+      samePackageFileList: true,
+      unchangedNonTemplateFiles: true,
+      onlyPlaceholderTextChanged: true,
+      changedXmlFiles: [title],
+    },
+  };
+}
+
 function informationSheetApplicationFields(templateDefinition: SourceTemplateDefinition) {
   if (templateDefinition.id !== "information_sheet") return {};
   const applications = templateDefinition.title.includes("(COCA)")
@@ -321,6 +350,7 @@ export async function POST(request: Request) {
             affidavit_application_title: affidavitContent.applicationTitle,
             relationship_start_blurb: affidavitContent.relationshipStartBlurb,
             relationship_end: affidavitContent.relationshipEnd,
+            relationship_end_blurb: affidavitContent.relationshipEnd,
             violence_categories: "",
             insert_history_blurb: "",
             insert_recent_events_blurb: "",
@@ -333,6 +363,7 @@ export async function POST(request: Request) {
             parenting_heading: "",
             parenting_blurb: "",
             orders_sought_blurb: "",
+            affidavit_signing_location: "",
           }
         : {}),
     };
@@ -381,6 +412,7 @@ export async function POST(request: Request) {
       ...(templateDefinition.id === "protection_order_application"
         ? {
             protectionOrderShineApplicantName: body.matter.intake.applicant.fullName.toLocaleUpperCase("en-NZ"),
+            normalizeProtectionOrderLayout: true,
             literalTextReplacements: {
               "{{RESPONDENT_NAME}} - currently working with Shine.": "{{APPLICANT_NAME}} - currently working with Shine.",
             },
@@ -423,6 +455,9 @@ export async function POST(request: Request) {
         : {}),
       ...(templateDefinition.id === "domestic_violence_affidavit"
         ? {
+            literalTextReplacements: {
+              "AFFIRMED at {{English_court_name}} this": "AFFIRMED at            this",
+            },
             affidavitFormatting: {
               applicantName: body.matter.intake.applicant.fullName.toLocaleUpperCase("en-NZ"),
               respondentName: body.matter.intake.respondent.fullName.toLocaleUpperCase("en-NZ"),
@@ -432,7 +467,7 @@ export async function POST(request: Request) {
             paragraphInsertions: {
               children_blurb: affidavitContent.childrenParagraphs,
               protection_facts_heading: affidavitContent.protectionFactsHeading,
-              violence_categories: [""],
+              violence_categories: affidavitContent.violenceCategories,
               insert_history_blurb: [""],
               insert_recent_events_blurb: [""],
               without_notice_heading: affidavitContent.withoutNoticeHeading,
@@ -495,6 +530,102 @@ export async function POST(request: Request) {
       title: invoice.title,
       report: invoice.report,
     });
+  }
+
+  const engagementLetter = await buildLetterOfEngagementDocx(body.matter);
+  bundle.file("16 Letter of Engagement.docx", engagementLetter);
+  generatedFiles.push({
+    fileName: "16 Letter of Engagement.docx",
+    buffer: engagementLetter,
+    contentType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  });
+  validationReport.documents.push({
+    template: "Generated standard letter",
+    output: "16 Letter of Engagement.docx",
+    title: "Letter of Engagement",
+    report: standardReport("Letter of Engagement"),
+  });
+
+  const informationToClient = await buildInformationToClientDocx(body.matter);
+  bundle.file("17 Information to Client.docx", informationToClient);
+  generatedFiles.push({
+    fileName: "17 Information to Client.docx",
+    buffer: informationToClient,
+    contentType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  });
+  validationReport.documents.push({
+    template: "Generated standard letter",
+    output: "17 Information to Client.docx",
+    title: "Information to Client",
+    report: standardReport("Information to Client"),
+  });
+
+  const needsConsentedProtectedPerson =
+    body.matter.intake.selectedApplications.includes("Consent to Being Named as a Protected Person") ||
+    Boolean(body.matter.intake.consentedProtectedPersonName?.trim());
+  if (needsConsentedProtectedPerson) {
+    const sourceFileName = "Consent to Being Named Protected Person.docx";
+    if (await templateExists(sourceFileName)) {
+      const applicantName = body.matter.intake.applicant.fullName.toLocaleUpperCase("en-NZ");
+      const respondentName = body.matter.intake.respondent.fullName.toLocaleUpperCase("en-NZ");
+      const protectedPersonName = (body.matter.intake.consentedProtectedPersonName || body.matter.intake.applicant.fullName).toLocaleUpperCase("en-NZ");
+      const { buffer, report } = await mergeDocxTemplate(await readSourceTemplate(sourceFileName), {}, {
+        literalTextReplacements: {
+          "KAJAL KABITA KAUSHAL": applicantName,
+          "LAWRENCE RAKESH LAL": respondentName,
+          "SARAS WATI LAL": protectedPersonName,
+          "my daughter": "the Applicant",
+        },
+      });
+      const outputFileName = consentedProtectedPersonOutputFileName(body.matter);
+      bundle.file(outputFileName, buffer);
+      generatedFiles.push({
+        fileName: outputFileName,
+        buffer,
+        contentType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      });
+      validationReport.documents.push({
+        template: sourceFileName,
+        output: outputFileName,
+        title: "Consent to Being Named as a Protected Person",
+        report,
+      });
+    } else {
+      validationReport.skippedDocuments.push({
+        template: sourceFileName,
+        title: "Consent to Being Named as a Protected Person",
+        reason: "Source consent template is missing from /templates.",
+      });
+    }
+  }
+
+  const needsFeeWaiver =
+    body.matter.intake.feeWaiverRequired ||
+    body.matter.intake.selectedApplications.includes("Fee Waiver");
+  if (needsFeeWaiver) {
+    const sourceFileName = "Fee Waiver.pdf";
+    if (await templateExists(sourceFileName)) {
+      const feeWaiver = await readSourceTemplate(sourceFileName);
+      const outputFileName = feeWaiverOutputFileName(body.matter);
+      bundle.file(outputFileName, feeWaiver);
+      generatedFiles.push({
+        fileName: outputFileName,
+        buffer: feeWaiver,
+        contentType: "application/pdf",
+      });
+      validationReport.documents.push({
+        template: sourceFileName,
+        output: outputFileName,
+        title: "Fee Waiver",
+        report: standardReport("Fee Waiver"),
+      });
+    } else {
+      validationReport.skippedDocuments.push({
+        template: sourceFileName,
+        title: "Fee Waiver",
+        reason: "Source Fee Waiver PDF is missing from /templates.",
+      });
+    }
   }
 
   if (body.matter.intake.applicant.isAddressConfidential) {

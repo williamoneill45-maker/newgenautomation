@@ -242,6 +242,13 @@ function getClientSurname(clientName: string): string {
   return parts.length ? parts[parts.length - 1] : "";
 }
 
+function formatInvoiceClientName(clientName: string): string {
+  const normalized = clientName.trim().replace(/\s+/g, " ");
+  const commaMatch = normalized.match(/^([^,]+),\s*(.+)$/);
+  if (!commaMatch) return normalized;
+  return `${commaMatch[2]} ${commaMatch[1]}`.trim().replace(/\s+/g, " ");
+}
+
 function buildProgressResultsWording(draft: BillingRecord["draft"]): string {
   return [
     draft.standardWording,
@@ -577,7 +584,7 @@ export function buildBillingMergeFields(record: BillingRecord): MergeFields {
   const fields: BillingMergeFields = {
     BILLING_RECORD_ID: record.id,
     MATTER_ID: record.matterId,
-    CLIENT_NAME: draft.clientName.toLocaleUpperCase("en-NZ"),
+    CLIENT_NAME: formatInvoiceClientName(draft.clientName).toLocaleUpperCase("en-NZ"),
     LEGAL_AID_NUMBER: draft.legalAidNumber,
     INVOICE_NUMBER: draft.invoiceNumber,
     MATTER_DETAILS: draft.matterDetails,

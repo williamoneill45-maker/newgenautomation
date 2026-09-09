@@ -1,35 +1,30 @@
-import { access } from "node:fs/promises";
 import path from "node:path";
 
 import Link from "next/link";
 
 import { requiredDocumentDefinitions } from "../../lib/document-catalog";
 import { standardDocxTemplates } from "../../lib/template-catalog";
+import { scanTemplateFile } from "../../lib/template-scanner";
 
 function getTemplateForDocument(documentId: string) {
   return standardDocxTemplates.find((template) => template.id === documentId);
 }
 
-async function templateExists(sourceFileName: string) {
-  if (!sourceFileName.endsWith(".docx")) return true;
-
-  try {
-    await access(path.join(process.cwd(), "templates", sourceFileName));
-    return true;
-  } catch {
-    return false;
-  }
-}
-
 function getRuleStatus({
-  hasTemplate,
-  hasRequiredPlaceholders,
+  exists,
+  canScan,
+  hasBlockingPlaceholders,
+  hasReviewPlaceholders,
 }: {
-  hasTemplate: boolean;
-  hasRequiredPlaceholders: boolean;
+  exists: boolean;
+  canScan: boolean;
+  hasBlockingPlaceholders: boolean;
+  hasReviewPlaceholders: boolean;
 }) {
-  if (!hasTemplate) return "Missing template";
-  if (!hasRequiredPlaceholders) return "Needs placeholder review";
+  if (!exists) return "Missing template";
+  if (!canScan) return "Needs conversion";
+  if (hasBlockingPlaceholders) return "Blocked";
+  if (hasReviewPlaceholders) return "Needs placeholder review";
   return "Active";
 }
 
@@ -38,8 +33,16 @@ function getFixText(status: string, sourceFileName: string) {
     return `Upload ${sourceFileName} to /templates, then redeploy.`;
   }
 
+  if (status === "Needs conversion") {
+    return "Convert this legacy or static source to DOCX before scanner validation.";
+  }
+
+  if (status === "Blocked") {
+    return "Fix unknown or malformed placeholders before relying on this template.";
+  }
+
   if (status === "Needs placeholder review") {
-    return "Confirm the template contains the required placeholders shown here.";
+    return "Replace legacy placeholder aliases with canonical lowercase fields.";
   }
 
   return "No blocker. Test with a saved intake and confirm the ZIP output.";
@@ -54,13 +57,18 @@ export default async function FormProductionRulesPage() {
           sourceFileName: "No template configured",
           outputFileName: "Not generated",
         };
-        const hasTemplate = await templateExists(template.sourceFileName);
-        const hasRequiredPlaceholders = document.requiredPlaceholders.length > 0;
-        const status = getRuleStatus({ hasTemplate, hasRequiredPlaceholders });
+        const report = await scanTemplateFile(path.join(process.cwd(), "templates", template.sourceFileName));
+        const status = getRuleStatus({
+          exists: report.exists,
+          canScan: report.canScan,
+          hasBlockingPlaceholders: report.malformedPlaceholders.length > 0 || report.unknownPlaceholders.length > 0,
+          hasReviewPlaceholders: report.legacyPlaceholders.length > 0,
+        });
 
         return {
           document,
           template,
+          report,
           status,
           howToFix: getFixText(status, template.sourceFileName),
         };

@@ -1,6 +1,10 @@
 export const applicationTypes = [
   "Without Notice Application for Protection Order",
   "Without Notice Application for Parenting Order",
+  "On Notice Application for Protection Order",
+  "On Notice Application for Parenting Order",
+  "Consent to Being Named as a Protected Person",
+  "Fee Waiver",
   "Order Preventing Removal from New Zealand",
   "Other",
 ] as const;
@@ -113,10 +117,22 @@ export type DomesticViolenceNotes = {
   recentEvents: string;
 };
 
+export const familyViolenceTypes = [
+  "physical abuse",
+  "psychological abuse",
+  "damage to property",
+  "sexual abuse",
+] as const;
+
+export type FamilyViolenceType = (typeof familyViolenceTypes)[number];
+
 export type IntakeData = {
   selectedApplications: ApplicationType[];
+  familyViolenceTypes: FamilyViolenceType[];
+  consentedProtectedPersonName: string;
   proceedingsType: ProceedingsType;
   otherApplicationDetails: string;
+  feeWaiverRequired: boolean;
   courtLocation: CourtLocation;
   famNumber: string;
   msdClientNumber: string;
@@ -195,8 +211,10 @@ export const placeholderKeys = [
   "APPLICATION_TYPE_3",
   "English_court_name",
   "Maori_court_name",
+  "court_location_maori",
   "month_day",
   "month",
+  "year",
   "a_dob",
   "x",
   "ag",
@@ -209,6 +227,9 @@ export const placeholderKeys = [
   "start",
   "applicant_dob",
   "applicant_home_address",
+  "applicant_first_name",
+  "applicant_last_name",
+  "applicant_last_name_upper",
   "applicant_occupation",
   "applicant_phone_number",
   "applicant_phone",
@@ -241,14 +262,19 @@ export const placeholderKeys = [
   "child_1_nickname",
   "(“child_1_nickname”)",
   "date_today",
+  "date_today_long",
   "date_today ",
   "Date_today",
   "todays_date",
   "respondent_age",
   "respondent_dob",
   "respondent_home_address",
+  "respondent_first_name",
+  "respondent_last_name",
+  "respondent_last_name_upper",
   "respondent_occupation",
   "respondent_work_address",
+  "respondent_relationship_to_children",
   "respondents_relationship_to_children",
   "applicant_age",
   "applicant_name",
@@ -341,6 +367,7 @@ export const placeholderKeys = [
   "respondent_relationship_to_applicant",
   "relationship_start_blurb",
   "relationship_end",
+  "relationship_end_blurb",
   "violence_categories",
   "insert_history_blurb",
   "insert_recent_events_blurb",
@@ -412,8 +439,11 @@ export function createEmptyMatter(): MatterFile {
     updatedAt: now,
     intake: {
       selectedApplications: [],
+      familyViolenceTypes: [],
+      consentedProtectedPersonName: "",
       proceedingsType: "",
       otherApplicationDetails: "",
+      feeWaiverRequired: false,
       courtLocation: "",
       famNumber: "",
       msdClientNumber: "",

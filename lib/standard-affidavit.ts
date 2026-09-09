@@ -2,6 +2,9 @@ import type { ApplicationType, Child, MatterFile } from "./matter";
 
 const protectionOrderApplication = "Without Notice Application for Protection Order";
 const parentingOrderApplication = "Without Notice Application for Parenting Order";
+const onNoticeProtectionOrderApplication = "On Notice Application for Protection Order";
+const onNoticeParentingOrderApplication = "On Notice Application for Parenting Order";
+const consentedProtectedPersonApplication = "Consent to Being Named as a Protected Person";
 
 function clean(value: string): string {
   return value.replace(/\s+/g, " ").trim();
@@ -64,8 +67,10 @@ function childCareName(child: Child): string {
 }
 
 function orderLabel(application: ApplicationType, otherDetails: string): string {
-  if (application === protectionOrderApplication) return "Protection Order";
-  if (application === parentingOrderApplication) return "Parenting Order";
+  if (application === protectionOrderApplication || application === onNoticeProtectionOrderApplication) return "Protection Order";
+  if (application === parentingOrderApplication || application === onNoticeParentingOrderApplication) return "Parenting Order";
+  if (application === consentedProtectedPersonApplication) return "";
+  if (application === "Fee Waiver") return "";
   if (application === "Other") return clean(otherDetails) || "other order";
   return application;
 }
@@ -75,15 +80,27 @@ function withIndefiniteArticle(value: string): string {
 }
 
 export function isProtectionOrderSought(matter: MatterFile): boolean {
-  return matter.intake.selectedApplications.includes(protectionOrderApplication) ||
+  return matter.intake.selectedApplications.some((application) => /protection order/i.test(application)) ||
     matter.intake.proceedingsType === "protection_order" ||
     matter.intake.proceedingsType === "both";
 }
 
 export function isParentingOrderSought(matter: MatterFile): boolean {
-  return matter.intake.selectedApplications.includes(parentingOrderApplication) ||
+  return matter.intake.selectedApplications.some((application) => /parenting order/i.test(application)) ||
     matter.intake.proceedingsType === "care_of_children" ||
     matter.intake.proceedingsType === "both";
+}
+
+function violenceCategoryLabel(value: string): string {
+  return clean(value).replace(/^./, (letter) => letter.toLocaleUpperCase("en-NZ"));
+}
+
+function formatViolenceCategories(values: string[]): string[] {
+  return values.map((value, index) => {
+    const marker = String.fromCharCode(97 + index);
+    const punctuation = index === values.length - 1 ? "" : index === 0 ? "." : ";";
+    return `(${marker})                ${violenceCategoryLabel(value)}${punctuation}`;
+  });
 }
 
 export type StandardAffidavitContent = {
@@ -94,6 +111,7 @@ export type StandardAffidavitContent = {
   relationshipEnd: string;
   childrenParagraphs: string[];
   protectionFactsHeading: string[];
+  violenceCategories: string[];
   withoutNoticeHeading: string[];
   withoutNoticeIntro: string[];
   withoutNoticeSafetyFactors: string[];
@@ -119,6 +137,9 @@ export function buildStandardAffidavitContent(matter: MatterFile): StandardAffid
     : [hasProtectionOrder ? "Protection Order" : "", hasParentingOrder ? "Parenting Order" : ""].filter(Boolean);
   const formattedOrders = formatList(orderLabels);
   const includeParentingProposal = hasParentingOrder && children.length > 0;
+  const isWithoutNotice = matter.intake.selectedApplications.some((application) =>
+    /^without notice/i.test(application),
+  ) || (!matter.intake.selectedApplications.length && hasProtectionOrder);
   const legislationLines = [
     hasProtectionOrder ? "(Family Violence Act 2018 Sections 60 and 75)" : "",
     hasParentingOrder ? "(Ss 48, 49, and 77 Care of Children Act 2004)" : "",
@@ -130,13 +151,14 @@ export function buildStandardAffidavitContent(matter: MatterFile): StandardAffid
       ? `in a de facto relationship from approximately ${formatInputDateLong(relationship.deFactoRelationshipStart)}`
       : "in a family relationship";
 
+  const noticeLabel = isWithoutNotice ? "WITHOUT NOTICE" : "ON NOTICE";
   const applicationTitle = orderLabels.length > 1
-    ? `WITHOUT NOTICE APPLICATIONS FOR ${orderLabels.map((label) => label.toUpperCase()).join(" AND ")}`
-    : `WITHOUT NOTICE APPLICATION FOR ${(orderLabels[0] || "PROTECTION ORDER").toUpperCase()}`;
+    ? `${noticeLabel} APPLICATIONS FOR ${orderLabels.map((label) => label.toUpperCase()).join(" AND ")}`
+    : `${noticeLabel} APPLICATION FOR ${(orderLabels[0] || "PROTECTION ORDER").toUpperCase()}`;
 
   const applicationIntro = orderLabels.length > 1
-    ? `I am applying without notice for ${formatList(orderLabels.map(withIndefiniteArticle))} against ${respondentName} (“the Respondent”).`
-    : `I am applying without notice for ${withIndefiniteArticle(orderLabels[0] || "Protection Order")} against ${respondentName} (“the Respondent”).`;
+    ? `I am applying ${isWithoutNotice ? "without notice" : "on notice"} for ${formatList(orderLabels.map(withIndefiniteArticle))} against ${respondentName} (“the Respondent”).`
+    : `I am applying ${isWithoutNotice ? "without notice" : "on notice"} for ${withIndefiniteArticle(orderLabels[0] || "Protection Order")} against ${respondentName} (“the Respondent”).`;
 
   const childrenParagraphs = children.length
     ? [`The Respondent and I are the parents of the following ${children.length === 1 ? "child" : "children"}:\n${children.map(childDescription).join(";\n")}.`]
@@ -163,16 +185,28 @@ export function buildStandardAffidavitContent(matter: MatterFile): StandardAffid
   if (hasParentingOrder) {
     orders.push("a Parenting Order granting me day-to-day care");
   }
+  const reliefExcludedApplications: ApplicationType[] = [
+        protectionOrderApplication,
+        parentingOrderApplication,
+        onNoticeProtectionOrderApplication,
+        onNoticeParentingOrderApplication,
+        consentedProtectedPersonApplication,
+        "Fee Waiver",
+      ];
   matter.intake.selectedApplications
-    .filter((application) => application !== protectionOrderApplication && application !== parentingOrderApplication)
+    .filter((application) => !reliefExcludedApplications.includes(application))
     .forEach((application) => orders.push(orderLabel(application, matter.intake.otherApplicationDetails)));
+  const consentedProtectedPerson = clean(matter.intake.consentedProtectedPersonName ?? "");
+  if (consentedProtectedPerson) {
+    orders.push(`a Protection Order to extend to the following consented person ${consentedProtectedPerson.toLocaleUpperCase("en-NZ")}`);
+  }
   const formattedOrderRelief = formatList(orders);
   const standardConditions = hasProtectionOrder
     ? " I seek the standard conditions of a Protection Order."
     : "";
   const requestNoun = orders.length === 1 ? "this order" : "these orders";
   const ordersSoughtParagraphs = [
-    `I seek ${formattedOrderRelief || formattedOrders || "the orders set out in my application"}.${standardConditions} I respectfully request that ${requestNoun} be granted without notice to the Respondent.`,
+    `I seek ${formattedOrderRelief || formattedOrders || "the orders set out in my application"}.${standardConditions} I respectfully request that ${requestNoun} be granted ${isWithoutNotice ? "without notice to" : "on notice to"} the Respondent.`,
   ];
 
   return {
@@ -185,16 +219,25 @@ export function buildStandardAffidavitContent(matter: MatterFile): StandardAffid
     protectionFactsHeading: hasProtectionOrder
       ? ["FACTS IN SUPPORT OF APPLICATION FOR PROTECTION ORDER"]
       : [],
-    withoutNoticeHeading: hasProtectionOrder
+    withoutNoticeHeading: hasProtectionOrder && isWithoutNotice
       ? ["FACTS IN SUPPORT OF APPLICATION FOR PROTECTION ORDER WITHOUT NOTICE"]
       : [],
-    withoutNoticeIntro: hasProtectionOrder
+    withoutNoticeIntro: hasProtectionOrder && isWithoutNotice
       ? ["The Application for a Protection Order is being made without notice to the Respondent because the delay that would be caused by proceeding on notice would or might entail a risk of harm and undue hardship to me and the children of my family as follows:"]
       : [],
-    withoutNoticeSafetyFactors: hasProtectionOrder
+    withoutNoticeSafetyFactors: hasProtectionOrder && isWithoutNotice
       ? [
           "I am very fearful for my safety and also the children’s safety.",
           "I believe that if the Respondent knew that I was applying for this Order, I may suffer further physical abuse and/or psychological abuse.",
+        ]
+      : [],
+    violenceCategories: hasProtectionOrder
+      ? [
+          "Facts relating to Respondent",
+          "The Respondent has used family violence against me as follows:",
+          ...formatViolenceCategories(matter.intake.familyViolenceTypes?.length
+            ? matter.intake.familyViolenceTypes
+            : ["physical abuse", "psychological abuse", "damage to property", "sexual abuse"]),
         ]
       : [],
     parentingHeading: includeParentingProposal

@@ -43,8 +43,11 @@ function mapRow(row: MatterRow): MatterFile {
   const matterId = row.app_matter_id || row.id;
   const intake = row.intake_json ?? {
     selectedApplications: [],
+    familyViolenceTypes: [],
+    consentedProtectedPersonName: "",
     proceedingsType: "",
     otherApplicationDetails: "",
+    feeWaiverRequired: false,
     courtLocation: "",
     famNumber: row.fam_number ?? "",
     msdClientNumber: "",
@@ -109,6 +112,9 @@ function mapRow(row: MatterRow): MatterFile {
     updatedAt: row.updated_at ?? new Date().toISOString(),
     intake: {
       ...intake,
+      familyViolenceTypes: intake.familyViolenceTypes ?? [],
+      consentedProtectedPersonName: intake.consentedProtectedPersonName ?? "",
+      feeWaiverRequired: intake.feeWaiverRequired ?? false,
       famNumber: intake.famNumber || row.fam_number || "",
     },
   };

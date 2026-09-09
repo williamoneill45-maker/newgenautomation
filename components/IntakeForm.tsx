@@ -8,11 +8,13 @@ import {
   createEmptyChild,
   createEmptyMatter,
   ethnicities,
+  familyViolenceTypes,
   normalizeProceedingsType,
   proceedingsTypeLabels,
   proceedingsTypes,
   type ApplicationType,
   type Child,
+  type FamilyViolenceType,
   type MatterFile,
   type Party,
 } from "../lib/matter";
@@ -240,6 +242,15 @@ export default function IntakeForm() {
       : [...matter.intake.selectedApplications, application];
 
     setIntakeValue("selectedApplications", selected);
+  };
+
+  const toggleFamilyViolenceType = (violenceType: FamilyViolenceType) => {
+    const current = matter.intake.familyViolenceTypes ?? [];
+    const selected = current.includes(violenceType)
+      ? current.filter((item) => item !== violenceType)
+      : [...current, violenceType];
+
+    setIntakeValue("familyViolenceTypes", selected);
   };
 
   const addChild = () => {
@@ -490,6 +501,36 @@ export default function IntakeForm() {
             placeholder="Type the application being filed."
           />
         ) : null}
+        <div className="mt-5 grid gap-5 md:grid-cols-2">
+          <Field
+            label="Consented protected person"
+            value={matter.intake.consentedProtectedPersonName ?? ""}
+            onChange={(value) => setIntakeValue("consentedProtectedPersonName", value)}
+            placeholder="Name of protected person"
+          />
+          <label className="flex min-h-10 items-center gap-3 self-end rounded-md border border-slate-200 px-3 py-2 text-sm text-slate-950">
+            <input
+              type="checkbox"
+              checked={Boolean(matter.intake.feeWaiverRequired)}
+              onChange={(event) => setIntakeValue("feeWaiverRequired", event.target.checked)}
+              className="h-4 w-4 rounded border-slate-300 text-sky-600 focus:ring-sky-500"
+            />
+            <span>Fee Waiver Required</span>
+          </label>
+        </div>
+        <div className="mt-5 grid gap-3 md:grid-cols-2">
+          {familyViolenceTypes.map((violenceType) => (
+            <label key={violenceType} className="flex min-h-10 items-center gap-3 rounded-md border border-slate-200 px-3 py-2 text-sm text-slate-950">
+              <input
+                type="checkbox"
+                checked={(matter.intake.familyViolenceTypes ?? []).includes(violenceType)}
+                onChange={() => toggleFamilyViolenceType(violenceType)}
+                className="h-4 w-4 rounded border-slate-300 text-sky-600 focus:ring-sky-500"
+              />
+              <span>{violenceType}</span>
+            </label>
+          ))}
+        </div>
       </Card>
 
       <Card title="Court Filing Details">

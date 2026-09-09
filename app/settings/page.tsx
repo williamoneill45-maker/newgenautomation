@@ -1,6 +1,8 @@
 import Link from "next/link";
 
 const tools = [
+  { href: "/settings/templates", title: "Template Studio", description: "Scan templates, review workflows, and catch placeholder issues before generation." },
+  { href: "/settings/template-fields", title: "Template fields", description: "View canonical NewGen merge fields and legacy aliases to retire." },
   { href: "/form-production-rules", title: "Form production rules", description: "Review document templates and placeholder rules." },
   { href: "/billing-management/form-32b", title: "Form32B billing rules", description: "Maintain Form32B fee and wording settings." },
   { href: "/billing-management/form-33a", title: "Form33A billing rules", description: "Maintain Form33A fee and wording settings." },
