@@ -2,10 +2,9 @@ import path from "node:path";
 
 import Link from "next/link";
 
-import { requiredDocumentDefinitions } from "../../../lib/document-catalog";
 import { documentWorkflows } from "../../../lib/document-workflows";
 import { scanTemplateFile } from "../../../lib/template-scanner";
-import { standardDocxTemplates, confidentialAddressInformationSheet } from "../../../lib/template-catalog";
+import { studioTemplates } from "../../../lib/template-studio";
 import { TemplateUploadScanner } from "./_components/TemplateUploadScanner";
 
 function getTemplateStatus(report: Awaited<ReturnType<typeof scanTemplateFile>>) {
@@ -27,17 +26,8 @@ function statusClass(status: string) {
 
 export default async function TemplatesPage() {
   const templateRoot = path.join(process.cwd(), "templates");
-  const configuredTemplates = [
-    ...standardDocxTemplates,
-    {
-      id: "static_pdf",
-      title: confidentialAddressInformationSheet.title,
-      sourceFileName: confidentialAddressInformationSheet.sourceFileName,
-      outputFileName: confidentialAddressInformationSheet.outputFileName,
-    },
-  ];
   const rows = await Promise.all(
-    configuredTemplates.map(async (template) => {
+    studioTemplates.map(async (template) => {
       const report = await scanTemplateFile(path.join(templateRoot, template.sourceFileName));
       return {
         template,
@@ -96,6 +86,12 @@ export default async function TemplatesPage() {
                     </div>
                     <p className="mt-1 text-sm text-slate-600">{row.template.sourceFileName}</p>
                     <p className="mt-1 text-xs text-slate-500">Output: {row.template.outputFileName}</p>
+                    <Link
+                      href={`/settings/templates/${row.template.studioId}`}
+                      className="mt-3 inline-flex text-sm font-semibold text-sky-700 transition hover:text-sky-900"
+                    >
+                      Open studio
+                    </Link>
                   </div>
                   <div className="grid gap-2 text-sm sm:grid-cols-4 lg:min-w-[420px]">
                     <Count label="Known" value={row.report.knownPlaceholders.length} />

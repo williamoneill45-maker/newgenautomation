@@ -94,6 +94,10 @@ export async function scanTemplateFile(sourcePath: string): Promise<TemplateScan
 }
 
 export async function scanDocxBuffer(buffer: Buffer | ArrayBuffer): Promise<TemplatePlaceholder[]> {
+  return extractPlaceholders(await readDocxVisibleText(buffer));
+}
+
+export async function readDocxVisibleText(buffer: Buffer | ArrayBuffer): Promise<string> {
   const zip = await JSZip.loadAsync(buffer);
   const textParts: string[] = [];
 
@@ -110,7 +114,7 @@ export async function scanDocxBuffer(buffer: Buffer | ArrayBuffer): Promise<Temp
       }),
   );
 
-  return extractPlaceholders(textParts.join("\n"));
+  return textParts.join("\n");
 }
 
 export async function scanTemplateDirectory(templateDirectory: string): Promise<TemplateScanReport[]> {
