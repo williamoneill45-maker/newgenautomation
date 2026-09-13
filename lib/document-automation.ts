@@ -5,6 +5,7 @@ import type {
   PlaceholderKey,
   UploadedTemplate,
 } from "./matter";
+import { getMatterApplicationSelection } from "./application-orders.ts";
 
 export type TemplatePlaceholder = {
   key: PlaceholderKey;
@@ -415,6 +416,7 @@ export function buildMatterMergeFields(matter: MatterFile): MergeFields {
   const respondentLastName = intake.respondent.fullName.trim().split(/\s+/).at(-1) ?? "";
   const respondentFirstName = getFirstName(respondentName);
   const applicantSubject = intake.applicant.gender === "M" ? "he" : intake.applicant.gender === "F" ? "she" : "they";
+  const applicationSelection = getMatterApplicationSelection(matter);
 
   return normalizeMergeFields({
     APPLICANT_NAME: applicantName,
@@ -438,6 +440,8 @@ export function buildMatterMergeFields(matter: MatterFile): MergeFields {
     court_location_short: intake.courtLocation.replace(/\s+Court$/i, "").trim(),
     fam_number: intake.famNumber,
     legal_aid_number: matter.legalAidNumber,
+    applications: applicationSelection.applications,
+    relevant_legislation: applicationSelection.relevantLegislation,
     CHILD_1_NAME: firstChild?.fullName.toLocaleUpperCase("en-NZ"),
     CHILD_1_DOB: formatInputDateForForms(firstChild?.dateOfBirth ?? ""),
     CHILD_1_AGE: childAge,

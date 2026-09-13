@@ -1,9 +1,15 @@
 import type { ApplicationType, Child, MatterFile } from "./matter";
+import {
+  getMatterApplicationSelection,
+  validateApplicationSelection,
+} from "./application-orders.ts";
 
 const protectionOrderApplication = "Without Notice Application for Protection Order";
 const parentingOrderApplication = "Without Notice Application for Parenting Order";
 const onNoticeProtectionOrderApplication = "On Notice Application for Protection Order";
 const onNoticeParentingOrderApplication = "On Notice Application for Parenting Order";
+const tenancyOrderPattern = /tenancy order/i;
+const ancillaryFurnitureOrderPattern = /ancillary furniture order/i;
 const consentedProtectedPersonApplication = "Consent to Being Named as a Protected Person";
 
 function clean(value: string): string {
@@ -69,6 +75,8 @@ function childCareName(child: Child): string {
 function orderLabel(application: ApplicationType, otherDetails: string): string {
   if (application === protectionOrderApplication || application === onNoticeProtectionOrderApplication) return "Protection Order";
   if (application === parentingOrderApplication || application === onNoticeParentingOrderApplication) return "Parenting Order";
+  if (tenancyOrderPattern.test(application)) return "Tenancy Order";
+  if (ancillaryFurnitureOrderPattern.test(application)) return "Ancillary Furniture Order";
   if (application === consentedProtectedPersonApplication) return "";
   if (application === "Fee Waiver") return "";
   if (application === "Other") return clean(otherDetails) || "other order";
@@ -80,15 +88,32 @@ function withIndefiniteArticle(value: string): string {
 }
 
 export function isProtectionOrderSought(matter: MatterFile): boolean {
+  const selection = getMatterApplicationSelection(matter);
+  if (selection.ordersSought.protection) return true;
   return matter.intake.selectedApplications.some((application) => /protection order/i.test(application)) ||
     matter.intake.proceedingsType === "protection_order" ||
     matter.intake.proceedingsType === "both";
 }
 
 export function isParentingOrderSought(matter: MatterFile): boolean {
+  const selection = getMatterApplicationSelection(matter);
+  if (selection.ordersSought.parenting) return true;
   return matter.intake.selectedApplications.some((application) => /parenting order/i.test(application)) ||
     matter.intake.proceedingsType === "care_of_children" ||
     matter.intake.proceedingsType === "both";
+}
+
+export function isTenancyOrderSought(matter: MatterFile): boolean {
+  return getMatterApplicationSelection(matter).ordersSought.tenancy;
+}
+
+export function isAncillaryFurnitureOrderSought(matter: MatterFile): boolean {
+  return getMatterApplicationSelection(matter).ordersSought.ancillaryFurniture;
+}
+
+export function validateAffidavitApplicationSelection(matter: MatterFile): string | null {
+  const selection = getMatterApplicationSelection(matter);
+  return validateApplicationSelection(selection);
 }
 
 function violenceCategoryLabel(value: string): string {
@@ -121,6 +146,7 @@ export type StandardAffidavitContent = {
 };
 
 export function buildStandardAffidavitContent(matter: MatterFile): StandardAffidavitContent {
+  const applicationSelection = getMatterApplicationSelection(matter);
   const hasProtectionOrder = isProtectionOrderSought(matter);
   const hasParentingOrder = isParentingOrderSought(matter);
   const respondentName = clean(matter.intake.respondent.fullName).toLocaleUpperCase("en-NZ") || "the Respondent";
@@ -134,16 +160,20 @@ export function buildStandardAffidavitContent(matter: MatterFile): StandardAffid
     .filter(Boolean);
   const orderLabels = selectedOrderLabels.length
     ? selectedOrderLabels
-    : [hasProtectionOrder ? "Protection Order" : "", hasParentingOrder ? "Parenting Order" : ""].filter(Boolean);
+    : [
+        applicationSelection.ordersSought.protection ? "Protection Order" : "",
+        applicationSelection.ordersSought.parenting ? "Parenting Order" : "",
+        applicationSelection.ordersSought.tenancy ? "Tenancy Order" : "",
+        applicationSelection.ordersSought.ancillaryFurniture ? "Ancillary Furniture Order" : "",
+      ].filter(Boolean);
   const formattedOrders = formatList(orderLabels);
   const includeParentingProposal = hasParentingOrder && children.length > 0;
-  const isWithoutNotice = matter.intake.selectedApplications.some((application) =>
+  const isWithoutNotice = applicationSelection.noticeType === "without_notice" || matter.intake.selectedApplications.some((application) =>
     /^without notice/i.test(application),
   ) || (!matter.intake.selectedApplications.length && hasProtectionOrder);
-  const legislationLines = [
-    hasProtectionOrder ? "(Family Violence Act 2018 Sections 60 and 75)" : "",
-    hasParentingOrder ? "(Ss 48, 49, and 77 Care of Children Act 2004)" : "",
-  ].filter(Boolean);
+  const legislationLines = applicationSelection.relevantLegislation
+    ? [`(${applicationSelection.relevantLegislation})`]
+    : [];
   const relationship = matter.intake.relationship;
   const relationshipStartBlurb = relationship.marriageOrCivilUnionDate
     ? `married${clean(relationship.marriageOrCivilUnionPlace) ? ` in ${clean(relationship.marriageOrCivilUnionPlace)}` : ""} on ${formatInputDateLong(relationship.marriageOrCivilUnionDate)}`
@@ -151,10 +181,9 @@ export function buildStandardAffidavitContent(matter: MatterFile): StandardAffid
       ? `in a de facto relationship from approximately ${formatInputDateLong(relationship.deFactoRelationshipStart)}`
       : "in a family relationship";
 
-  const noticeLabel = isWithoutNotice ? "WITHOUT NOTICE" : "ON NOTICE";
-  const applicationTitle = orderLabels.length > 1
-    ? `${noticeLabel} APPLICATIONS FOR ${orderLabels.map((label) => label.toUpperCase()).join(" AND ")}`
-    : `${noticeLabel} APPLICATION FOR ${(orderLabels[0] || "PROTECTION ORDER").toUpperCase()}`;
+  const applicationTitle = applicationSelection.applications
+    ? applicationSelection.applications.toLocaleUpperCase("en-NZ")
+    : `${isWithoutNotice ? "WITHOUT NOTICE" : "ON NOTICE"} APPLICATION FOR ${(orderLabels[0] || "PROTECTION ORDER").toUpperCase()}`;
 
   const applicationIntro = orderLabels.length > 1
     ? `I am applying ${isWithoutNotice ? "without notice" : "on notice"} for ${formatList(orderLabels.map(withIndefiniteArticle))} against ${respondentName} (“the Respondent”).`
@@ -185,11 +214,21 @@ export function buildStandardAffidavitContent(matter: MatterFile): StandardAffid
   if (hasParentingOrder) {
     orders.push("a Parenting Order granting me day-to-day care");
   }
+  if (applicationSelection.ordersSought.tenancy) {
+    orders.push("a Tenancy Order");
+  }
+  if (applicationSelection.ordersSought.ancillaryFurniture) {
+    orders.push("an Ancillary Furniture Order");
+  }
   const reliefExcludedApplications: ApplicationType[] = [
         protectionOrderApplication,
         parentingOrderApplication,
         onNoticeProtectionOrderApplication,
         onNoticeParentingOrderApplication,
+        "Without Notice Application for Tenancy Order",
+        "On Notice Application for Tenancy Order",
+        "Without Notice Application for Ancillary Furniture Order",
+        "On Notice Application for Ancillary Furniture Order",
         consentedProtectedPersonApplication,
         "Fee Waiver",
       ];

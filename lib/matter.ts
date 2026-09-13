@@ -1,8 +1,12 @@
 export const applicationTypes = [
   "Without Notice Application for Protection Order",
   "Without Notice Application for Parenting Order",
+  "Without Notice Application for Tenancy Order",
+  "Without Notice Application for Ancillary Furniture Order",
   "On Notice Application for Protection Order",
   "On Notice Application for Parenting Order",
+  "On Notice Application for Tenancy Order",
+  "On Notice Application for Ancillary Furniture Order",
   "Consent to Being Named as a Protected Person",
   "Fee Waiver",
   "Order Preventing Removal from New Zealand",
@@ -126,8 +130,19 @@ export const familyViolenceTypes = [
 
 export type FamilyViolenceType = (typeof familyViolenceTypes)[number];
 
+export type NoticeType = "without_notice" | "on_notice" | "";
+
+export type OrdersSought = {
+  protection: boolean;
+  parenting: boolean;
+  tenancy: boolean;
+  ancillaryFurniture: boolean;
+};
+
 export type IntakeData = {
   selectedApplications: ApplicationType[];
+  noticeType: NoticeType;
+  ordersSought: OrdersSought;
   familyViolenceTypes: FamilyViolenceType[];
   consentedProtectedPersonName: string;
   proceedingsType: ProceedingsType;
@@ -439,6 +454,13 @@ export function createEmptyMatter(): MatterFile {
     updatedAt: now,
     intake: {
       selectedApplications: [],
+      noticeType: "",
+      ordersSought: {
+        protection: false,
+        parenting: false,
+        tenancy: false,
+        ancillaryFurniture: false,
+      },
       familyViolenceTypes: [],
       consentedProtectedPersonName: "",
       proceedingsType: "",

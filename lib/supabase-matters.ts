@@ -43,6 +43,13 @@ function mapRow(row: MatterRow): MatterFile {
   const matterId = row.app_matter_id || row.id;
   const intake = row.intake_json ?? {
     selectedApplications: [],
+    noticeType: "",
+    ordersSought: {
+      protection: false,
+      parenting: false,
+      tenancy: false,
+      ancillaryFurniture: false,
+    },
     familyViolenceTypes: [],
     consentedProtectedPersonName: "",
     proceedingsType: "",
@@ -112,6 +119,14 @@ function mapRow(row: MatterRow): MatterFile {
     updatedAt: row.updated_at ?? new Date().toISOString(),
     intake: {
       ...intake,
+      noticeType: intake.noticeType ?? "",
+      ordersSought: {
+        protection: false,
+        parenting: false,
+        tenancy: false,
+        ancillaryFurniture: false,
+        ...(intake.ordersSought ?? {}),
+      },
       familyViolenceTypes: intake.familyViolenceTypes ?? [],
       consentedProtectedPersonName: intake.consentedProtectedPersonName ?? "",
       feeWaiverRequired: intake.feeWaiverRequired ?? false,

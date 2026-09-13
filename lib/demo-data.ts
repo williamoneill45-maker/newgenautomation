@@ -26,6 +26,13 @@ export const demoMatter: MatterFile = {
       "Without Notice Application for Protection Order",
       "Without Notice Application for Parenting Order",
     ],
+    noticeType: "without_notice",
+    ordersSought: {
+      protection: true,
+      parenting: true,
+      tenancy: false,
+      ancillaryFurniture: false,
+    },
     familyViolenceTypes: ["physical abuse", "psychological abuse"],
     consentedProtectedPersonName: "",
     proceedingsType: "both",

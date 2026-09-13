@@ -10,14 +10,23 @@ import {
   ethnicities,
   familyViolenceTypes,
   normalizeProceedingsType,
-  proceedingsTypeLabels,
-  proceedingsTypes,
   type ApplicationType,
   type Child,
   type FamilyViolenceType,
   type MatterFile,
   type Party,
 } from "../lib/matter";
+import {
+  deriveNoticeType,
+  deriveOrdersSought,
+  noticeTypeLabels,
+  noticeTypes,
+  orderOptions,
+  proceedingsTypeFromOrders,
+  selectedApplicationsFromStructured,
+  type NoticeType,
+  type OrdersSought,
+} from "../lib/application-orders";
 import { calculateChildDisplayAge } from "../lib/document-automation";
 import { legalAidMatterStorageKey } from "../lib/legal-aid";
 import {
@@ -137,7 +146,7 @@ function SelectField({
   onChange: (value: string) => void;
   placeholder: string;
   options: readonly string[];
-  optionLabels?: Record<string, string>;
+  optionLabels?: Partial<Record<string, string>>;
 }) {
   return (
     <label className="block">
@@ -196,29 +205,34 @@ export default function IntakeForm() {
     }));
   };
 
-  const setProceedingsType = (value: MatterFile["intake"]["proceedingsType"]) => {
-    const proceedingsType = normalizeProceedingsType(value);
-    const selectedApplications: ApplicationType[] =
-      proceedingsType === "both"
-        ? [
-            "Without Notice Application for Protection Order",
-            "Without Notice Application for Parenting Order",
-          ]
-        : proceedingsType === "protection_order"
-          ? ["Without Notice Application for Protection Order"]
-          : proceedingsType === "care_of_children"
-            ? ["Without Notice Application for Parenting Order"]
-            : [];
-
+  const updateApplicationSelection = (noticeType: NoticeType, ordersSought: OrdersSought) => {
     setMatter((current) => ({
       ...current,
       updatedAt: new Date().toISOString(),
       intake: {
         ...current.intake,
-        proceedingsType,
-        selectedApplications,
+        noticeType,
+        ordersSought,
+        proceedingsType: proceedingsTypeFromOrders(ordersSought),
+        selectedApplications: selectedApplicationsFromStructured({
+          noticeType,
+          ordersSought,
+          existingSelectedApplications: current.intake.selectedApplications,
+        }),
       },
     }));
+  };
+
+  const setNoticeType = (value: NoticeType) => {
+    updateApplicationSelection(value, deriveOrdersSought(matter.intake));
+  };
+
+  const toggleOrderSought = (order: keyof OrdersSought) => {
+    const ordersSought = deriveOrdersSought(matter.intake);
+    updateApplicationSelection(deriveNoticeType(matter.intake) || "without_notice", {
+      ...ordersSought,
+      [order]: !ordersSought[order],
+    });
   };
 
   const setPartyValue = (
@@ -252,6 +266,12 @@ export default function IntakeForm() {
 
     setIntakeValue("familyViolenceTypes", selected);
   };
+
+  const noticeType = deriveNoticeType(matter.intake);
+  const ordersSought = deriveOrdersSought(matter.intake);
+  const additionalApplicationTypes = applicationTypes.filter((application) =>
+    !/^(Without Notice|On Notice) Application for (Protection|Parenting|Tenancy|Ancillary Furniture) Order$/.test(application),
+  );
 
   const addChild = () => {
     setMatter((current) => {
@@ -470,16 +490,29 @@ export default function IntakeForm() {
       <Card title="Applications Being Filed">
         <div className="mb-5 grid gap-5 md:grid-cols-2">
           <SelectField
-            label="Proceedings Type"
-            value={normalizeProceedingsType(matter.intake.proceedingsType) ?? ""}
-            onChange={(value) => setProceedingsType(value as MatterFile["intake"]["proceedingsType"])}
-            placeholder="Select proceedings type"
-            options={proceedingsTypes}
-            optionLabels={proceedingsTypeLabels}
+            label="Notice Type"
+            value={noticeType}
+            onChange={(value) => setNoticeType(value as NoticeType)}
+            placeholder="Select notice type"
+            options={noticeTypes}
+            optionLabels={noticeTypeLabels}
           />
         </div>
         <div className="grid gap-3 md:grid-cols-2">
-          {applicationTypes.map((application) => (
+          {orderOptions.map((order) => (
+            <label key={order.key} className="flex min-h-10 items-center gap-3 rounded-md border border-slate-200 px-3 py-2 text-sm text-slate-950">
+              <input
+                type="checkbox"
+                checked={ordersSought[order.key]}
+                onChange={() => toggleOrderSought(order.key)}
+                className="h-4 w-4 rounded border-slate-300 text-sky-600 focus:ring-sky-500"
+              />
+              <span>{order.label}</span>
+            </label>
+          ))}
+        </div>
+        <div className="mt-5 grid gap-3 md:grid-cols-2">
+          {additionalApplicationTypes.map((application) => (
             <label key={application} className="flex min-h-10 items-center gap-3 rounded-md border border-slate-200 px-3 py-2 text-sm text-slate-950">
               <input
                 type="checkbox"

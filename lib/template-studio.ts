@@ -16,6 +16,9 @@ import {
   buildStandardAffidavitContent,
   isParentingOrderSought,
   isProtectionOrderSought,
+  isTenancyOrderSought,
+  isAncillaryFurnitureOrderSought,
+  validateAffidavitApplicationSelection,
 } from "./standard-affidavit";
 import { resolveTemplateSource } from "./template-resolver";
 
@@ -91,6 +94,10 @@ export async function generateStudioDocxPreview(
   }
 
   const sourceTemplate = (await resolveTemplateSource(template, { versionId: options.versionId })).buffer;
+  if (template.id === "domestic_violence_affidavit") {
+    const validationError = validateAffidavitApplicationSelection(matter);
+    if (validationError) throw new Error(validationError);
+  }
   const affidavitContent = buildStandardAffidavitContent(matter);
   const isCourtLetter = courtLetterDocumentTypes.has(template.id);
   const fields = {
@@ -239,7 +246,9 @@ export function templateAppliesToMatter(template: StudioTemplateDefinition, matt
     return { applies: false, reason: "Turn on Protection Order to include this document." };
   }
   if (template.id === "domestic_violence_affidavit" && !isProtectionOrderSought(matter) && !isParentingOrderSought(matter)) {
-    return { applies: false, reason: "Select Protection Order or Parenting Order to include the affidavit." };
+    if (!isTenancyOrderSought(matter) && !isAncillaryFurnitureOrderSought(matter)) {
+      return { applies: false, reason: "Select at least one order to include the affidavit." };
+    }
   }
 
   return { applies: true, reason: "Included with the current fake intake settings." };

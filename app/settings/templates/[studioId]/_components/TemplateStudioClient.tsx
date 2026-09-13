@@ -11,8 +11,19 @@ import {
   type ApplicationType,
   type FamilyViolenceType,
   type MatterFile,
-  type ProceedingsType,
 } from "../../../../../lib/matter";
+import {
+  deriveNoticeType,
+  deriveOrdersSought,
+  getMatterApplicationSelection,
+  noticeTypeLabels,
+  noticeTypes,
+  orderOptions,
+  proceedingsTypeFromOrders,
+  selectedApplicationsFromStructured,
+  type NoticeType,
+  type OrdersSought,
+} from "../../../../../lib/application-orders";
 import type { TemplatePlaceholder } from "../../../../../lib/template-scanner";
 import type { TemplateManifest, TemplateVersionRecord } from "../../../../../lib/supabase-template-versions";
 import type { StudioTemplateDefinition } from "../../../../../lib/template-studio";
@@ -27,9 +38,6 @@ type Props = {
 };
 
 type Tab = "document" | "fields" | "test-data" | "versions";
-
-const protectionApplication = "Without Notice Application for Protection Order";
-const parentingApplication = "Without Notice Application for Parenting Order";
 
 function cloneDemoMatter(): MatterFile {
   return structuredClone(demoMatter);
@@ -50,16 +58,21 @@ function statusClass(status: string) {
 }
 
 function hasProtection(matter: MatterFile) {
-  return matter.intake.proceedingsType === "protection_order" || matter.intake.proceedingsType === "both";
+  return deriveOrdersSought(matter.intake).protection;
 }
 
 function hasParenting(matter: MatterFile) {
-  return matter.intake.proceedingsType === "care_of_children" || matter.intake.proceedingsType === "both";
+  return deriveOrdersSought(matter.intake).parenting;
+}
+
+function hasAffidavitOrder(matter: MatterFile) {
+  return orderOptions.some((option) => deriveOrdersSought(matter.intake)[option.key]);
 }
 
 function appliesToMatter(template: StudioTemplateDefinition, matter: MatterFile) {
   if (template.id === "parenting_order_application" && !hasParenting(matter)) return { applies: false, reason: "Turn on Parenting Order to include this document." };
   if (template.id === "protection_order_application" && !hasProtection(matter)) return { applies: false, reason: "Turn on Protection Order to include this document." };
+  if (template.id === "domestic_violence_affidavit" && !hasAffidavitOrder(matter)) return { applies: false, reason: "Select at least one order to include the affidavit." };
   if (template.id === "confidential_address_application" && !matter.intake.applicant.isAddressConfidential) return { applies: false, reason: "Turn on confidential address to include this document." };
   return { applies: true, reason: "Included with the current fake intake settings." };
 }
@@ -75,6 +88,9 @@ function inferPlaceholderSource(key: string) {
 
 function fieldValue(matter: MatterFile, key: string) {
   const lower = key.toLowerCase();
+  const selection = getMatterApplicationSelection(matter);
+  if (lower === "applications") return selection.applications || "(blank)";
+  if (lower === "relevant_legislation") return selection.relevantLegislation || "(blank)";
   if (lower.includes("applicant") && lower.includes("name")) return matter.intake.applicant.fullName;
   if (lower.includes("respondent") && lower.includes("name")) return matter.intake.respondent.fullName;
   if (lower.includes("court")) return matter.intake.courtLocation;
@@ -192,16 +208,33 @@ export function TemplateStudioClient({
     setIsBusy(false);
   };
 
-  const setProceedingsType = (proceedingsType: ProceedingsType) => {
-    const selectedApplications: ApplicationType[] =
-      proceedingsType === "both"
-        ? [protectionApplication, parentingApplication]
-        : proceedingsType === "protection_order"
-          ? [protectionApplication]
-          : proceedingsType === "care_of_children"
-            ? [parentingApplication]
-            : [];
-    setMatter((current) => ({ ...current, intake: { ...current.intake, proceedingsType, selectedApplications } }));
+  const updateApplicationSelection = (noticeType: NoticeType, ordersSought: OrdersSought) => {
+    setMatter((current) => ({
+      ...current,
+      intake: {
+        ...current.intake,
+        noticeType,
+        ordersSought,
+        proceedingsType: proceedingsTypeFromOrders(ordersSought),
+        selectedApplications: selectedApplicationsFromStructured({
+          noticeType,
+          ordersSought,
+          existingSelectedApplications: current.intake.selectedApplications,
+        }),
+      },
+    }));
+  };
+
+  const setNoticeType = (noticeType: NoticeType) => {
+    updateApplicationSelection(noticeType, deriveOrdersSought(matter.intake));
+  };
+
+  const toggleOrderSought = (order: keyof OrdersSought) => {
+    const ordersSought = deriveOrdersSought(matter.intake);
+    updateApplicationSelection(deriveNoticeType(matter.intake) || "without_notice", {
+      ...ordersSought,
+      [order]: !ordersSought[order],
+    });
   };
 
   const toggleApplication = (application: ApplicationType) => {
@@ -227,6 +260,12 @@ export function TemplateStudioClient({
       },
     }));
   };
+
+  const noticeType = deriveNoticeType(matter.intake);
+  const ordersSought = deriveOrdersSought(matter.intake);
+  const additionalApplicationTypes = applicationTypes.filter((application) =>
+    !/^(Without Notice|On Notice) Application for (Protection|Parenting|Tenancy|Ancillary Furniture) Order$/.test(application),
+  );
 
   const setChildCount = (count: number) => {
     setMatter((current) => {
@@ -357,8 +396,9 @@ export function TemplateStudioClient({
               <TextInput label="FAM number" value={matter.intake.famNumber} onChange={(value) => setMatter((current) => ({ ...current, intake: { ...current.intake, famNumber: value } }))} />
             </Panel>
             <Panel title="Applications">
-              <Select label="Proceedings" value={matter.intake.proceedingsType} options={["protection_order", "care_of_children", "both"]} onChange={(value) => setProceedingsType(value as ProceedingsType)} />
-              {applicationTypes.slice(0, 6).map((application) => <CheckRow key={application} label={application} checked={matter.intake.selectedApplications.includes(application)} onChange={() => toggleApplication(application)} />)}
+              <Select label="Notice Type" value={noticeType} options={noticeTypes} optionLabels={noticeTypeLabels} onChange={(value) => setNoticeType(value as NoticeType)} />
+              {orderOptions.map((order) => <CheckRow key={order.key} label={order.label} checked={ordersSought[order.key]} onChange={() => toggleOrderSought(order.key)} />)}
+              {additionalApplicationTypes.map((application) => <CheckRow key={application} label={application} checked={matter.intake.selectedApplications.includes(application)} onChange={() => toggleApplication(application)} />)}
               <CheckRow label="Confidential address" checked={Boolean(matter.intake.applicant.isAddressConfidential)} onChange={() => setMatter((current) => ({ ...current, intake: { ...current.intake, applicant: { ...current.intake.applicant, isAddressConfidential: !current.intake.applicant.isAddressConfidential } } }))} />
               <CheckRow label="Fee waiver required" checked={matter.intake.feeWaiverRequired} onChange={() => setMatter((current) => ({ ...current, intake: { ...current.intake, feeWaiverRequired: !current.intake.feeWaiverRequired } }))} />
             </Panel>
@@ -450,8 +490,20 @@ function TextInput({ label, value, onChange }: { label: string; value: string; o
   return <label className="block"><span className="mb-1.5 block text-sm font-medium text-slate-900">{label}</span><input value={value} onChange={(event) => onChange(event.target.value)} className="h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm" /></label>;
 }
 
-function Select({ label, value, options, onChange }: { label: string; value: string; options: readonly string[]; onChange: (value: string) => void }) {
-  return <label className="block"><span className="mb-1.5 block text-sm font-medium text-slate-900">{label}</span><select value={value} onChange={(event) => onChange(event.target.value)} className="h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm">{options.map((option) => <option key={option} value={option}>{option}</option>)}</select></label>;
+function Select({
+  label,
+  value,
+  options,
+  optionLabels = {},
+  onChange,
+}: {
+  label: string;
+  value: string;
+  options: readonly string[];
+  optionLabels?: Partial<Record<string, string>>;
+  onChange: (value: string) => void;
+}) {
+  return <label className="block"><span className="mb-1.5 block text-sm font-medium text-slate-900">{label}</span><select value={value} onChange={(event) => onChange(event.target.value)} className="h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm">{options.map((option) => <option key={option} value={option}>{optionLabels[option] ?? option}</option>)}</select></label>;
 }
 
 function CheckRow({ label, checked, onChange }: { label: string; checked: boolean; onChange: () => void }) {

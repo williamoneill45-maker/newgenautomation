@@ -34,8 +34,11 @@ import type { MatterFile } from "../../../lib/matter.ts";
 import { getOneDriveClientFolderPaths, uploadFileToOneDrive, type OneDriveUploadResult } from "../../../lib/onedrive.ts";
 import {
   buildStandardAffidavitContent,
+  isAncillaryFurnitureOrderSought,
   isParentingOrderSought,
   isProtectionOrderSought,
+  isTenancyOrderSought,
+  validateAffidavitApplicationSelection,
 } from "../../../lib/standard-affidavit.ts";
 import {
   confidentialAddressInformationSheet,
@@ -312,6 +315,9 @@ export async function POST(request: Request) {
   };
   const hasProtectionOrder = isProtectionOrderSought(body.matter);
   const hasParentingOrder = isParentingOrderSought(body.matter);
+  const hasTenancyOrder = isTenancyOrderSought(body.matter);
+  const hasAncillaryFurnitureOrder = isAncillaryFurnitureOrderSought(body.matter);
+  const hasAffidavitOrder = hasProtectionOrder || hasParentingOrder || hasTenancyOrder || hasAncillaryFurnitureOrder;
   const affidavitContent = buildStandardAffidavitContent(body.matter);
 
   for (const templateDefinition of standardDocxTemplates) {
@@ -320,7 +326,7 @@ export async function POST(request: Request) {
       (templateDefinition.id === "confidential_address_application" && !body.matter.intake.applicant.isAddressConfidential)
       || (templateDefinition.id === "parenting_order_application" && !hasParentingOrder)
       || (templateDefinition.id === "protection_order_application" && !hasProtectionOrder)
-      || (templateDefinition.id === "domestic_violence_affidavit" && !hasProtectionOrder && !hasParentingOrder);
+      || (templateDefinition.id === "domestic_violence_affidavit" && !hasAffidavitOrder);
     if (conditionalSkip) {
       validationReport.skippedDocuments.push({
         template: templateDefinition.sourceFileName,
@@ -331,9 +337,9 @@ export async function POST(request: Request) {
     }
 
     if (!(await configuredTemplateExists(templateDefinition))) {
-      if (templateDefinition.id === "domestic_violence_affidavit" && (hasProtectionOrder || hasParentingOrder)) {
+      if (templateDefinition.id === "domestic_violence_affidavit" && hasAffidavitOrder) {
         return NextResponse.json(
-          { error: "A Protection Order or Parenting Order is included, but the affidavit source template is missing from /templates." },
+          { error: "An affidavit order is included, but the affidavit source template is missing from /templates." },
           { status: 400 },
         );
       }
@@ -343,6 +349,13 @@ export async function POST(request: Request) {
         reason: "Source template is missing from /templates.",
       });
       continue;
+    }
+
+    if (templateDefinition.id === "domestic_violence_affidavit") {
+      const validationError = validateAffidavitApplicationSelection(body.matter);
+      if (validationError) {
+        return NextResponse.json({ error: validationError }, { status: 422 });
+      }
     }
 
     const sourceTemplate = await readConfiguredSourceTemplate(templateDefinition);

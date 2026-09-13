@@ -436,6 +436,22 @@ export const templateFieldDefinitions: TemplateFieldDefinition[] = [
     source: "workflow",
   },
   {
+    key: "applications",
+    label: "Applications",
+    category: "Affidavit",
+    description: "Generated application wording from notice type and selected orders.",
+    example: "Without Notice Application for Protection and Parenting Orders",
+    source: "workflow",
+  },
+  {
+    key: "relevant_legislation",
+    label: "Relevant legislation",
+    category: "Affidavit",
+    description: "Generated legislation references from notice type and selected orders.",
+    example: "Family Violence Act 2018, ss 60 and 75; Care of Children Act 2004, ss 48 and 49",
+    source: "workflow",
+  },
+  {
     key: "application_intro",
     label: "Application intro",
     category: "Affidavit",
