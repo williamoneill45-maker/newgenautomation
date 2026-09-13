@@ -1,6 +1,3 @@
-import { readFile } from "node:fs/promises";
-import path from "node:path";
-
 import { buildAdditionalChildLines } from "./child-continuation";
 import { buildTemplateMergeFields, getInformationSheetEthnicityCheckboxes } from "./document-automation";
 import { mergeDocxTemplate, type DocxMergeReport, type DocxMergeOptions } from "./docx-template";
@@ -20,6 +17,7 @@ import {
   isParentingOrderSought,
   isProtectionOrderSought,
 } from "./standard-affidavit";
+import { resolveTemplateSource } from "./template-resolver";
 
 export type StudioTemplateDefinition = SourceTemplateDefinition & {
   studioId: string;
@@ -67,20 +65,32 @@ export function getStudioTemplate(studioId: string): StudioTemplateDefinition | 
   return studioTemplates.find((template) => template.studioId === studioId);
 }
 
+export function getStudioTemplateForSource(template: SourceTemplateDefinition): StudioTemplateDefinition {
+  return studioTemplates.find((item) =>
+    item.sourceFileName === template.sourceFileName &&
+    item.outputFileName === template.outputFileName
+  ) ?? {
+    ...template,
+    studioId: template.outputFileName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, ""),
+    kind: template.sourceFileName.toLowerCase().endsWith(".pdf") ? "pdf" : "docx",
+    sourceDescription: "Repository template",
+  };
+}
+
 export async function readTemplateSource(template: StudioTemplateDefinition): Promise<ArrayBuffer> {
-  const source = await readFile(path.join(process.cwd(), "templates", template.sourceFileName));
-  return source.buffer.slice(source.byteOffset, source.byteOffset + source.byteLength) as ArrayBuffer;
+  return (await resolveTemplateSource(template)).buffer;
 }
 
 export async function generateStudioDocxPreview(
   template: StudioTemplateDefinition,
   matter: MatterFile,
+  options: { versionId?: string } = {},
 ): Promise<{ buffer: ArrayBuffer; report: DocxMergeReport }> {
   if (template.kind !== "docx") {
     throw new Error("Only DOCX templates can be test-generated from Template Studio.");
   }
 
-  const sourceTemplate = await readTemplateSource(template);
+  const sourceTemplate = (await resolveTemplateSource(template, { versionId: options.versionId })).buffer;
   const affidavitContent = buildStandardAffidavitContent(matter);
   const isCourtLetter = courtLetterDocumentTypes.has(template.id);
   const fields = {

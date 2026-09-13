@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 
 import { demoMatter } from "../../../../lib/demo-data";
 import { readDocxVisibleText, scanTemplateFile } from "../../../../lib/template-scanner";
+import { getTemplateManifest } from "../../../../lib/supabase-template-versions";
 import {
   getStudioTemplate,
   readTemplateSource,
@@ -20,6 +21,7 @@ export default async function TemplateStudioPage({
 
   const sourcePath = `${process.cwd()}/templates/${template.sourceFileName}`;
   const report = await scanTemplateFile(sourcePath);
+  const manifest = await getTemplateManifest(template);
   const source = template.kind === "docx" && report.exists
     ? await readTemplateSource(template)
     : null;
@@ -31,6 +33,7 @@ export default async function TemplateStudioPage({
       template={template}
       previewText={previewText}
       placeholders={report.placeholders}
+      manifest={manifest}
       initialApplies={applicability.applies}
       initialReason={applicability.reason}
     />

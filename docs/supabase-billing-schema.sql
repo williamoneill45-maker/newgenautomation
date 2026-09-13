@@ -194,6 +194,46 @@ insert into storage.buckets (id, name, public)
 values ('billing', 'billing', false)
 on conflict (id) do nothing;
 
+insert into storage.buckets (id, name, public)
+values ('legal-templates', 'legal-templates', false)
+on conflict (id) do nothing;
+
+create table if not exists public.templates (
+  id text primary key,
+  studio_id text not null unique,
+  name text not null,
+  document_type text not null,
+  template_kind text not null check (template_kind in ('docx', 'pdf')),
+  active_version_id text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists public.template_versions (
+  id uuid primary key default gen_random_uuid(),
+  template_id text not null references public.templates(id) on delete cascade,
+  studio_id text not null,
+  version_number integer not null check (version_number > 0),
+  storage_path text not null,
+  original_filename text not null,
+  status text not null default 'draft' check (status in ('draft', 'active', 'archived')),
+  notes text not null default '',
+  scan_result jsonb,
+  created_at timestamptz not null default now(),
+  created_by text not null default '',
+  unique (template_id, version_number)
+);
+
+create index if not exists template_versions_template_idx
+  on public.template_versions (template_id, version_number desc);
+
+alter table public.templates enable row level security;
+alter table public.template_versions enable row level security;
+revoke all on table public.templates from anon, authenticated;
+revoke all on table public.template_versions from anon, authenticated;
+grant select, insert, update, delete on table public.templates to service_role;
+grant select, insert, update, delete on table public.template_versions to service_role;
+
 create table if not exists public.legal_aid_claims (
   id uuid primary key default gen_random_uuid(),
   firm_id text not null,

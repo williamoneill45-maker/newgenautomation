@@ -3,7 +3,7 @@ import { access, readFile, readdir } from "node:fs/promises";
 
 import JSZip from "jszip";
 
-import { canonicalTemplateFieldSet, legacyTemplateAliasMap } from "./template-fields";
+import { canonicalTemplateFieldSet, legacyTemplateAliasMap } from "./template-fields.ts";
 
 export type TemplatePlaceholder = {
   raw: string;
@@ -146,19 +146,23 @@ export function extractPlaceholders(text: string): TemplatePlaceholder[] {
   const found = new Map<string, TemplatePlaceholder>();
   const completePattern = /\{\{([^{}]+)\}\}/g;
   let match: RegExpExecArray | null;
+  let maskedText = text;
 
   while ((match = completePattern.exec(text))) {
     const raw = match[0];
     const key = match[1].trim();
     found.set(raw, classifyPlaceholder(raw, key));
+    maskedText = `${maskedText.slice(0, match.index)}${" ".repeat(raw.length)}${maskedText.slice(match.index + raw.length)}`;
   }
 
-  const malformedPattern = /\{\{[^{}\n]*(?:\}?(?!\})|$)|(?<!\{)\}\}/g;
-  for (const malformed of text.match(malformedPattern) ?? []) {
-    if (!found.has(malformed)) {
-      found.set(malformed, {
-        raw: malformed,
-        key: malformed.replace(/^\{\{/, "").replace(/\}\}$/, "").trim(),
+  const malformedPattern = /\{\{[^{}\n]*|(?<!\{)\}\}(?!\})/g;
+  for (const malformed of maskedText.match(malformedPattern) ?? []) {
+    const trimmed = malformed.trim();
+    if (!trimmed) continue;
+    if (!found.has(trimmed)) {
+      found.set(trimmed, {
+        raw: trimmed,
+        key: trimmed.replace(/^\{\{/, "").replace(/\}\}$/, "").trim(),
         status: "malformed",
         issue: "Malformed placeholder braces.",
       });

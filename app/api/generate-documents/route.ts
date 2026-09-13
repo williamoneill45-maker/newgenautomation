@@ -42,6 +42,8 @@ import {
   standardDocxTemplates,
   type SourceTemplateDefinition,
 } from "../../../lib/template-catalog.ts";
+import { resolveTemplateSource } from "../../../lib/template-resolver.ts";
+import { getStudioTemplateForSource } from "../../../lib/template-studio.ts";
 
 export const runtime = "nodejs";
 
@@ -83,6 +85,20 @@ async function readSourceTemplate(fileName: string): Promise<ArrayBuffer> {
     template.byteOffset,
     template.byteOffset + template.byteLength,
   ) as ArrayBuffer;
+}
+
+async function readConfiguredSourceTemplate(templateDefinition: SourceTemplateDefinition): Promise<ArrayBuffer> {
+  return (await resolveTemplateSource(getStudioTemplateForSource(templateDefinition))).buffer;
+}
+
+async function configuredTemplateExists(templateDefinition: SourceTemplateDefinition): Promise<boolean> {
+  if (await templateExists(templateDefinition.sourceFileName)) return true;
+  try {
+    await resolveTemplateSource(getStudioTemplateForSource(templateDefinition));
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 async function readProjectFile(fileName: string): Promise<ArrayBuffer> {
@@ -314,7 +330,7 @@ export async function POST(request: Request) {
       continue;
     }
 
-    if (!(await templateExists(templateDefinition.sourceFileName))) {
+    if (!(await configuredTemplateExists(templateDefinition))) {
       if (templateDefinition.id === "domestic_violence_affidavit" && (hasProtectionOrder || hasParentingOrder)) {
         return NextResponse.json(
           { error: "A Protection Order or Parenting Order is included, but the affidavit source template is missing from /templates." },
@@ -329,7 +345,7 @@ export async function POST(request: Request) {
       continue;
     }
 
-    const sourceTemplate = await readSourceTemplate(templateDefinition.sourceFileName);
+    const sourceTemplate = await readConfiguredSourceTemplate(templateDefinition);
     const fields = buildTemplateMergeFields(body.matter, templateDefinition.id);
     const isCourtLetter = courtLetterDocumentTypes.has(templateDefinition.id);
     const templateFields = {
