@@ -112,7 +112,8 @@ export function TemplateStudioClient({
   const placeholderMap = useMemo(() => new Map(placeholders.map((placeholder) => [placeholder.raw, placeholder])), [placeholders]);
   const applicability = useMemo(() => appliesToMatter(template, matter), [template, matter]);
   const versions = manifest.status === "loaded" ? manifest.versions : [];
-  const activeVersion = versions.find((version) => version.id === manifest.template.activeVersionId) ?? versions.find((version) => version.status === "active") ?? null;
+  const activeVersionId = manifest.status === "loaded" ? manifest.template.activeVersionId : "";
+  const activeVersion = versions.find((version) => version.id === activeVersionId) ?? versions.find((version) => version.status === "active") ?? null;
   const draftVersion = versions.find((version) => version.status === "draft") ?? null;
   const testVersionId = selectedVersionId || draftVersion?.id || activeVersion?.id || "";
   const visiblePlaceholders = draftVersion?.scanResult?.placeholders ?? placeholders;
