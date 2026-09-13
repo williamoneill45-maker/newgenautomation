@@ -452,6 +452,14 @@ export const templateFieldDefinitions: TemplateFieldDefinition[] = [
     source: "workflow",
   },
   {
+    key: "applications_upper",
+    label: "Applications uppercase",
+    category: "Affidavit",
+    description: "Uppercase application wording for affidavit headings.",
+    example: "WITHOUT NOTICE APPLICATION FOR PROTECTION ORDER",
+    source: "workflow",
+  },
+  {
     key: "application_intro",
     label: "Application intro",
     category: "Affidavit",
@@ -571,6 +579,7 @@ export const legacyTemplateAliases: LegacyTemplateAlias[] = [
   { alias: "MAORI_COURT_NAME", canonical: "court_location_maori", reason: "Use one Maori court location field." },
   { alias: "English_court_name", canonical: "court_location", reason: "Use lowercase snake_case in templates." },
   { alias: "Maori_court_name", canonical: "court_location_maori", reason: "Use lowercase snake_case in templates." },
+  { alias: "relevant_legisaltion", canonical: "relevant_legislation", reason: "Fix spelling of legislation." },
   { alias: "Date_today", canonical: "date_today", reason: "Use lowercase snake_case in templates." },
   { alias: "todays_date", canonical: "date_today", reason: "Use one short date field." },
   { alias: "dd day of month year", canonical: "month_day day of month year", reason: "Use court signing date fields." },
