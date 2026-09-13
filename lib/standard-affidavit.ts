@@ -113,7 +113,13 @@ export function isAncillaryFurnitureOrderSought(matter: MatterFile): boolean {
 
 export function validateAffidavitApplicationSelection(matter: MatterFile): string | null {
   const selection = getMatterApplicationSelection(matter);
-  return validateApplicationSelection(selection);
+  const validationError = validateApplicationSelection(selection);
+  if (validationError) return validationError;
+  const hasChildren = matter.intake.children.some((child) => clean(child.fullName));
+  if (selection.ordersSought.parenting && !hasChildren) {
+    return "At least one child must be added before generating a Parenting Order affidavit.";
+  }
+  return null;
 }
 
 function violenceCategoryLabel(value: string): string {
@@ -143,7 +149,85 @@ export type StandardAffidavitContent = {
   parentingHeading: string[];
   parentingParagraphs: string[];
   ordersSoughtParagraphs: string[];
+  conditionalBlocks: Record<string, boolean>;
+  mergeFields: Record<string, string>;
 };
+
+function buildChildGrammar(children: Child[]): Record<string, string> {
+  const multipleChildren = children.length !== 1;
+  return {
+    child_or_children: multipleChildren ? "children" : "child",
+    child_or_children_cap: multipleChildren ? "Children" : "Child",
+    the_child_or_children: multipleChildren ? "the children" : "the child",
+    the_child_or_children_cap: multipleChildren ? "The children" : "The child",
+    child_possessive: multipleChildren ? "children's" : "child's",
+    child_has_or_have: multipleChildren ? "have" : "has",
+    child_is_or_are: multipleChildren ? "are" : "is",
+    child_was_or_were: multipleChildren ? "were" : "was",
+    child_them: "them",
+    child_they: "they",
+    child_their: "their",
+  };
+}
+
+function boolString(value: boolean): string {
+  return value ? "true" : "";
+}
+
+export function buildAffidavitConditionalBlocks(matter: MatterFile): Record<string, boolean> {
+  const selection = getMatterApplicationSelection(matter);
+  const orders = selection.ordersSought;
+  const isWithoutNotice = selection.noticeType === "without_notice";
+  const hasChildren = matter.intake.children.some((child) => clean(child.fullName));
+
+  return {
+    has_children: hasChildren,
+    children_blurb_block: hasChildren,
+    protection_facts_block: orders.protection,
+    protection_without_notice_block: orders.protection && isWithoutNotice,
+    tenancy_facts_block: orders.tenancy,
+    tenancy_without_notice_block: orders.tenancy && isWithoutNotice,
+    ancillary_furniture_facts_block: orders.ancillaryFurniture,
+    ancillary_furniture_without_notice_block: orders.ancillaryFurniture && isWithoutNotice,
+    furniture_without_notice_block: orders.ancillaryFurniture && isWithoutNotice,
+    parenting_block: orders.parenting,
+    parenting_proposal_block: orders.parenting,
+    orders_sought_block: orders.protection || orders.parenting || orders.tenancy || orders.ancillaryFurniture,
+    orders_sought_protection_clause: orders.protection,
+    orders_sought_parenting_clause: orders.parenting,
+    orders_sought_tenancy_clause: orders.tenancy,
+    orders_sought_ancillary_furniture_clause: orders.ancillaryFurniture,
+    orders_sought_furniture_clause: orders.ancillaryFurniture,
+    orders_sought_without_notice_clause: isWithoutNotice,
+    protection_reference_clause: orders.protection,
+    no_protection_reference_clause: !orders.protection,
+  };
+}
+
+export function buildAffidavitMergeFields(matter: MatterFile, content = buildStandardAffidavitContent(matter)): Record<string, string> {
+  const selection = getMatterApplicationSelection(matter);
+  const orders = selection.ordersSought;
+  const children = matter.intake.children.filter((child) => clean(child.fullName));
+  const childNames = children.map(childCareName);
+  const formattedChildNames = childNames.length ? formatList(childNames) : "";
+  const conditionalBlocks = buildAffidavitConditionalBlocks(matter);
+
+  return {
+    ...buildChildGrammar(children),
+    has_children: boolString(conditionalBlocks.has_children),
+    has_protection_order: boolString(orders.protection),
+    has_parenting_order: boolString(orders.parenting),
+    has_tenancy_order: boolString(orders.tenancy),
+    has_ancillary_furniture_order: boolString(orders.ancillaryFurniture),
+    is_without_notice: boolString(selection.noticeType === "without_notice"),
+    is_on_notice: boolString(selection.noticeType === "on_notice"),
+    selected_child_names: formattedChildNames,
+    children_names: formattedChildNames,
+    children_blurb: content.childrenParagraphs.join("\n"),
+    dwelling_address: matter.intake.applicant.homeAddress,
+    current_dwelling_address: matter.intake.applicant.homeAddress,
+  };
+}
 
 export function buildStandardAffidavitContent(matter: MatterFile): StandardAffidavitContent {
   const applicationSelection = getMatterApplicationSelection(matter);
@@ -284,5 +368,7 @@ export function buildStandardAffidavitContent(matter: MatterFile): StandardAffid
       : [],
     parentingParagraphs,
     ordersSoughtParagraphs,
+    conditionalBlocks: buildAffidavitConditionalBlocks(matter),
+    mergeFields: {},
   };
 }

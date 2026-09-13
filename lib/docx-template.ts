@@ -51,6 +51,7 @@ export type DocxMergeOptions = {
   repeatChildParagraphsThrough?: number;
   informationSheetEthnicityCheckboxes?: [boolean[], boolean[]];
   paragraphInsertions?: Record<string, string[]>;
+  conditionalBlocks?: Record<string, boolean>;
   literalTextReplacements?: Record<string, string>;
   removeFirstExplicitPageBreak?: boolean;
   informationSheetApplicationCount?: number;
@@ -275,6 +276,102 @@ function removeUnusedInformationSheetApplicationSlots(
     xmlCursor = node.fullMatchEnd;
   }
   return output + xml.slice(xmlCursor);
+}
+
+function paragraphText(paragraph: string): string {
+  return readTextNodes(paragraph).map((node) => node.text).join("");
+}
+
+function stripMarkerFromParagraph(paragraph: string, marker: string): string {
+  return replaceLiteralText(paragraph, { [marker]: "" });
+}
+
+function applyConditionalBlockToParagraphs(xml: string, key: string, include: boolean): { xml: string; changed: boolean } {
+  const openMarker = `{{#${key}}}`;
+  const closeMarker = `{{/${key}}}`;
+  const paragraphs = [...xml.matchAll(/<w:p\b[\s\S]*?<\/w:p>/g)].map((match) => ({
+    start: match.index,
+    end: match.index + match[0].length,
+    xml: match[0],
+    text: paragraphText(match[0]),
+  }));
+  const openIndex = paragraphs.findIndex((paragraph) => paragraph.text.includes(openMarker));
+  if (openIndex === -1) return { xml, changed: false };
+  const relativeCloseIndex = paragraphs
+    .slice(openIndex)
+    .findIndex((paragraph) => paragraph.text.includes(closeMarker));
+  if (relativeCloseIndex === -1) return { xml, changed: false };
+  const closeIndex = openIndex + relativeCloseIndex;
+  const openParagraph = paragraphs[openIndex];
+  const closeParagraph = paragraphs[closeIndex];
+
+  if (!include) {
+    return {
+      xml: `${xml.slice(0, openParagraph.start)}${xml.slice(closeParagraph.end)}`,
+      changed: true,
+    };
+  }
+
+  let replacement = xml.slice(openParagraph.start, closeParagraph.end);
+  replacement = replacement.replace(/<w:p\b[\s\S]*?<\/w:p>/g, (paragraph) => {
+    const text = paragraphText(paragraph);
+    if (!text.includes(openMarker) && !text.includes(closeMarker)) return paragraph;
+    const stripped = stripMarkerFromParagraph(stripMarkerFromParagraph(paragraph, openMarker), closeMarker);
+    return paragraphText(stripped).trim() ? stripped : "";
+  });
+
+  return {
+    xml: `${xml.slice(0, openParagraph.start)}${replacement}${xml.slice(closeParagraph.end)}`,
+    changed: true,
+  };
+}
+
+function applyConditionalBlockInline(xml: string, key: string, include: boolean): { xml: string; changed: boolean } {
+  const openMarker = `{{#${key}}}`;
+  const closeMarker = `{{/${key}}}`;
+  const nodes = readTextNodes(xml);
+  const fullText = nodes.map((node) => node.text).join("");
+  const openStart = fullText.indexOf(openMarker);
+  if (openStart === -1) return { xml, changed: false };
+  const closeStart = fullText.indexOf(closeMarker, openStart + openMarker.length);
+  if (closeStart === -1) return { xml, changed: false };
+  const ranges = include
+    ? [
+        { start: closeStart, end: closeStart + closeMarker.length, value: "" },
+        { start: openStart, end: openStart + openMarker.length, value: "" },
+      ]
+    : [{ start: openStart, end: closeStart + closeMarker.length, value: "" }];
+
+  for (const range of ranges) {
+    replaceTextRange(nodes, range.start, range.end, range.value);
+  }
+
+  let output = "";
+  let xmlCursor = 0;
+  for (const node of nodes) {
+    output += xml.slice(xmlCursor, node.fullMatchStart);
+    output += `${node.openTag}${node.changed ? escapeXml(node.text) : node.rawText}${node.closeTag}`;
+    xmlCursor = node.fullMatchEnd;
+  }
+  return { xml: output + xml.slice(xmlCursor), changed: true };
+}
+
+function applyConditionalBlocks(xml: string, blocks: Record<string, boolean>): string {
+  let output = xml;
+  for (const [key, include] of Object.entries(blocks)) {
+    let changed = true;
+    while (changed) {
+      const paragraphResult = applyConditionalBlockToParagraphs(output, key, include);
+      if (paragraphResult.changed) {
+        output = paragraphResult.xml;
+        continue;
+      }
+      const inlineResult = applyConditionalBlockInline(output, key, include);
+      output = inlineResult.xml;
+      changed = inlineResult.changed;
+    }
+  }
+  return output;
 }
 
 function parseMarkedRuns(value: string): Array<{ text: string; bold?: boolean }> {
@@ -697,6 +794,9 @@ function applyTemplateTransformations(xml: string, options: DocxMergeOptions, is
   if (options.paragraphInsertions) {
     output = insertRepeatedParagraphs(output, options.paragraphInsertions);
   }
+  if (options.conditionalBlocks) {
+    output = applyConditionalBlocks(output, options.conditionalBlocks);
+  }
   if (options.literalTextReplacements) {
     output = replaceLiteralText(output, options.literalTextReplacements);
   }
@@ -1003,6 +1103,13 @@ export async function validateDocxTemplate(
 ): Promise<DocxTemplateValidation> {
   const zip = await JSZip.loadAsync(template);
   const xmlFiles = await readTemplateXmlFiles(zip);
+  return validateXmlFiles(xmlFiles, fields);
+}
+
+function validateXmlFiles(
+  xmlFiles: Record<string, string>,
+  fields: MergeFields,
+): DocxTemplateValidation {
   const lookup = buildFieldLookup(fields);
   const placeholders = uniqueSorted(
     Object.values(xmlFiles).flatMap((xml) => extractPlaceholdersFromXml(xml)),
@@ -1173,13 +1280,18 @@ export async function mergeDocxTemplate(
   options: DocxMergeOptions = {},
 ): Promise<DocxMergeResult> {
   const zip = await JSZip.loadAsync(template);
-  const validation = await validateDocxTemplate(template, fields);
   const xmlFiles = await readTemplateXmlFiles(zip);
+  const transformedXmlFiles = Object.fromEntries(
+    Object.entries(xmlFiles).map(([path, xml]) => [
+      path,
+      applyTemplateTransformations(xml, options, path === "word/document.xml"),
+    ]),
+  );
+  const validation = validateXmlFiles(transformedXmlFiles, fields);
   let replacedPlaceholders = 0;
 
   await Promise.all(
-    Object.entries(xmlFiles).map(async ([path, xml]) => {
-      const transformedXml = applyTemplateTransformations(xml, options, path === "word/document.xml");
+    Object.entries(transformedXmlFiles).map(async ([path, transformedXml]) => {
       replacedPlaceholders += countReplaceablePlaceholdersInXml(transformedXml, fields);
       const mergedXml = mergePlaceholdersInXml(transformedXml, fields);
       let formattedXml = mergedXml;

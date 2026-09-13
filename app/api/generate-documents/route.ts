@@ -33,6 +33,7 @@ import {
 import type { MatterFile } from "../../../lib/matter.ts";
 import { getOneDriveClientFolderPaths, uploadFileToOneDrive, type OneDriveUploadResult } from "../../../lib/onedrive.ts";
 import {
+  buildAffidavitMergeFields,
   buildStandardAffidavitContent,
   isAncillaryFurnitureOrderSought,
   isParentingOrderSought,
@@ -319,6 +320,7 @@ export async function POST(request: Request) {
   const hasAncillaryFurnitureOrder = isAncillaryFurnitureOrderSought(body.matter);
   const hasAffidavitOrder = hasProtectionOrder || hasParentingOrder || hasTenancyOrder || hasAncillaryFurnitureOrder;
   const affidavitContent = buildStandardAffidavitContent(body.matter);
+  const affidavitMergeFields = buildAffidavitMergeFields(body.matter, affidavitContent);
 
   for (const templateDefinition of standardDocxTemplates) {
     const outputFileName = clientOutputFileName(body.matter, templateDefinition);
@@ -393,6 +395,7 @@ export async function POST(request: Request) {
             parenting_blurb: "",
             orders_sought_blurb: "",
             affidavit_signing_location: "",
+            ...affidavitMergeFields,
           }
         : {}),
     };
@@ -484,6 +487,7 @@ export async function POST(request: Request) {
         : {}),
       ...(templateDefinition.id === "domestic_violence_affidavit"
         ? {
+            conditionalBlocks: affidavitContent.conditionalBlocks,
             literalTextReplacements: {
               "AFFIRMED at {{English_court_name}} this": "AFFIRMED at            this",
             },

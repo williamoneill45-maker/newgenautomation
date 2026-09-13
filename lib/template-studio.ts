@@ -13,6 +13,7 @@ import {
   type SourceTemplateDefinition,
 } from "./template-catalog";
 import {
+  buildAffidavitMergeFields,
   buildStandardAffidavitContent,
   isParentingOrderSought,
   isProtectionOrderSought,
@@ -99,6 +100,7 @@ export async function generateStudioDocxPreview(
     if (validationError) throw new Error(validationError);
   }
   const affidavitContent = buildStandardAffidavitContent(matter);
+  const affidavitMergeFields = buildAffidavitMergeFields(matter, affidavitContent);
   const isCourtLetter = courtLetterDocumentTypes.has(template.id);
   const fields = {
     ...buildTemplateMergeFields(matter, template.id),
@@ -129,6 +131,7 @@ export async function generateStudioDocxPreview(
           parenting_blurb: "",
           orders_sought_blurb: "",
           affidavit_signing_location: "",
+          ...affidavitMergeFields,
         }
       : {}),
   };
@@ -202,6 +205,7 @@ function buildStudioMergeOptions(
       : {}),
     ...(template.id === "domestic_violence_affidavit"
       ? {
+          conditionalBlocks: affidavitContent.conditionalBlocks,
           literalTextReplacements: {
             "AFFIRMED at {{English_court_name}} this": "AFFIRMED at            this",
           },

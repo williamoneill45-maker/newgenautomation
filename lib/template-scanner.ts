@@ -182,6 +182,10 @@ function classifyPlaceholder(raw: string, key: string): TemplatePlaceholder {
     };
   }
 
+  if ((key.startsWith("#") || key.startsWith("/")) && canonicalTemplateFieldSet.has(key.slice(1))) {
+    return { raw, key, canonicalKey: key.slice(1), status: "known" };
+  }
+
   if (canonicalTemplateFieldSet.has(key)) {
     return { raw, key, status: "known" };
   }
