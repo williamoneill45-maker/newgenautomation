@@ -661,6 +661,7 @@ export const supplementalCanonicalTemplateFieldKeys = [
   "children_harm_reference",
   "children_abuse_reference",
   "tenancy_protection_reference",
+  "tenancy_order_paragraph",
   "tenancy_children_paragraph",
   "furniture_protection_reference",
   "furniture_order_reference",

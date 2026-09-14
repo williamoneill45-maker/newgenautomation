@@ -241,6 +241,14 @@ function buildTenancyChildrenParagraph(matter: MatterFile): string {
   return "It is in the best interests of the children that we remain in the dwelling house. I do not want to leave the dwelling house and uproot the children from their well-established routines.";
 }
 
+function buildTenancyOrderParagraph(matter: MatterFile): string {
+  const orders = getMatterApplicationSelection(matter).ordersSought;
+  const protectionReference = orders.protection
+    ? "I am applying for a Protection Order against the Respondent. "
+    : "";
+  return `${protectionReference}I am also applying for a Tenancy Order granting me the right to live at our current dwelling house, ${getDwellingAddress(matter)}.`;
+}
+
 function buildOrdersSought(matter: MatterFile): string {
   const selection = getMatterApplicationSelection(matter);
   const orders = selection.ordersSought;
@@ -338,6 +346,7 @@ export function buildAffidavitMergeFields(matter: MatterFile, content = buildSta
     children_harm_reference: hasChildren ? " and the children of my family" : "",
     children_abuse_reference: hasChildren ? "or a child of my family" : "",
     tenancy_protection_reference: orders.protection ? "I am applying for a Protection Order against the Respondent. " : "",
+    tenancy_order_paragraph: buildTenancyOrderParagraph(matter),
     furniture_protection_reference: orders.protection ? "I am applying for a Protection Order against the Respondent. " : "",
     tenancy_children_paragraph: buildTenancyChildrenParagraph(matter),
     dwelling_address: dwellingAddress,
@@ -477,6 +486,7 @@ export function buildStandardAffidavitContent(matter: MatterFile): StandardAffid
     mergeFields: {},
     literalTextReplacements: {
       "I am applying without notice for a Protection Order against {{respondent_name}} (“the Respondent”).": "{{application_intro}}",
+      "{{tenancy_protection_reference}}I am also applying for a Tenancy Order grantingme the right to live at our current dwelling house, {{dwelling_address}}.": "{{tenancy_order_paragraph}}",
       "{{tenancy_children_paragraph}} It is in the best interests of our child that we remain in the dwelling house given the house is very near to her pre school and friends. I do not want to leave the dwelling house and uproot my child from their well established routines.": "{{tenancy_children_paragraph}}",
       "{{parenting_safety_reasons}} I am concerned that the Respondent is unable to control his anger and does not realise that his behaviour is abusive.": "{{parenting_safety_reasons}}",
       "I propose that the contact be supervised by a Professional Contact Provider until he addresses his mental health.": "{{contact_supervision_paragraph}}",

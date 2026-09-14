@@ -507,7 +507,7 @@ function insertRepeatedParagraphs(
     return values
       .map((value) => {
         const populated = replaceParagraphText(paragraph, value.trim());
-        if (!/^\([ivx]+\)/i.test(value.trim())) return populated;
+        if (!/^\((?:[ivx]+|[a-z])\)/i.test(value.trim())) return populated;
         return populated
           .replace(/<w:numPr\b[\s\S]*?<\/w:numPr>/g, "")
           .replace(/<w:pStyle\b[^>]*\/>/g, "")

@@ -167,6 +167,9 @@ for (const testCase of cases) {
   const text = await generateText(matterFor(testCase));
   assert.doesNotMatch(text, /\{\{[^{}]+\}\}/, `${testCase.name} unresolved placeholder`);
   assert.doesNotMatch(text, /AUCKLAND\s*\|\s*TĀMAKI MAKAURAU/i, `${testCase.name} combined court location`);
+  assert.doesNotMatch(text, /\(i\)\s*\(a\)/i, `${testCase.name} double parenting safety marker`);
+  assert.doesNotMatch(text, /grantingme/i, `${testCase.name} tenancy granting spacing`);
+  assert.doesNotMatch(text, /Respondent\.I am also/i, `${testCase.name} tenancy sentence spacing`);
   for (const expected of testCase.expected) {
     assert.ok(text.includes(expected), `${testCase.name} missing ${expected}`);
   }
