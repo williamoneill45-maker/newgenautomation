@@ -3,7 +3,9 @@ import path from "node:path";
 
 import { NextResponse } from "next/server.js";
 import {
+  PDFName,
   PDFDocument,
+  StandardFonts,
 } from "pdf-lib";
 
 import {
@@ -148,6 +150,35 @@ function setTitleFields(pdfDoc: PDFDocument, title: string) {
       // Keep trying known title text field names.
     }
   }
+}
+
+function assertLegalAidAcroForm(pdfDoc: PDFDocument) {
+  const acroForm = pdfDoc.catalog.get(PDFName.of("AcroForm"));
+  if (!acroForm) {
+    throw new Error("Generated Legal Aid PDF is missing the document AcroForm.");
+  }
+
+  const form = pdfDoc.getForm();
+  const fieldNames = new Set(form.getFields().map((field) => field.getName()));
+  if (fieldNames.size === 0) {
+    throw new Error("Generated Legal Aid PDF has an AcroForm but no fields.");
+  }
+
+  for (const fieldName of ["Question 2", "Question 4", "Question 5", "Question 31", "Question 33"]) {
+    if (!fieldNames.has(fieldName)) {
+      throw new Error(`Generated Legal Aid PDF is missing expected field ${fieldName}.`);
+    }
+  }
+}
+
+async function saveEditableLegalAidPdf(pdfDoc: PDFDocument): Promise<Uint8Array> {
+  assertLegalAidAcroForm(pdfDoc);
+  const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
+  pdfDoc.getForm().updateFieldAppearances(font);
+  const buffer = await pdfDoc.save();
+  const savedPdf = await PDFDocument.load(buffer, { ignoreEncryption: true });
+  assertLegalAidAcroForm(savedPdf);
+  return buffer;
 }
 
 async function fileToBytes(file: File | null): Promise<Uint8Array | null> {
@@ -307,7 +338,7 @@ export async function POST(request: Request) {
         updatedAt: generatedAt,
       });
 
-      const buffer = await pdfDoc.save({ updateFieldAppearances: false });
+      const buffer = await saveEditableLegalAidPdf(pdfDoc);
       const responseBody = buffer.buffer.slice(
         buffer.byteOffset,
         buffer.byteOffset + buffer.byteLength,
@@ -354,7 +385,7 @@ export async function POST(request: Request) {
       await insertLegalAidUploads(pdfDoc, incomeProof, incomeProofBytes, signedPage, signedPageBytes);
     }
 
-    const buffer = await pdfDoc.save({ updateFieldAppearances: false });
+    const buffer = await saveEditableLegalAidPdf(pdfDoc);
     const responseBody = buffer.buffer.slice(
       buffer.byteOffset,
       buffer.byteOffset + buffer.byteLength,
