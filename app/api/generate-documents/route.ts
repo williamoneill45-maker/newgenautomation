@@ -357,7 +357,12 @@ export async function POST(request: Request) {
     if (templateDefinition.id === "domestic_violence_affidavit") {
       const validationError = validateAffidavitApplicationSelection(body.matter);
       if (validationError) {
-        return NextResponse.json({ error: validationError }, { status: 422 });
+        validationReport.skippedDocuments.push({
+          template: templateDefinition.sourceFileName,
+          title: templateDefinition.title,
+          reason: validationError,
+        });
+        continue;
       }
     }
 
