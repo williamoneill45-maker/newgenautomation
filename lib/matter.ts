@@ -119,6 +119,10 @@ export type ExistingProceedings = {
 export type DomesticViolenceNotes = {
   history: string;
   recentEvents: string;
+  dwellingAddress?: string;
+  ancillaryFurnitureItems?: string[];
+  parentingSafetyReasons?: string[];
+  contactSupervisionReason?: string;
 };
 
 export const familyViolenceTypes = [
@@ -486,6 +490,10 @@ export function createEmptyMatter(): MatterFile {
       domesticViolenceNotes: {
         history: "",
         recentEvents: "",
+        dwellingAddress: "",
+        ancillaryFurnitureItems: [],
+        parentingSafetyReasons: [],
+        contactSupervisionReason: "",
       },
     },
   };

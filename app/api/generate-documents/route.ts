@@ -34,6 +34,7 @@ import type { MatterFile } from "../../../lib/matter.ts";
 import { getOneDriveClientFolderPaths, uploadFileToOneDrive, type OneDriveUploadResult } from "../../../lib/onedrive.ts";
 import {
   buildAffidavitMergeFields,
+  buildAffidavitDocxMergeOptions,
   buildStandardAffidavitContent,
   isAncillaryFurnitureOrderSought,
   isParentingOrderSought,
@@ -486,31 +487,7 @@ export async function POST(request: Request) {
           }
         : {}),
       ...(templateDefinition.id === "domestic_violence_affidavit"
-        ? {
-            conditionalBlocks: affidavitContent.conditionalBlocks,
-            literalTextReplacements: {
-              "AFFIRMED at {{English_court_name}} this": "AFFIRMED at            this",
-            },
-            affidavitFormatting: {
-              applicantName: body.matter.intake.applicant.fullName.toLocaleUpperCase("en-NZ"),
-              respondentName: body.matter.intake.respondent.fullName.toLocaleUpperCase("en-NZ"),
-              childNames: body.matter.intake.children.map((child) => child.fullName.toLocaleUpperCase("en-NZ")),
-              legislationLines: affidavitContent.legislationLines,
-            },
-            paragraphInsertions: {
-              children_blurb: affidavitContent.childrenParagraphs,
-              protection_facts_heading: affidavitContent.protectionFactsHeading,
-              violence_categories: affidavitContent.violenceCategories,
-              insert_history_blurb: [""],
-              insert_recent_events_blurb: [""],
-              without_notice_heading: affidavitContent.withoutNoticeHeading,
-              without_notice_intro: affidavitContent.withoutNoticeIntro,
-              without_notice_safety: affidavitContent.withoutNoticeSafetyFactors,
-              parenting_heading: affidavitContent.parentingHeading,
-              parenting_blurb: affidavitContent.parentingParagraphs,
-              orders_sought_blurb: affidavitContent.ordersSoughtParagraphs,
-            },
-          }
+        ? buildAffidavitDocxMergeOptions(body.matter, affidavitContent)
         : {}),
     });
 

@@ -8,6 +8,7 @@ import { mergeDocxTemplate } from "../lib/docx-template.ts";
 import { readDocxVisibleText } from "../lib/template-scanner.ts";
 import { demoMatter } from "../lib/demo-data.ts";
 import {
+  buildAffidavitDocxMergeOptions,
   buildAffidavitMergeFields,
   buildStandardAffidavitContent,
 } from "../lib/standard-affidavit.ts";
@@ -57,17 +58,13 @@ const fields = {
   ...buildAffidavitMergeFields(matter, affidavitContent),
 };
 
+const mergeOptions = buildAffidavitDocxMergeOptions(matter, affidavitContent);
 const result = await mergeDocxTemplate(template, fields, {
-  conditionalBlocks: affidavitContent.conditionalBlocks,
+  ...mergeOptions,
   literalTextReplacements: {
+    ...mergeOptions.literalTextReplacements,
     "AFFIDAVIT OF {{applicant_name}} IN SUPPORT OF WITHOUT NOTICE APPLICATION FOR PROTECTION ORDER":
       "AFFIDAVIT OF {{applicant_name}} IN SUPPORT OF {{applications}}",
-  },
-  affidavitFormatting: {
-    applicantName: "SARAH THOMPSON",
-    respondentName: matter.intake.respondent.fullName.toLocaleUpperCase("en-NZ"),
-    childNames: matter.intake.children.map((child) => child.fullName.toLocaleUpperCase("en-NZ")),
-    legislationLines: affidavitContent.legislationLines,
   },
 });
 const text = await readDocxVisibleText(result.buffer);

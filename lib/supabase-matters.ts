@@ -103,10 +103,14 @@ function mapRow(row: MatterRow): MatterFile {
       existingOrdersBetweenParties: "",
       existingOrdersRelatingToChildren: "",
     },
-    domesticViolenceNotes: {
-      history: "",
-      recentEvents: "",
-    },
+      domesticViolenceNotes: {
+        history: "",
+        recentEvents: "",
+        dwellingAddress: "",
+        ancillaryFurnitureItems: [],
+        parentingSafetyReasons: [],
+        contactSupervisionReason: "",
+      },
   } satisfies MatterFile["intake"];
 
   return {
@@ -131,6 +135,15 @@ function mapRow(row: MatterRow): MatterFile {
       consentedProtectedPersonName: intake.consentedProtectedPersonName ?? "",
       feeWaiverRequired: intake.feeWaiverRequired ?? false,
       famNumber: intake.famNumber || row.fam_number || "",
+      domesticViolenceNotes: {
+        ...intake.domesticViolenceNotes,
+        history: intake.domesticViolenceNotes?.history ?? "",
+        recentEvents: intake.domesticViolenceNotes?.recentEvents ?? "",
+        dwellingAddress: intake.domesticViolenceNotes?.dwellingAddress ?? "",
+        ancillaryFurnitureItems: intake.domesticViolenceNotes?.ancillaryFurnitureItems ?? [],
+        parentingSafetyReasons: intake.domesticViolenceNotes?.parentingSafetyReasons ?? [],
+        contactSupervisionReason: intake.domesticViolenceNotes?.contactSupervisionReason ?? "",
+      },
     },
   };
 }

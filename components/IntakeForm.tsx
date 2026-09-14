@@ -267,6 +267,42 @@ export default function IntakeForm() {
     setIntakeValue("familyViolenceTypes", selected);
   };
 
+  const setDomesticViolenceNote = <T extends keyof MatterFile["intake"]["domesticViolenceNotes"]>(
+    field: T,
+    value: MatterFile["intake"]["domesticViolenceNotes"][T],
+  ) => {
+    setMatter((current) => ({
+      ...current,
+      updatedAt: new Date().toISOString(),
+      intake: {
+        ...current.intake,
+        domesticViolenceNotes: {
+          ...current.intake.domesticViolenceNotes,
+          [field]: value,
+        },
+      },
+    }));
+  };
+
+  const updateDomesticViolenceList = (
+    field: "ancillaryFurnitureItems" | "parentingSafetyReasons",
+    index: number,
+    value: string,
+  ) => {
+    const current = matter.intake.domesticViolenceNotes[field] ?? [];
+    const next = current.length ? [...current] : [""];
+    next[index] = value;
+    setDomesticViolenceNote(field, next);
+  };
+
+  const addDomesticViolenceListItem = (field: "ancillaryFurnitureItems" | "parentingSafetyReasons") => {
+    setDomesticViolenceNote(field, [...(matter.intake.domesticViolenceNotes[field] ?? []), ""]);
+  };
+
+  const removeDomesticViolenceListItem = (field: "ancillaryFurnitureItems" | "parentingSafetyReasons", index: number) => {
+    setDomesticViolenceNote(field, (matter.intake.domesticViolenceNotes[field] ?? []).filter((_, itemIndex) => itemIndex !== index));
+  };
+
   const noticeType = deriveNoticeType(matter.intake);
   const ordersSought = deriveOrdersSought(matter.intake);
   const additionalApplicationTypes = applicationTypes.filter((application) =>
@@ -564,6 +600,89 @@ export default function IntakeForm() {
             </label>
           ))}
         </div>
+        {ordersSought.tenancy ? (
+          <TextArea
+            label="Current dwelling address"
+            value={matter.intake.domesticViolenceNotes.dwellingAddress ?? ""}
+            onChange={(value) => setDomesticViolenceNote("dwellingAddress", value)}
+            rows={3}
+            className="mt-5"
+            placeholder="Address for the dwelling house sought under the Tenancy Order"
+          />
+        ) : null}
+        {ordersSought.ancillaryFurniture ? (
+          <div className="mt-5 rounded-md border border-slate-200 p-4">
+            <div className="flex items-center justify-between gap-3">
+              <h3 className="text-sm font-semibold text-slate-950">Furniture / chattels sought</h3>
+              <button
+                type="button"
+                onClick={() => addDomesticViolenceListItem("ancillaryFurnitureItems")}
+                className="rounded-md border border-slate-300 px-3 py-1.5 text-sm font-semibold text-slate-700"
+              >
+                Add item
+              </button>
+            </div>
+            <div className="mt-3 space-y-3">
+              {(matter.intake.domesticViolenceNotes.ancillaryFurnitureItems ?? [""]).map((item, index) => (
+                <div key={index} className="flex gap-2">
+                  <input
+                    value={item}
+                    onChange={(event) => updateDomesticViolenceList("ancillaryFurnitureItems", index, event.target.value)}
+                    placeholder="e.g. Washing machine"
+                    className="h-10 flex-1 rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-950 shadow-sm outline-none transition placeholder:text-slate-500 focus:border-sky-500 focus:ring-2 focus:ring-sky-100"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => removeDomesticViolenceListItem("ancillaryFurnitureItems", index)}
+                    className="rounded-md border border-slate-300 px-3 text-sm font-semibold text-slate-700"
+                  >
+                    Remove
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : null}
+        {ordersSought.parenting ? (
+          <div className="mt-5 rounded-md border border-slate-200 p-4">
+            <div className="flex items-center justify-between gap-3">
+              <h3 className="text-sm font-semibold text-slate-950">Parenting safety reasons</h3>
+              <button
+                type="button"
+                onClick={() => addDomesticViolenceListItem("parentingSafetyReasons")}
+                className="rounded-md border border-slate-300 px-3 py-1.5 text-sm font-semibold text-slate-700"
+              >
+                Add reason
+              </button>
+            </div>
+            <div className="mt-3 space-y-3">
+              {(matter.intake.domesticViolenceNotes.parentingSafetyReasons ?? [""]).map((reason, index) => (
+                <div key={index} className="flex gap-2">
+                  <input
+                    value={reason}
+                    onChange={(event) => updateDomesticViolenceList("parentingSafetyReasons", index, event.target.value)}
+                    placeholder="Reason supported by the intake facts"
+                    className="h-10 flex-1 rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-950 shadow-sm outline-none transition placeholder:text-slate-500 focus:border-sky-500 focus:ring-2 focus:ring-sky-100"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => removeDomesticViolenceListItem("parentingSafetyReasons", index)}
+                    className="rounded-md border border-slate-300 px-3 text-sm font-semibold text-slate-700"
+                  >
+                    Remove
+                  </button>
+                </div>
+              ))}
+            </div>
+            <Field
+              label="Supervised contact reason"
+              value={matter.intake.domesticViolenceNotes.contactSupervisionReason ?? ""}
+              onChange={(value) => setDomesticViolenceNote("contactSupervisionReason", value)}
+              className="mt-4"
+              placeholder="Optional reason to add after the Professional Contact Provider sentence"
+            />
+          </div>
+        ) : null}
       </Card>
 
       <Card title="Court Filing Details">

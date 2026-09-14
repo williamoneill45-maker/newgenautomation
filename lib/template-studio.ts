@@ -14,6 +14,7 @@ import {
 } from "./template-catalog";
 import {
   buildAffidavitMergeFields,
+  buildAffidavitDocxMergeOptions,
   buildStandardAffidavitContent,
   isParentingOrderSought,
   isProtectionOrderSought,
@@ -204,31 +205,7 @@ function buildStudioMergeOptions(
         }
       : {}),
     ...(template.id === "domestic_violence_affidavit"
-      ? {
-          conditionalBlocks: affidavitContent.conditionalBlocks,
-          literalTextReplacements: {
-            "AFFIRMED at {{English_court_name}} this": "AFFIRMED at            this",
-          },
-          affidavitFormatting: {
-            applicantName: matter.intake.applicant.fullName.toLocaleUpperCase("en-NZ"),
-            respondentName: matter.intake.respondent.fullName.toLocaleUpperCase("en-NZ"),
-            childNames: matter.intake.children.map((child) => child.fullName.toLocaleUpperCase("en-NZ")),
-            legislationLines: affidavitContent.legislationLines,
-          },
-          paragraphInsertions: {
-            children_blurb: affidavitContent.childrenParagraphs,
-            protection_facts_heading: affidavitContent.protectionFactsHeading,
-            violence_categories: affidavitContent.violenceCategories,
-            insert_history_blurb: [""],
-            insert_recent_events_blurb: [""],
-            without_notice_heading: affidavitContent.withoutNoticeHeading,
-            without_notice_intro: affidavitContent.withoutNoticeIntro,
-            without_notice_safety: affidavitContent.withoutNoticeSafetyFactors,
-            parenting_heading: affidavitContent.parentingHeading,
-            parenting_blurb: affidavitContent.parentingParagraphs,
-            orders_sought_blurb: affidavitContent.ordersSoughtParagraphs,
-          },
-        }
+      ? buildAffidavitDocxMergeOptions(matter, affidavitContent)
       : {}),
     ...(isCourtLetter
       ? {

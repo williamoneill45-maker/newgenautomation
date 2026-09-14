@@ -115,7 +115,16 @@ export const demoMatter: MatterFile = {
       existingOrdersBetweenParties: "None known.",
       existingOrdersRelatingToChildren: "None known.",
     },
-    domesticViolenceNotes: { history: "", recentEvents: "" },
+    domesticViolenceNotes: {
+      history: "",
+      recentEvents: "",
+      dwellingAddress: "14 Example Street, Auckland 1010",
+      ancillaryFurnitureItems: ["Beds", "Dining table", "Washing machine"],
+      parentingSafetyReasons: [
+        "the children have been exposed to the Respondent's abuse described in this affidavit",
+      ],
+      contactSupervisionReason: "",
+    },
   },
 };
 

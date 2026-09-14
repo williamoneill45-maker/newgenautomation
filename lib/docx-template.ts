@@ -52,6 +52,8 @@ export type DocxMergeOptions = {
   informationSheetEthnicityCheckboxes?: [boolean[], boolean[]];
   paragraphInsertions?: Record<string, string[]>;
   conditionalBlocks?: Record<string, boolean>;
+  conditionalHeadingSections?: Array<{ heading: string; include: boolean }>;
+  removeParagraphsContaining?: string[];
   literalTextReplacements?: Record<string, string>;
   removeFirstExplicitPageBreak?: boolean;
   informationSheetApplicationCount?: number;
@@ -372,6 +374,57 @@ function applyConditionalBlocks(xml: string, blocks: Record<string, boolean>): s
     }
   }
   return output;
+}
+
+function normalizeSectionHeading(value: string): string {
+  return value.replace(/\s+/g, " ").trim().toLocaleLowerCase("en-NZ");
+}
+
+function applyConditionalHeadingSections(
+  xml: string,
+  sections: Array<{ heading: string; include: boolean }>,
+): string {
+  if (!sections.length) return xml;
+
+  const headingSet = new Set(sections.map((section) => normalizeSectionHeading(section.heading)));
+  const paragraphs = [...xml.matchAll(/<w:p\b[\s\S]*?<\/w:p>/g)].map((match) => ({
+    start: match.index,
+    end: match.index + match[0].length,
+    text: normalizeSectionHeading(paragraphText(match[0])),
+  }));
+  const ranges: Array<{ start: number; end: number }> = [];
+
+  for (const section of sections) {
+    if (section.include) continue;
+    const heading = normalizeSectionHeading(section.heading);
+    const startIndex = paragraphs.findIndex((paragraph) => paragraph.text === heading);
+    if (startIndex === -1) continue;
+    const nextHeadingIndex = paragraphs
+      .slice(startIndex + 1)
+      .findIndex((paragraph) => headingSet.has(paragraph.text));
+    const endIndex = nextHeadingIndex === -1
+      ? paragraphs.length - 1
+      : startIndex + nextHeadingIndex;
+    ranges.push({
+      start: paragraphs[startIndex].start,
+      end: paragraphs[endIndex].end,
+    });
+  }
+
+  let output = xml;
+  for (const range of ranges.sort((left, right) => right.start - left.start)) {
+    output = `${output.slice(0, range.start)}${output.slice(range.end)}`;
+  }
+  return output;
+}
+
+function removeParagraphsContaining(xml: string, values: string[]): string {
+  const needles = values.map(normalizeSectionHeading).filter(Boolean);
+  if (!needles.length) return xml;
+  return xml.replace(/<w:p\b[\s\S]*?<\/w:p>/g, (paragraph) => {
+    const text = normalizeSectionHeading(paragraphText(paragraph));
+    return needles.some((needle) => text.includes(needle)) ? "" : paragraph;
+  });
 }
 
 function parseMarkedRuns(value: string): Array<{ text: string; bold?: boolean }> {
@@ -796,6 +849,12 @@ function applyTemplateTransformations(xml: string, options: DocxMergeOptions, is
   }
   if (options.conditionalBlocks) {
     output = applyConditionalBlocks(output, options.conditionalBlocks);
+  }
+  if (options.conditionalHeadingSections) {
+    output = applyConditionalHeadingSections(output, options.conditionalHeadingSections);
+  }
+  if (options.removeParagraphsContaining) {
+    output = removeParagraphsContaining(output, options.removeParagraphsContaining);
   }
   if (options.literalTextReplacements) {
     output = replaceLiteralText(output, options.literalTextReplacements);

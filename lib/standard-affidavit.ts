@@ -1,4 +1,5 @@
 import type { ApplicationType, Child, MatterFile } from "./matter";
+import type { DocxMergeOptions } from "./docx-template";
 import {
   getMatterApplicationSelection,
   validateApplicationSelection,
@@ -111,13 +112,35 @@ export function isAncillaryFurnitureOrderSought(matter: MatterFile): boolean {
   return getMatterApplicationSelection(matter).ordersSought.ancillaryFurniture;
 }
 
+function cleanList(values: string[] | undefined): string[] {
+  return (values ?? []).map(clean).filter(Boolean);
+}
+
+function matterHasChildren(matter: MatterFile): boolean {
+  return matter.intake.children.some((child) => clean(child.fullName));
+}
+
+function getDwellingAddress(matter: MatterFile): string {
+  return clean(matter.intake.domesticViolenceNotes?.dwellingAddress ?? "")
+    || clean(matter.intake.applicant.homeAddress);
+}
+
 export function validateAffidavitApplicationSelection(matter: MatterFile): string | null {
   const selection = getMatterApplicationSelection(matter);
   const validationError = validateApplicationSelection(selection);
   if (validationError) return validationError;
-  const hasChildren = matter.intake.children.some((child) => clean(child.fullName));
+  const hasChildren = matterHasChildren(matter);
   if (selection.ordersSought.parenting && !hasChildren) {
     return "At least one child must be added before generating a Parenting Order affidavit.";
+  }
+  if (selection.ordersSought.tenancy && !getDwellingAddress(matter)) {
+    return "A current dwelling address is required before generating a Tenancy Order affidavit.";
+  }
+  if (selection.ordersSought.ancillaryFurniture && !cleanList(matter.intake.domesticViolenceNotes?.ancillaryFurnitureItems).length) {
+    return "At least one furniture or chattel item is required before generating an Ancillary Furniture Order affidavit.";
+  }
+  if (selection.ordersSought.parenting && !cleanList(matter.intake.domesticViolenceNotes?.parentingSafetyReasons).length) {
+    return "At least one parenting safety reason is required before generating a Parenting Order affidavit.";
   }
   return null;
 }
@@ -151,6 +174,9 @@ export type StandardAffidavitContent = {
   ordersSoughtParagraphs: string[];
   conditionalBlocks: Record<string, boolean>;
   mergeFields: Record<string, string>;
+  literalTextReplacements: Record<string, string>;
+  removeParagraphsContaining: string[];
+  conditionalHeadingSections: Array<{ heading: string; include: boolean }>;
 };
 
 function buildChildGrammar(children: Child[]): Record<string, string> {
@@ -174,11 +200,85 @@ function boolString(value: boolean): string {
   return value ? "true" : "";
 }
 
+function alphaMarker(index: number): string {
+  return String.fromCharCode(97 + index);
+}
+
+function formatLetteredList(values: string[]): string {
+  return values.map((value, index) => `(${alphaMarker(index)}) ${value}`).join("\n");
+}
+
+function sentenceJoin(value: string): string {
+  const cleaned = clean(value);
+  if (!cleaned) return "";
+  return /[.!?]$/.test(cleaned) ? cleaned : `${cleaned}.`;
+}
+
+function buildParentingSafetyReasons(matter: MatterFile): string {
+  return cleanList(matter.intake.domesticViolenceNotes?.parentingSafetyReasons)
+    .map((reason, index) => `(${alphaMarker(index)}) ${sentenceJoin(reason)}`)
+    .join("\n");
+}
+
+function buildContactSupervisionParagraph(matter: MatterFile): string {
+  const reason = clean(matter.intake.domesticViolenceNotes?.contactSupervisionReason ?? "");
+  return reason
+    ? `I propose that the contact be supervised by a Professional Contact Provider until ${sentenceJoin(reason).replace(/\.$/, "")}.`
+    : "I propose that the contact be supervised by a Professional Contact Provider.";
+}
+
+function buildFurnitureWithoutNoticeParagraph(matter: MatterFile): string {
+  const childReference = matterHasChildren(matter) ? " and a child of my family" : "";
+  return `The Application for an Ancillary Furniture Order is made Without Notice to the Respondent because the Respondent has subjected me to the abuse described in this affidavit and the delay that would be caused by proceeding On Notice might expose me${childReference} to further abuse.`;
+}
+
+function buildTenancyChildrenParagraph(matter: MatterFile): string {
+  const children = matter.intake.children.filter((child) => clean(child.fullName));
+  if (!children.length) return "";
+  if (children.length === 1) {
+    return "It is in the best interests of the child that we remain in the dwelling house. I do not want to leave the dwelling house and uproot the child from their well-established routines.";
+  }
+  return "It is in the best interests of the children that we remain in the dwelling house. I do not want to leave the dwelling house and uproot the children from their well-established routines.";
+}
+
+function buildOrdersSought(matter: MatterFile): string {
+  const selection = getMatterApplicationSelection(matter);
+  const orders = selection.ordersSought;
+  const children = matter.intake.children.filter((child) => clean(child.fullName));
+  const clauses: string[] = [];
+
+  if (orders.protection) {
+    clauses.push("a Protection Order against the Respondent, including the standard conditions of a Protection Order");
+  }
+  if (orders.parenting) {
+    clauses.push(`a Parenting Order granting me day-to-day care of ${children.length === 1 ? "the child" : "the children"}`);
+  }
+  if (orders.tenancy) {
+    clauses.push("a Tenancy Order granting me the right to live at the dwelling house");
+  }
+  if (orders.ancillaryFurniture) {
+    clauses.push("an Ancillary Furniture Order granting me possession and use of the listed furniture and chattels");
+  }
+
+  const requestNoun = clauses.length === 1 ? "this order" : "these orders";
+  return `I seek ${formatList(clauses)}. I respectfully request that ${requestNoun} be granted ${selection.noticeType === "without_notice" ? "without notice to" : "on notice to"} the Respondent.`;
+}
+
+const affidavitSectionHeadings = [
+  "Facts in Support of Application for Protection Order Without Notice",
+  "FACTS IN SUPPORT OF APPLICATION FOR A TENANCY ORDER",
+  "FACTS IN SUPPORT OF APPLICATION FOR A TENANCY ORDER WITHOUT NOTICE",
+  "FACTS IN SUPPORT OF APPLICATION FOR ANCILLARY FURNITURE ORDER",
+  "FACTS IN SUPPORT OF APPLICATION FOR FURNITURE ORDER WITHOUT NOTICE",
+  "MY PROPOSAL FOR DAY TO DAY CARE AND CONTACT",
+  "ORDERS SOUGHT",
+];
+
 export function buildAffidavitConditionalBlocks(matter: MatterFile): Record<string, boolean> {
   const selection = getMatterApplicationSelection(matter);
   const orders = selection.ordersSought;
   const isWithoutNotice = selection.noticeType === "without_notice";
-  const hasChildren = matter.intake.children.some((child) => clean(child.fullName));
+  const hasChildren = matterHasChildren(matter);
 
   return {
     has_children: hasChildren,
@@ -211,6 +311,9 @@ export function buildAffidavitMergeFields(matter: MatterFile, content = buildSta
   const childNames = children.map(childCareName);
   const formattedChildNames = childNames.length ? formatList(childNames) : "";
   const conditionalBlocks = buildAffidavitConditionalBlocks(matter);
+  const hasChildren = children.length > 0;
+  const dwellingAddress = getDwellingAddress(matter);
+  const furnitureItems = cleanList(matter.intake.domesticViolenceNotes?.ancillaryFurnitureItems);
 
   return {
     ...buildChildGrammar(children),
@@ -227,9 +330,25 @@ export function buildAffidavitMergeFields(matter: MatterFile, content = buildSta
     applications_upper: selection.applications.toLocaleUpperCase("en-NZ"),
     relevant_legislation: selection.relevantLegislation,
     relevant_legisaltion: selection.relevantLegislation,
+    application_intro: content.applicationIntro,
+    insert_history_blurb: matter.intake.domesticViolenceNotes?.history ?? "",
+    insert_recent_events_blurb: matter.intake.domesticViolenceNotes?.recentEvents ?? "",
     children_blurb: content.childrenParagraphs.join("\n"),
-    dwelling_address: matter.intake.applicant.homeAddress,
-    current_dwelling_address: matter.intake.applicant.homeAddress,
+    Children_blurb: content.childrenParagraphs.join("\n"),
+    children_harm_reference: hasChildren ? " and the children of my family" : "",
+    children_abuse_reference: hasChildren ? "or a child of my family" : "",
+    tenancy_protection_reference: orders.protection ? "I am applying for a Protection Order against the Respondent. " : "",
+    furniture_protection_reference: orders.protection ? "I am applying for a Protection Order against the Respondent. " : "",
+    tenancy_children_paragraph: buildTenancyChildrenParagraph(matter),
+    dwelling_address: dwellingAddress,
+    current_dwelling_address: dwellingAddress,
+    furniture_order_reference: buildFurnitureWithoutNoticeParagraph(matter),
+    furniture_items_list: formatLetteredList(furnitureItems),
+    the_child_or_children_possessive: children.length === 1 ? "the child's" : "the children's",
+    parenting_safety_reasons: buildParentingSafetyReasons(matter),
+    contact_supervision_paragraph: buildContactSupervisionParagraph(matter),
+    orders_sought: buildOrdersSought(matter),
+    orders_sought_blurb: buildOrdersSought(matter),
   };
 }
 
@@ -254,11 +373,8 @@ export function buildStandardAffidavitContent(matter: MatterFile): StandardAffid
         applicationSelection.ordersSought.tenancy ? "Tenancy Order" : "",
         applicationSelection.ordersSought.ancillaryFurniture ? "Ancillary Furniture Order" : "",
       ].filter(Boolean);
-  const formattedOrders = formatList(orderLabels);
   const includeParentingProposal = hasParentingOrder && children.length > 0;
-  const isWithoutNotice = applicationSelection.noticeType === "without_notice" || matter.intake.selectedApplications.some((application) =>
-    /^without notice/i.test(application),
-  ) || (!matter.intake.selectedApplications.length && hasProtectionOrder);
+  const isWithoutNotice = applicationSelection.noticeType === "without_notice";
   const legislationLines = applicationSelection.relevantLegislation
     ? [`(${applicationSelection.relevantLegislation})`]
     : [];
@@ -284,15 +400,9 @@ export function buildStandardAffidavitContent(matter: MatterFile): StandardAffid
   const parentingParagraphs = includeParentingProposal
     ? [
         `I seek a Parenting Order granting me day-to-day care of ${formattedChildNames}. I have always had a greater role and responsibility in providing day-to-day care to ${formattedChildNames}. I want this arrangement to continue and for ${formattedChildNames} to remain in my day-to-day care.`,
-        `I seek an interim Parenting Order granting the Respondent supervised contact with ${formattedChildNames}. I am concerned about ${formattedChildNames}’s safety in the Respondent’s unsupervised care because:  (i) ${formattedChildNames} ${children.length === 1 ? "has" : "have"} been exposed to the Respondent’s violence towards me and ${children.length === 1 ? "has" : "have"} been affected by the abuse ${children.length === 1 ? "the child has" : "they have"} witnessed.  (ii) I am concerned that the Respondent is unable to control his anger and does not realise that his behaviour is abusive.  (iii) I want to be sure that ${formattedChildNames} ${children.length === 1 ? "is" : "are"} safe and ${children.length === 1 ? "is" : "are"} returned to me at the end of any contact. I am concerned that without an order the Respondent may refuse to return ${formattedChildNames}.`,
-        "I propose that contact be supervised by a Professional Contact Provider.",
-      ].flatMap((paragraph) => paragraph.split(/\s{2,}(?=\([ivx]+\))/i))
-        .map((paragraph) => paragraph
-          .replace(/the children has/g, "the children have")
-          .replace(/the child has/g, "they have")
-          .replace(/the children is/g, "the children are")
-          .replace(/and has been affected/g, "and have been affected")
-          .replace(/and is returned/g, "and are returned"))
+        buildParentingSafetyReasons(matter),
+        buildContactSupervisionParagraph(matter),
+      ].filter(Boolean)
     : [];
 
   const orders: string[] = [];
@@ -327,14 +437,7 @@ export function buildStandardAffidavitContent(matter: MatterFile): StandardAffid
   if (consentedProtectedPerson) {
     orders.push(`a Protection Order to extend to the following consented person ${consentedProtectedPerson.toLocaleUpperCase("en-NZ")}`);
   }
-  const formattedOrderRelief = formatList(orders);
-  const standardConditions = hasProtectionOrder
-    ? " I seek the standard conditions of a Protection Order."
-    : "";
-  const requestNoun = orders.length === 1 ? "this order" : "these orders";
-  const ordersSoughtParagraphs = [
-    `I seek ${formattedOrderRelief || formattedOrders || "the orders set out in my application"}.${standardConditions} I respectfully request that ${requestNoun} be granted ${isWithoutNotice ? "without notice to" : "on notice to"} the Respondent.`,
-  ];
+  const ordersSoughtParagraphs = [buildOrdersSought(matter)];
 
   return {
     applicationTitle,
@@ -362,9 +465,7 @@ export function buildStandardAffidavitContent(matter: MatterFile): StandardAffid
       ? [
           "Facts relating to Respondent",
           "The Respondent has used family violence against me as follows:",
-          ...formatViolenceCategories(matter.intake.familyViolenceTypes?.length
-            ? matter.intake.familyViolenceTypes
-            : ["physical abuse", "psychological abuse", "damage to property", "sexual abuse"]),
+          ...formatViolenceCategories(matter.intake.familyViolenceTypes ?? []),
         ]
       : [],
     parentingHeading: includeParentingProposal
@@ -374,5 +475,67 @@ export function buildStandardAffidavitContent(matter: MatterFile): StandardAffid
     ordersSoughtParagraphs,
     conditionalBlocks: buildAffidavitConditionalBlocks(matter),
     mergeFields: {},
+    literalTextReplacements: {
+      "I am applying without notice for a Protection Order against {{respondent_name}} (“the Respondent”).": "{{application_intro}}",
+      "{{tenancy_children_paragraph}} It is in the best interests of our child that we remain in the dwelling house given the house is very near to her pre school and friends. I do not want to leave the dwelling house and uproot my child from their well established routines.": "{{tenancy_children_paragraph}}",
+      "{{parenting_safety_reasons}} I am concerned that the Respondent is unable to control his anger and does not realise that his behaviour is abusive.": "{{parenting_safety_reasons}}",
+      "I propose that the contact be supervised by a Professional Contact Provider until he addresses his mental health.": "{{contact_supervision_paragraph}}",
+      "I seek Orders granting the child and myself a Protection Order, Tenancy and Ancillary Furniture against the Respondent.  I seek the standard conditions of a Protection Order.  I also seek a Parenting Order granting me the day to day care of the child. I request these orders are granted without notice to the Respondent.": "{{orders_sought}}",
+      "I am also applying for an Ancillary Furniture Order granting me the right to possession and use of the furniture and chattels listed below.": "I am also applying for an Ancillary Furniture Order granting me the right to possession and use of the furniture and chattels listed below.\n{{furniture_items_list}}",
+    },
+    removeParagraphsContaining: [
+      "I'm concerned about the child/ren being with him while he's in the mental state of having uncontrollable thoughts and not being able to think clearly.",
+      "Microwave",
+      "Child's bedroom furniture",
+      "Lounge Suite",
+      "Television",
+      "Fridge",
+      "Freezer",
+      "Washing Machine",
+    ],
+    conditionalHeadingSections: [
+      { heading: affidavitSectionHeadings[0], include: hasProtectionOrder && isWithoutNotice },
+      { heading: affidavitSectionHeadings[1], include: applicationSelection.ordersSought.tenancy },
+      { heading: affidavitSectionHeadings[2], include: applicationSelection.ordersSought.tenancy && isWithoutNotice },
+      { heading: affidavitSectionHeadings[3], include: applicationSelection.ordersSought.ancillaryFurniture },
+      { heading: affidavitSectionHeadings[4], include: applicationSelection.ordersSought.ancillaryFurniture && isWithoutNotice },
+      { heading: affidavitSectionHeadings[5], include: hasParentingOrder },
+      { heading: affidavitSectionHeadings[6], include: true },
+    ],
+  };
+}
+
+export function buildAffidavitDocxMergeOptions(
+  matter: MatterFile,
+  content = buildStandardAffidavitContent(matter),
+): DocxMergeOptions {
+  return {
+    conditionalBlocks: content.conditionalBlocks,
+    conditionalHeadingSections: content.conditionalHeadingSections,
+    removeParagraphsContaining: content.removeParagraphsContaining,
+    literalTextReplacements: {
+      "AFFIRMED at {{English_court_name}} this": "AFFIRMED at            this",
+      ...content.literalTextReplacements,
+    },
+    affidavitFormatting: {
+      applicantName: matter.intake.applicant.fullName.toLocaleUpperCase("en-NZ"),
+      respondentName: matter.intake.respondent.fullName.toLocaleUpperCase("en-NZ"),
+      childNames: matter.intake.children.map((child) => child.fullName.toLocaleUpperCase("en-NZ")),
+      legislationLines: content.legislationLines,
+    },
+    paragraphInsertions: {
+      children_blurb: content.childrenParagraphs,
+      Children_blurb: content.childrenParagraphs,
+      protection_facts_heading: content.protectionFactsHeading,
+      violence_categories: content.violenceCategories,
+      insert_history_blurb: [matter.intake.domesticViolenceNotes?.history ?? ""],
+      insert_recent_events_blurb: [matter.intake.domesticViolenceNotes?.recentEvents ?? ""],
+      without_notice_heading: content.withoutNoticeHeading,
+      without_notice_intro: content.withoutNoticeIntro,
+      without_notice_safety: content.withoutNoticeSafetyFactors,
+      parenting_heading: content.parentingHeading,
+      parenting_blurb: content.parentingParagraphs,
+      orders_sought_blurb: content.ordersSoughtParagraphs,
+    },
   };
 }
